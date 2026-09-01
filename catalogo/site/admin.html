@@ -1,0 +1,218 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<!-- NÃO troque por "no-referrer": o seletor de capa carrega o MP4 da pull zone
+     do Bunny, que é protegida por Allowed Referrers e responde 403 sem Referer. -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Administração — Goiás Tec +</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<header class="topo">
+  <div class="limite topo-linha">
+    <a class="marca" href="index.html">
+      Goiás Tec <span>+</span>
+      <span class="marca-sub">administração</span>
+    </a>
+    <div style="margin-left:auto; display:flex; gap:8px; align-items:center;">
+      <span id="quem" class="card-meta"></span>
+      <button type="button" class="botao" id="sair" hidden>Sair</button>
+    </div>
+  </div>
+</header>
+
+<main class="limite" style="padding:24px 0 64px;">
+
+  <!-- ------------------------------------------------------------- entrar -->
+  <section id="tela-entrar" class="entrar">
+    <div class="cartao">
+      <h1 style="font-size:18px; margin:0 0 4px;">Área de administração</h1>
+      <p class="card-meta" style="margin:0 0 16px;">Senha compartilhada da equipe.</p>
+      <form id="form-entrar">
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input type="password" id="senha" autocomplete="current-password" required>
+        </div>
+        <button type="submit" class="botao botao-primario">Entrar</button>
+        <p class="estado" id="estado-entrar"></p>
+      </form>
+    </div>
+  </section>
+
+  <!-- -------------------------------------------------------------- painel -->
+  <section id="tela-painel" hidden>
+
+    <div class="abas" role="tablist">
+      <button class="aba" role="tab" id="aba-enviar" aria-selected="true" aria-controls="painel-enviar">Enviar título</button>
+      <button class="aba" role="tab" id="aba-catalogo" aria-selected="false" aria-controls="painel-catalogo">Catálogo</button>
+    </div>
+
+    <!-- ============================================================ enviar -->
+    <div class="painel" id="painel-enviar" role="tabpanel" aria-labelledby="aba-enviar">
+
+      <div class="cartao">
+        <h2 style="font-size:16px; margin:0 0 14px;">1. Arquivo de vídeo</h2>
+
+        <div class="campo">
+          <label for="arquivo">Arquivo <span class="ajuda">— .mp4 do master</span></label>
+          <input type="file" id="arquivo" accept="video/*">
+        </div>
+
+        <div class="campo">
+          <label for="titulo-upload">Título de exibição</label>
+          <input type="text" id="titulo-upload" placeholder="Ex.: Cavalhadas de Pirenópolis">
+        </div>
+
+        <button type="button" class="botao botao-primario" id="enviar">Enviar vídeo</button>
+        <button type="button" class="botao" id="cancelar-envio" hidden>Cancelar</button>
+
+        <div id="progresso-caixa" hidden>
+          <div class="progresso"><i id="progresso-barra"></i></div>
+          <p class="card-meta" id="progresso-texto"></p>
+        </div>
+
+        <p class="estado" id="estado-upload"></p>
+        <pre class="registro" id="registro-upload"></pre>
+      </div>
+
+      <div class="cartao" id="caixa-metadados" hidden>
+        <h2 style="font-size:16px; margin:0 0 4px;">2. Metadados</h2>
+        <p class="card-meta" id="info-video" style="margin:0 0 14px;"></p>
+
+        <form id="form-metadados">
+          <div class="campo">
+            <label for="m-titulo">Título</label>
+            <input type="text" id="m-titulo" required>
+          </div>
+
+          <div class="campo-linha">
+            <div class="campo">
+              <label for="m-serie">Série</label>
+              <input type="text" id="m-serie" list="lista-series" placeholder="A classificar">
+            </div>
+            <div class="campo">
+              <label for="m-temporada">Temporada</label>
+              <input type="number" id="m-temporada" min="1" step="1">
+            </div>
+            <div class="campo">
+              <label for="m-episodio">Episódio</label>
+              <input type="number" id="m-episodio" min="1" step="1">
+            </div>
+            <div class="campo">
+              <label for="m-ano">Ano</label>
+              <input type="text" id="m-ano" inputmode="numeric" placeholder="2025">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="m-sinopse">Sinopse</label>
+            <textarea id="m-sinopse" placeholder="2 a 3 frases, em terceira pessoa, descrevendo do que trata o vídeo."></textarea>
+          </div>
+
+          <div class="campo-linha">
+            <div class="campo">
+              <label for="m-tema">Tema</label>
+              <input type="text" id="m-tema">
+            </div>
+            <div class="campo">
+              <label for="m-publico">Público-alvo</label>
+              <input type="text" id="m-publico">
+            </div>
+          </div>
+
+          <div class="campo">
+            <label for="m-tags">Tags <span class="ajuda">— separadas por vírgula</span></label>
+            <input type="text" id="m-tags">
+          </div>
+
+          <div class="campo-linha">
+            <div class="campo">
+              <label for="m-titularidade">Titularidade</label>
+              <select id="m-titularidade">
+                <option>INCONCLUSIVO</option>
+                <option>Goiás Tec</option>
+                <option>UEG TV</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label for="m-evidencia">Nível de evidência</label>
+              <select id="m-evidencia">
+                <option>SEM EVIDÊNCIA</option>
+                <option>PROVÁVEL</option>
+                <option>CONFIRMADO</option>
+              </select>
+            </div>
+            <div class="campo">
+              <label for="m-pendencia">Pendência</label>
+              <select id="m-pendencia">
+                <option value="">nenhuma</option>
+                <option value="audio_sem_trilha">áudio sem trilha</option>
+                <option value="sem_identificacao">sem identificação</option>
+                <option value="direitos_a_verificar">direitos a verificar</option>
+                <option value="piloto_decidir">piloto — decidir</option>
+                <option value="material_bruto">material bruto — não publicar</option>
+                <option value="versao_duplicada">versão duplicada — escolher uma</option>
+                <option value="nao_e_conteudo">não é conteúdo — cartela ou sobra</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="campo campo-check">
+            <input type="checkbox" id="m-publicar">
+            <label for="m-publicar">Publicar na grade</label>
+          </div>
+
+          <div class="campo-linha">
+            <div class="campo">
+              <label for="m-capa">Capa (JPG) <span class="ajuda">— opcional</span></label>
+              <input type="file" id="m-capa" accept="image/jpeg,image/png">
+            </div>
+            <div class="campo">
+              <label for="m-legenda">Legenda (.srt) <span class="ajuda">— opcional</span></label>
+              <input type="file" id="m-legenda" accept=".srt,text/plain">
+            </div>
+          </div>
+
+          <button type="submit" class="botao botao-primario">Salvar no catálogo</button>
+          <p class="estado" id="estado-metadados"></p>
+        </form>
+      </div>
+    </div>
+
+    <!-- ========================================================== catálogo -->
+    <div class="painel" id="painel-catalogo" role="tabpanel" aria-labelledby="aba-catalogo" hidden>
+      <div class="cartao">
+        <div class="campo-linha">
+          <div class="campo">
+            <label for="filtro">Buscar</label>
+            <input type="text" id="filtro" placeholder="título, série, tag…">
+          </div>
+          <div class="campo campo-check" style="align-self:end; padding-bottom:8px;">
+            <input type="checkbox" id="so-revisar">
+            <label for="so-revisar">Só sinopses não revisadas</label>
+          </div>
+          <div class="campo campo-check" style="align-self:end; padding-bottom:8px;">
+            <input type="checkbox" id="so-publicados">
+            <label for="so-publicados">Só publicados</label>
+          </div>
+        </div>
+        <p class="estado" id="estado-catalogo"></p>
+      </div>
+
+      <div class="lista-admin" id="lista"></div>
+    </div>
+
+  </section>
+</main>
+
+<datalist id="lista-series"></datalist>
+
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
+<script src="catalogo-core.js"></script>
+<script src="admin.js"></script>
+</body>
+</html>

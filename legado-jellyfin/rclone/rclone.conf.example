@@ -1,0 +1,23 @@
+# rclone — configuração do Google Drive (Shared Drive) para o Goiás Tec +
+#
+# 1) Copie este arquivo para rclone.conf (o .gitignore o ignora — contém tokens!)
+# 2) Crie seu próprio client_id/client_secret do Google (recomendado, obrigatório em 2026):
+#    https://rclone.org/drive/#making-your-own-client-id
+# 3) Para Shared Drive (Time): preencha team_drive com o ID do drive
+#    (a pasta compartilhada: https://drive.google.com/drive/folders/<ID>)
+# 4) Gere o token:  rclone config  (ou use service account abaixo)
+
+[goiastec]
+type = drive
+client_id =
+client_secret =
+scope = drive.readonly
+token =
+team_drive =           # <ID do Shared Drive — obrigatório p/ usar Drive de Time>
+root_folder_id =
+service_account_file = # caminho do JSON da service account (opcional)
+# Para service account (recomendado p/ servidor):
+#   1) Crie a service account no Google Cloud Console
+#   2) Baixe o JSON da chave
+#   3) Compartilhe a pasta do Shared Drive com o e-mail da service account
+#   4) Defina service_account_file = /path/to/sa.json

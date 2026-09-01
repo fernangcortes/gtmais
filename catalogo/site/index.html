@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow, noarchive">
+<!-- NÃO troque por "no-referrer". A proteção do Bunny é por Allowed Referrers:
+     sem o cabeçalho Referer, a pull zone responde 403 e as capas somem. -->
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<title>Goiás Tec + — catálogo</title>
+<link rel="icon" type="image/svg+xml" href="favicon.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+
+<meta property="og:title" content="Goiás Tec + — catálogo">
+<meta property="og:description" content="Catálogo interno de vídeos do Goiás Tec +.">
+<meta property="og:image" content="https://goias-tec-mais.pages.dev/og-image.png">
+<meta property="og:url" content="https://goias-tec-mais.pages.dev/">
+<meta property="og:type" content="website">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+
+<header class="topo">
+  <div class="limite topo-linha">
+    <a class="marca" href="#/" id="ir-inicio">
+      Goiás Tec <span>+</span>
+      <span class="marca-sub">catálogo interno</span>
+    </a>
+    <div class="busca">
+      <label class="pular" for="busca">Buscar no catálogo</label>
+      <input id="busca" type="search" autocomplete="off" spellcheck="false"
+             placeholder="Buscar por título, série, tema ou tag…">
+    </div>
+  </div>
+  <div class="limite">
+    <div class="chips" id="chips" role="group" aria-label="Filtrar por série"></div>
+  </div>
+</header>
+
+<main id="conteudo" class="limite">
+  <div id="avisos"></div>
+  <div id="conteudo-grade"></div>
+  <div id="conteudo-ficha" hidden></div>
+</main>
+
+<footer class="rodape">
+  <div class="limite">
+    Uso interno da rede. Não divulgar o endereço. ·
+    <a href="admin.html">Administração</a>
+  </div>
+</footer>
+
+<script src="catalogo-core.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

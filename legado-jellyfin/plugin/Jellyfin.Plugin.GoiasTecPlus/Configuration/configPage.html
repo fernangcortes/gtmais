@@ -1,0 +1,132 @@
+<div id="PluginConfigPage" data-role="page">
+  <div data-role="content" class="paddedPage">
+    <div class="sectionTitle">Goiás Tec +</div>
+    <div class="sectionDescription">
+      Comentários ancorados no tempo, papéis de usuário, sync com Google Drive (rclone)
+      e legendas automáticas do YouTube (yt-dlp/deno).
+    </div>
+
+    <div class="sectionTitle">YouTube (legendas automáticas)</div>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtYoutubeHandle">Handle do canal (ex.: @goiastec)</label>
+      <input id="txtYoutubeHandle" type="text" class="emby-input" placeholder="@goiastec" />
+      <div class="fieldDescription">Deixe vazio até a conta do YouTube existir. O sync diário casa os vídeos por nome de arquivo e baixa a legenda automática.</div>
+    </div>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtYtDlpPath">Caminho do yt-dlp</label>
+      <input id="txtYtDlpPath" type="text" class="emby-input" value="yt-dlp" />
+    </div>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtDenoPath">Caminho do deno</label>
+      <input id="txtDenoPath" type="text" class="emby-input" value="deno" />
+    </div>
+    <label class="checkboxContainer">
+      <input id="chkAutoCaptions" type="checkbox" checked />
+      <span>Baixar automaticamente a legenda automática do YouTube quando o vídeo estiver postado</span>
+    </label>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtCaptionLang">Idioma da legenda do YouTube</label>
+      <input id="txtCaptionLang" type="text" class="emby-input" value="pt" />
+    </div>
+
+    <div class="sectionTitle">Google Drive (watch de novos vídeos)</div>
+    <label class="checkboxContainer">
+      <input id="chkDriveWatch" type="checkbox" checked />
+      <span>Detectar novos vídeos no mount do Drive e disparar o scan da biblioteca</span>
+    </label>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtDriveFolder">Pasta do mount do rclone (dentro do container)</label>
+      <input id="txtDriveFolder" type="text" class="emby-input" value="/media/goiastec" />
+    </div>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtDriveRemote">Remote rclone (opcional, para listagem via rclone)</label>
+      <input id="txtDriveRemote" type="text" class="emby-input" placeholder="goiastec:" />
+    </div>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtRclonePath">Caminho do rclone</label>
+      <input id="txtRclonePath" type="text" class="emby-input" value="rclone" />
+    </div>
+    <div class="inputContainer">
+      <label class="inputLabel" for="txtScanInterval">Intervalo da varredura (minutos)</label>
+      <input id="txtScanInterval" type="number" class="emby-input" value="30" min="5" />
+    </div>
+
+    <div class="sectionTitle">Sobre</div>
+    <div class="fieldDescription">
+      As categorias de comentário (roteiro, montagem, cor, tema, geral), os papéis
+      (superadmin/admin/editor/convidado) e a API REST ficam em
+      <code>/GoiasTec</code>. Gerencie pelos endpoints da API e pela interface customizada (fork jellyfin-vue).
+    </div>
+
+    <button id="btnSave" type="button" class="button-submit" onclick="GoiasTecPlusConfigPage.save()">Salvar</button>
+  </div>
+</div>
+
+<script>
+window.GoiasTecPlusConfigPage = {
+    pluginId: null,
+
+    getPluginId: function () {
+        try {
+            var fromUrl = new URLSearchParams(window.location.search).get('id');
+            if (fromUrl) return fromUrl;
+        } catch (e) { /* ignore */ }
+        return window.pluginId || null;
+    },
+
+    load: function () {
+        var self = this;
+        self.pluginId = self.getPluginId();
+        if (!self.pluginId || typeof ApiClient === 'undefined') return;
+
+        ApiClient.getPluginConfiguration(self.pluginId).then(function (config) {
+            setVal('txtYoutubeHandle', config.YoutubeChannelHandle || '');
+            setVal('txtYtDlpPath', config.YtDlpPath || 'yt-dlp');
+            setVal('txtDenoPath', config.DenoPath || 'deno');
+            setVal('txtCaptionLang', config.CaptionLanguage || 'pt');
+            setVal('txtDriveFolder', config.DriveWatchFolder || '/media/goiastec');
+            setVal('txtDriveRemote', config.DriveRemote || '');
+            setVal('txtRclonePath', config.RclonePath || 'rclone');
+            setVal('txtScanInterval', config.ScanIntervalMinutes || 30);
+            setChecked('chkAutoCaptions', config.AutoDownloadCaptions !== false);
+            setChecked('chkDriveWatch', config.DriveWatchEnabled !== false);
+        }).catch(function (err) {
+            console.error('[GoiasTecPlus] falha ao carregar configuração', err);
+        });
+    },
+
+    save: function () {
+        var self = this;
+        if (!self.pluginId || typeof ApiClient === 'undefined') return;
+
+        var config = {
+            YoutubeChannelHandle: val('txtYoutubeHandle') || '',
+            YtDlpPath: val('txtYtDlpPath') || 'yt-dlp',
+            DenoPath: val('txtDenoPath') || 'deno',
+            AutoDownloadCaptions: checked('chkAutoCaptions'),
+            CaptionLanguage: val('txtCaptionLang') || 'pt',
+            DriveWatchEnabled: checked('chkDriveWatch'),
+            DriveWatchFolder: val('txtDriveFolder') || '/media/goiastec',
+            DriveRemote: val('txtDriveRemote') || '',
+            RclonePath: val('txtRclonePath') || 'rclone',
+            ScanIntervalMinutes: parseInt(val('txtScanInterval'), 10) || 30
+        };
+
+        ApiClient.updatePluginConfiguration(self.pluginId, config).then(function () {
+            if (typeof Dashboard !== 'undefined' && Dashboard.processPluginConfigurationUpdateResult) {
+                Dashboard.processPluginConfigurationUpdateResult();
+            } else {
+                alert('Configuração salva.');
+            }
+        }).catch(function (err) {
+            console.error('[GoiasTecPlus] falha ao salvar configuração', err);
+            alert('Falha ao salvar a configuração.');
+        });
+    }
+};
+
+function val(id) { var el = document.getElementById(id); return el ? el.value : ''; }
+function setVal(id, value) { var el = document.getElementById(id); if (el) el.value = value; }
+function checked(id) { var el = document.getElementById(id); return el ? el.checked : false; }
+function setChecked(id, value) { var el = document.getElementById(id); if (el) el.checked = value; }
+</script>

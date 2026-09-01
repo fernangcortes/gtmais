@@ -1,0 +1,35 @@
+# Ambiente — nunca versionar valores reais
+.env
+.env.local
+
+# Node
+node_modules/
+dist/
+.pnpm-store/
+catalogo/scripts/package-lock.json
+
+# Acervo — dados de origem, fora deste repositório de propósito
+catalogo.seed.json
+catalogo.kv.json
+assemblyai-jobs.json
+backup.json
+ESTADO.md
+PROXIMA-SESSAO.md
+inventario/
+
+# --- legado-jellyfin ---
+bin/
+obj/
+*.user
+*.suo
+legado-jellyfin/plugin/publish/
+legado-jellyfin/data/
+*.db
+*.db-shm
+*.db-wal
+legado-jellyfin/rclone/rclone.conf
+!legado-jellyfin/rclone/rclone.conf.example
+
+# Sistema
+Thumbs.db
+.DS_Store

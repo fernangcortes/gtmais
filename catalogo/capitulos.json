@@ -1,0 +1,372 @@
+{
+ "versao": 1,
+ "observacao": "Capítulos escritos à mão a partir da legenda de cada vídeo (31/08/2026). Cada item tem só `inicio` (em segundos) e `titulo`: o `end` que o Bunny exige é derivado por scripts/capitulos.mjs, que fecha cada capítulo no início do seguinte e o último na duração do vídeo. Assim a linha do tempo fica inteira segmentada, sem buraco, e mover um corte não obriga a mexer no vizinho. Ver o cabeçalho de scripts/capitulos.mjs.",
+ "titulos": {
+  "esportes-s01e01-vamos-falar-de-futebol-2024-master": {
+   "titulo": "Esportes de Invasão: Vamos falar de futebol (Episódio 1)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura" },
+    { "inicio": 67, "titulo": "A aula de hoje: esportes de invasão" },
+    { "inicio": 109, "titulo": "O que é futebol e o que é esporte de invasão" },
+    { "inicio": 208, "titulo": "De onde veio o futebol: China, Japão, Grécia e Roma" },
+    { "inicio": 281, "titulo": "O futebol moderno, a FIFA e as Copas do Mundo" },
+    { "inicio": 324, "titulo": "Craques e Bolas de Ouro" },
+    { "inicio": 395, "titulo": "O treinador: entrevista com Rodrigo Naves" },
+    { "inicio": 820, "titulo": "O atleta: entrevista com William Jones" },
+    { "inicio": 968, "titulo": "Outras profissões do futebol: Eduardo Pinheiro" },
+    { "inicio": 1167, "titulo": "Redes sociais e a imagem do atleta" },
+    { "inicio": 1240, "titulo": "Por onde começar: escolinha, peneira e idade certa" },
+    { "inicio": 1394, "titulo": "Um recado para pais e mães" },
+    { "inicio": 1509, "titulo": "Encerramento" }
+   ]
+  },
+  "paraquedismo-s01e01-2024-sem-trilha": {
+   "titulo": "PCAs na Natureza: Paraquedismo (Episódio 1)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: uma aventura das grandes" },
+    { "inicio": 90, "titulo": "O sonho de voar: Dédalo e Ícaro" },
+    { "inicio": 133, "titulo": "Pioneiros do voo: Lilienthal, Santos Dumont e Da Vinci" },
+    { "inicio": 240, "titulo": "O primeiro salto de paraquedas e as guerras" },
+    { "inicio": 295, "titulo": "O paraquedismo vira esporte" },
+    { "inicio": 352, "titulo": "O que são práticas corporais de aventura (PCAs)" },
+    { "inicio": 422, "titulo": "Como é um salto: 12 mil pés e 200 km/h" },
+    { "inicio": 488, "titulo": "Por que praticar: o que as PCAs trazem" },
+    { "inicio": 557, "titulo": "Segurança e o salto duplo" },
+    { "inicio": 592, "titulo": "O curso: simulador, teoria e saltos" },
+    { "inicio": 683, "titulo": "As instruções antes de embarcar" },
+    { "inicio": 830, "titulo": "O desafio do peso e a preparação" },
+    { "inicio": 926, "titulo": "O salto" },
+    { "inicio": 1040, "titulo": "De volta ao chão: as reações" },
+    { "inicio": 1148, "titulo": "Segurança, meio ambiente e encerramento" }
+   ]
+  },
+  "dof-bombeiro-2024-master": {
+   "titulo": "De Olho no Futuro: Bombeiro militar",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: o sargento Tiradentes" },
+    { "inicio": 38, "titulo": "Da música ao Corpo de Bombeiros" },
+    { "inicio": 241, "titulo": "O que definiu a escolha" },
+    { "inicio": 360, "titulo": "Duas carreiras: oficial e praça" },
+    { "inicio": 420, "titulo": "Administrativo, operacional e as especialidades" },
+    { "inicio": 464, "titulo": "Postos e graduações" },
+    { "inicio": 501, "titulo": "Hoje na academia: formar novos bombeiros" },
+    { "inicio": 570, "titulo": "Salvamento e resgate: o Rio Grande do Sul" },
+    { "inicio": 786, "titulo": "Como se definem as prioridades num desastre" },
+    { "inicio": 912, "titulo": "Arriscar muito para salvar muito" },
+    { "inicio": 978, "titulo": "Recado a quem está escolhendo a profissão" },
+    { "inicio": 1129, "titulo": "Encerramento" }
+   ]
+  },
+  "matematicidades-s01e03-2024-master": {
+   "titulo": "Matematicidades: Estádio, mercado e planetário (Episódio 3)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura" },
+    { "inicio": 31, "titulo": "Centro de Excelência do Esporte" },
+    { "inicio": 94, "titulo": "Paradesporto e parque aquático" },
+    { "inicio": 127, "titulo": "Estádio Olímpico, Ginásio Rio Vermelho e laboratório" },
+    { "inicio": 209, "titulo": "Mercado da 74: Centro Cultural Marília Mendonça" },
+    { "inicio": 265, "titulo": "O acidente com o Césio-137" },
+    { "inicio": 346, "titulo": "As consequências do acidente" },
+    { "inicio": 408, "titulo": "Estação Ferroviária de Goiânia" },
+    { "inicio": 482, "titulo": "A Maria Fumaça" },
+    { "inicio": 539, "titulo": "Parque Mutirama" },
+    { "inicio": 648, "titulo": "O Pórtico do IFG" },
+    { "inicio": 755, "titulo": "Planetário da UFG" },
+    { "inicio": 812, "titulo": "Café trocado por equipamento: por que no Mutirama" },
+    { "inicio": 886, "titulo": "Marte em 2004 e as visitas hoje" }
+   ]
+  },
+  "matematicidades-s01e02-2024-master": {
+   "titulo": "Matematicidades: Art déco e Mercado Municipal (Episódio 2)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: o circuito centro" },
+    { "inicio": 39, "titulo": "Teatro Goiânia: do cinema ao palco" },
+    { "inicio": 74, "titulo": "A geometria do Art Déco" },
+    { "inicio": 141, "titulo": "Ensaio da Filarmônica e as reformas do teatro" },
+    { "inicio": 261, "titulo": "Vila Cultural Cora Coralina" },
+    { "inicio": 308, "titulo": "Quem foi Cora Coralina" },
+    { "inicio": 399, "titulo": "O que há na Vila Cultural" },
+    { "inicio": 470, "titulo": "Beco da Codorna: grafite a céu aberto" },
+    { "inicio": 616, "titulo": "A arte no cotidiano e o poder de transformar" },
+    { "inicio": 707, "titulo": "Centro Municipal de Cultura Goiânia Ouro" },
+    { "inicio": 765, "titulo": "Mercado Central de Goiânia" },
+    { "inicio": 856, "titulo": "Goianidade: memória e identidade" },
+    { "inicio": 919, "titulo": "A empada do Seu Alberto e encerramento" }
+   ]
+  },
+  "kalunga-s01e02-2024-master": {
+   "titulo": "Série Kalunga: Manifestações culturais (Episódio 2)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura" },
+    { "inicio": 37, "titulo": "O território Kalunga: 40 comunidades e resistência" },
+    { "inicio": 69, "titulo": "Folias, danças e rezas: a tradição oral" },
+    { "inicio": 116, "titulo": "A festa do Vão de Almas" },
+    { "inicio": 162, "titulo": "Romarias, impérios e as danças típicas" },
+    { "inicio": 237, "titulo": "A sussa e o bolé" },
+    { "inicio": 285, "titulo": "Os desafios de manter a cultura viva" },
+    { "inicio": 343, "titulo": "Festejos, folias e sincretismo religioso" },
+    { "inicio": 460, "titulo": "Agricultura, calendário dos santos e o Cerrado" },
+    { "inicio": 532, "titulo": "Memória coletiva e pertencimento" },
+    { "inicio": 652, "titulo": "Resistência cultural e o guardião do festejo" },
+    { "inicio": 723, "titulo": "Encerramento: a educação no próximo episódio" }
+   ]
+  },
+  "dof-ep03-2024-master": {
+   "titulo": "De Olho no Futuro: Jornalista esportiva",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: Claudiane Rodrigues" },
+    { "inicio": 40, "titulo": "Como escolheu o jornalismo" },
+    { "inicio": 171, "titulo": "Da música ao jornalismo: as outras opções" },
+    { "inicio": 268, "titulo": "O que definiu a escolha: a vocação para a comunicação" },
+    { "inicio": 334, "titulo": "Ser mulher no jornalismo esportivo" },
+    { "inicio": 468, "titulo": "A trajetória: por onde já passou" },
+    { "inicio": 499, "titulo": "As possibilidades do jornalismo além do esporte" },
+    { "inicio": 618, "titulo": "A comenda e a humildade na carreira" },
+    { "inicio": 682, "titulo": "Recado a quem quer seguir jornalismo" },
+    { "inicio": 731, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-analista-de-sistemas-2024-master": {
+   "titulo": "De Olho no Futuro: Analista de sistemas",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: Daiane Caetano" },
+    { "inicio": 55, "titulo": "Da Bahia à computação: como escolheu" },
+    { "inicio": 136, "titulo": "As outras opções e os testes vocacionais" },
+    { "inicio": 217, "titulo": "Qual área da TI escolher" },
+    { "inicio": 282, "titulo": "Trabalhar de Goiás para Lisboa" },
+    { "inicio": 347, "titulo": "Sistemas para o governo do Distrito Federal" },
+    { "inicio": 399, "titulo": "Ser mulher na área de TI" },
+    { "inicio": 510, "titulo": "As áreas de atuação em TI" },
+    { "inicio": 589, "titulo": "As vantagens da profissão" },
+    { "inicio": 640, "titulo": "Recado aos estudantes" },
+    { "inicio": 722, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-ep01-com-vinheta-2024-master": {
+   "titulo": "De Olho no Futuro: Piloto de aeronave",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: a piloto Yasmin" },
+    { "inicio": 37, "titulo": "Não fui eu que escolhi, ela me escolheu" },
+    { "inicio": 100, "titulo": "As outras opções e a influência da família" },
+    { "inicio": 182, "titulo": "Do Direito à aviação" },
+    { "inicio": 217, "titulo": "O que mais atrai na aviação" },
+    { "inicio": 282, "titulo": "Piloto executivo ou piloto de linha aérea" },
+    { "inicio": 384, "titulo": "Vantagens e desvantagens de cada caminho" },
+    { "inicio": 485, "titulo": "O início da carreira e a prova da ANAC" },
+    { "inicio": 600, "titulo": "Recado a quem quer ser piloto" },
+    { "inicio": 680, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-t06e03-engenheira-agronomica-2024-master": {
+   "titulo": "De Olho no Futuro: Engenheira agronômica",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: a engenheira Leandra" },
+    { "inicio": 43, "titulo": "Como escolheu a agronomia" },
+    { "inicio": 203, "titulo": "A carreira hoje: docência e planejamento agrícola" },
+    { "inicio": 302, "titulo": "Agronomia ou engenharia agronômica?" },
+    { "inicio": 335, "titulo": "Onde o agrônomo pode atuar" },
+    { "inicio": 399, "titulo": "Concursos e salários na área" },
+    { "inicio": 497, "titulo": "Recado aos estudantes" },
+    { "inicio": 561, "titulo": "Encerramento" }
+   ]
+  },
+  "evento-jornada-goias-tec-2024-master": {
+   "titulo": "Jornada Goiás Tec: Ensino Mediado",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura" },
+    { "inicio": 119, "titulo": "O que é o Goiás Tec: Ensino Mediado" },
+    { "inicio": 169, "titulo": "A história de Jennifer" },
+    { "inicio": 219, "titulo": "Como funciona: o Centro de Mídias" },
+    { "inicio": 299, "titulo": "O professor presencial e por que não é EAD" },
+    { "inicio": 385, "titulo": "Jennifer aprovada na universidade" },
+    { "inicio": 417, "titulo": "Os números: 9.561 estudantes em 105 cidades" },
+    { "inicio": 467, "titulo": "IDEB e SAEGO: os resultados" },
+    { "inicio": 515, "titulo": "Outros projetos educacionais" },
+    { "inicio": 550, "titulo": "Encerramento" }
+   ]
+  },
+  "leitura-s01e02-projeto-literatura-2024-master": {
+   "titulo": "Projeto Leitura: Bernardo Élis (Episódio 2)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: a arte de escrever" },
+    { "inicio": 33, "titulo": "A literatura goiana" },
+    { "inicio": 109, "titulo": "Quem foi Bernardo Élis" },
+    { "inicio": 143, "titulo": "A infância em Corumbá e a formação" },
+    { "inicio": 229, "titulo": "O retrato rural do Brasil Central" },
+    { "inicio": 245, "titulo": "Academias, cargos e reconhecimento" },
+    { "inicio": 292, "titulo": "Um poema de Bernardo Élis" },
+    { "inicio": 323, "titulo": "O regionalismo goiano na obra" },
+    { "inicio": 359, "titulo": "O Tronco, de 1956" },
+    { "inicio": 440, "titulo": "Chegou o Governador, de 1987" },
+    { "inicio": 490, "titulo": "A morte e o legado" },
+    { "inicio": 523, "titulo": "O projeto de leitura deste ano" }
+   ]
+  },
+  "festas-s01e01-cavalhadas-2025-master": {
+   "titulo": "Festas Típicas de Goiás: Cavalhadas (Episódio 1)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: as ruas ganham cor" },
+    { "inicio": 23, "titulo": "A origem europeia: torneios medievais e os mouros" },
+    { "inicio": 57, "titulo": "Como chegou ao Brasil: os jesuítas e o teatro" },
+    { "inicio": 125, "titulo": "Goiás, onde a tradição se enraizou" },
+    { "inicio": 161, "titulo": "As cavalhadas de Pirenópolis" },
+    { "inicio": 192, "titulo": "Cristãos e mouros: os personagens" },
+    { "inicio": 210, "titulo": "Os mascarados e os curucucus" },
+    { "inicio": 275, "titulo": "Vinte cidades, cada uma com seu jeito" },
+    { "inicio": 325, "titulo": "Por que os mascarados existem" },
+    { "inicio": 375, "titulo": "Religiosidade, paixão e tradição familiar" },
+    { "inicio": 472, "titulo": "Turismo e economia" }
+   ]
+  },
+  "leitura-s01e01-cora-coralina-2024-master": {
+   "titulo": "Projeto Leitura: Cora Coralina (Episódio 1)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: os versos de Cora" },
+    { "inicio": 44, "titulo": "O projeto de leitura deste ano" },
+    { "inicio": 87, "titulo": "Quem foi Cora Coralina" },
+    { "inicio": 111, "titulo": "De Ana Lins a Cora Coralina: o pseudônimo" },
+    { "inicio": 180, "titulo": "A Fazenda Paraíso, os primeiros versos e São Paulo" },
+    { "inicio": 249, "titulo": "Doceira por convicção, poeta por acaso" },
+    { "inicio": 289, "titulo": "O primeiro livro, aos 75 anos" },
+    { "inicio": 304, "titulo": "Drummond e o reconhecimento nacional" },
+    { "inicio": 336, "titulo": "As obras e a Casa Velha da Ponte" },
+    { "inicio": 370, "titulo": "Prêmios e títulos" },
+    { "inicio": 407, "titulo": "A morte e o legado" },
+    { "inicio": 425, "titulo": "O projeto de leitura deste ano" }
+   ]
+  },
+  "dof-dentista-2023-master": {
+   "titulo": "De Olho no Futuro: Dentista",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: a odontóloga Axa Caroline" },
+    { "inicio": 61, "titulo": "Como escolheu a odontologia" },
+    { "inicio": 110, "titulo": "Os 13 vestibulares" },
+    { "inicio": 159, "titulo": "Por que odontologia e não medicina" },
+    { "inicio": 224, "titulo": "O caminho depois da graduação" },
+    { "inicio": 303, "titulo": "As possibilidades que a odontologia abre" },
+    { "inicio": 402, "titulo": "Recado aos estudantes" },
+    { "inicio": 451, "titulo": "Encerramento" }
+   ]
+  },
+  "festas-s01e06-divino-pai-eterno-2025-master": {
+   "titulo": "Festas Típicas de Goiás: Divino Pai Eterno (Episódio 6)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: a capital da fé" },
+    { "inicio": 33, "titulo": "O medalhão de barro e a origem da devoção" },
+    { "inicio": 64, "titulo": "A imagem de Veiga Valle e a Basílica" },
+    { "inicio": 97, "titulo": "Os romeiros e os carros de boi" },
+    { "inicio": 117, "titulo": "A cidade vira templo a céu aberto" },
+    { "inicio": 166, "titulo": "A teologia por trás do medalhão" },
+    { "inicio": 215, "titulo": "185 anos de tradição e romarias" },
+    { "inicio": 266, "titulo": "A esperança que renasce no olhar" },
+    { "inicio": 317, "titulo": "Encerramento da série" },
+    { "inicio": 374, "titulo": "Canção final" }
+   ]
+  },
+  "festas-s01e03-romaria-do-muquem-2025-master": {
+   "titulo": "Festas Típicas de Goiás: Romaria de Muquém (Episódio 3)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: uma das maiores romarias do Brasil" },
+    { "inicio": 38, "titulo": "As origens: o ermitão e a imagem da santa" },
+    { "inicio": 91, "titulo": "O acampamento goiano: uma cidade de casas" },
+    { "inicio": 142, "titulo": "Os 45 km da Rodovia da Fé" },
+    { "inicio": 176, "titulo": "A missa no Morro Cruzeiro" },
+    { "inicio": 191, "titulo": "O santuário e os 400 mil fiéis" },
+    { "inicio": 227, "titulo": "A cidade de lona" },
+    { "inicio": 244, "titulo": "Patrimônio imaterial e a comunidade quilombola" },
+    { "inicio": 311, "titulo": "Encerramento" }
+   ]
+  },
+  "festas-s01e04-folia-de-reis-2025-master": {
+   "titulo": "Festas Típicas de Goiás: Folia de Reis (Episódio 4)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: o cortejo de cantos e cores" },
+    { "inicio": 25, "titulo": "A origem portuguesa e a chegada a Goiás" },
+    { "inicio": 64, "titulo": "O giro: de casa em casa, com a bandeira" },
+    { "inicio": 116, "titulo": "Os papéis: embaixador, alferes, mestre e palhaço" },
+    { "inicio": 131, "titulo": "As músicas: viola, caixa e pandeiro" },
+    { "inicio": 149, "titulo": "O encontro de folias e a partilha" },
+    { "inicio": 168, "titulo": "Fé e resistência" },
+    { "inicio": 187, "titulo": "Encerramento" }
+   ]
+  },
+  "festas-s01e05-congadas-2025-master": {
+   "titulo": "Festas Típicas de Goiás: Congadas (Episódio 5)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: entre tambores, danças e fé" },
+    { "inicio": 26, "titulo": "A origem africana e o sincretismo" },
+    { "inicio": 42, "titulo": "Onde a Congada acontece em Goiás" },
+    { "inicio": 78, "titulo": "Catalão e Niquelândia: ternos e trajes" },
+    { "inicio": 114, "titulo": "A hierarquia: reis, rainhas e capitães" },
+    { "inicio": 131, "titulo": "A missa e o Rei Congo" },
+    { "inicio": 148, "titulo": "Resistência e ancestralidade negra" },
+    { "inicio": 207, "titulo": "Encerramento" }
+   ]
+  },
+  "campanha-20-de-novembro-2024-master": {
+   "titulo": "Campanha 20 de Novembro",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: o Dia da Consciência Negra" },
+    { "inicio": 19, "titulo": "Leodegária de Jesus, a primeira escritora" },
+    { "inicio": 90, "titulo": "João de Abouque, o líder religioso" },
+    { "inicio": 125, "titulo": "Dalton Paula, o artista educador" },
+    { "inicio": 157, "titulo": "Naya Violeta, a moda afro-brasileira" },
+    { "inicio": 205, "titulo": "Encerramento" }
+   ]
+  },
+  "inst-balanco-convenio-seduc-crialab-ueg-2024-master": {
+   "titulo": "Balanço do Convênio Seduc",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: a parceria Goiás Tec e CriaLab UEG" },
+    { "inicio": 17, "titulo": "O início do convênio, em outubro de 2023" },
+    { "inicio": 34, "titulo": "Treinamento, cursos e oficinas" },
+    { "inicio": 66, "titulo": "Cenários, iluminação e os cinco livros" },
+    { "inicio": 85, "titulo": "As 1.336 aulas gravadas" },
+    { "inicio": 117, "titulo": "Conteúdos multimídia e os projetos" },
+    { "inicio": 168, "titulo": "Os 15 vídeos institucionais" },
+    { "inicio": 187, "titulo": "As redes sociais em números" },
+    { "inicio": 206, "titulo": "2024: a parceria vai além" }
+   ]
+  },
+  "inst-reuniao-de-pais-2025-master": {
+   "titulo": "Reunião de Pais",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: o que é o Goiás Tec" },
+    { "inicio": 15, "titulo": "Dois professores por aula" },
+    { "inicio": 33, "titulo": "Chromebook e apostila impressa" },
+    { "inicio": 70, "titulo": "Formações e interatividade ao vivo" },
+    { "inicio": 86, "titulo": "Como é a aula: 25 minutos e 10 de interação" },
+    { "inicio": 102, "titulo": "Robótica, fotografia, cinema e feiras" },
+    { "inicio": 119, "titulo": "A estrutura pedagógica por trás" },
+    { "inicio": 153, "titulo": "Oito estúdios e as aulas gravadas" },
+    { "inicio": 171, "titulo": "Os resultados: primeiro lugar no IDEB" }
+   ]
+  },
+  "festas-s01e02-procissao-do-fogareu-2025-master": {
+   "titulo": "Festas Típicas de Goiás: Procissão do Fogaréu (Episódio 2)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura: fogo, escuridão e encenação" },
+    { "inicio": 20, "titulo": "A origem: o padre espanhol e Sevilha" },
+    { "inicio": 53, "titulo": "Os farricocos: os soldados romanos" },
+    { "inicio": 72, "titulo": "O farricoco de túnica branca e o estandarte" },
+    { "inicio": 106, "titulo": "À meia-noite, com as luzes da cidade apagadas" },
+    { "inicio": 123, "titulo": "O percurso pelas igrejas" },
+    { "inicio": 156, "titulo": "Patrimônio e identidade cultural" },
+    { "inicio": 172, "titulo": "Quase três séculos de tradição" }
+   ]
+  }
+ },
+ "sem_capitulos": {
+  "observacao": "Publicados que NÃO ganham capítulo, e por quê. Está aqui para a próxima sessão não refazer a análise — e, no caso do institucional, para ninguém mandá-lo para a fila de transcrição paga por engano.",
+  "inst-video-geral-goias-tec-2025-master": "NÃO TEM LEGENDA NENHUMA — `captions: []` na API e 404 em captions/pt.vtt na pull zone (conferido em 31/08/2026). O áudio é só trilha musical e o AssemblyAI devolveu zero palavras. Não há de onde tirar capítulo, e gerá-la custaria transcrição paga (US$ 0,10 por minuto) sobre um vídeo sem fala. É o mesmo título que está no ar sem sinopse.",
+  "evento-5-encontro-2024-master": "4:12 de depoimentos seguidos sobre o mesmo assunto (IDEB e formações), sem troca de tema e sem nome de quem fala na legenda. Qualquer corte seria arbitrário.",
+  "videoclipe-pequipod-ciranda-da-arte-2025-master": "Videoclipe. A legenda é letra de música.",
+  "campanha-boas-ferias-2024-master": "2:50 de peça de campanha, 4 blocos de fala.",
+  "campanha-volta-as-aulas-2024-master": "2:14 de peça de campanha, 4 blocos de fala.",
+  "curta-tapunga-2024-v2": "Curta de 2:05 — 3 blocos de fala. Capítulo em vídeo desse tamanho é ruído.",
+  "curta-paraquedismo-2024-v2": "Curta de 1:59 — 2 blocos de fala.",
+  "curta-matematicidades-2024-v2": "Curta de 1:49 — 3 blocos de fala.",
+  "curta-kalunga-2024-v2": "Curta de 1:43 — 3 blocos de fala.",
+  "curta-leitura-2024-v2": "Curta de 1:42 — 3 blocos de fala."
+ }
+}

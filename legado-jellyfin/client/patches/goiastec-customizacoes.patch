@@ -1,0 +1,277 @@
+diff --git a/packages/frontend/src/assets/styles/global.css b/packages/frontend/src/assets/styles/global.css
+index e3403a7..5bc5858 100644
+--- a/packages/frontend/src/assets/styles/global.css
++++ b/packages/frontend/src/assets/styles/global.css
+@@ -1,7 +1,6 @@
+ * {
+   font-family: var(--j-font-family), sans-serif, system-ui !important;
+   backface-visibility: hidden;
+-  scrollbar-gutter: stable both-edges;
+   overscroll-behavior: none;
+ }
+ 
+diff --git a/packages/frontend/src/components/Layout/AppBar/AppBar.vue b/packages/frontend/src/components/Layout/AppBar/AppBar.vue
+index 20a5d67..f6eef90 100644
+--- a/packages/frontend/src/components/Layout/AppBar/AppBar.vue
++++ b/packages/frontend/src/components/Layout/AppBar/AppBar.vue
+@@ -50,6 +50,8 @@
+     </AppBarButtonLayout>
+     <!-- Uncomment when some of the remote play features are fully implemented -->
+     <!-- <cast-button /> -->
++    <!-- Goiás Tec +: sino de notificações in-app -->
++    <NotificationBell />
+     <UserButton />
+     <LocaleSwitcher elevated />
+   </VAppBar>
+@@ -61,6 +63,7 @@ import { windowScroll, isConnectedToServer, transparencyEffects } from '#/store/
+ import { themeSettings } from '#/store/settings/theme.ts';
+ import { remote } from '#/plugins/remote/index.ts';
+ import { JView_isRouting } from '#/store/keys.ts';
++import NotificationBell from '#/components/Notifications/NotificationBell.vue';
+ 
+ const { y } = windowScroll;
+ const isRouting = inject(JView_isRouting);
+diff --git a/packages/frontend/src/components/Layout/TimeSlider.vue b/packages/frontend/src/components/Layout/TimeSlider.vue
+index eb22bb0..d42e1e4 100644
+--- a/packages/frontend/src/components/Layout/TimeSlider.vue
++++ b/packages/frontend/src/components/Layout/TimeSlider.vue
+@@ -1,29 +1,41 @@
+ <template>
+-  <VSlider
+-    v-model="sliderValue"
+-    hide-details
+-    :max="runtime"
+-    thumb-label
+-    validate-on="input"
+-    @start="clicked = true"
+-    @end="onRelease">
+-    <template #prepend>
+-      {{ formatTime(playbackManager.currentTime.value) }}
+-    </template>
+-    <template #thumb-label>
+-      {{ formatTime(sliderValue) }}
+-    </template>
+-    <template #append>
+-      {{ formatTime(runtime) }}
+-    </template>
+-  </VSlider>
++  <div ref="containerRef" class="uno-relative">
++    <!-- Goiás Tec +: marcadores de comentários na timeline -->
++    <CommentTimeline
++      v-if="currentItemId"
++      :item-id="currentItemId"
++      :runtime-ms="runtimeMs"
++      :style="trackInsets"
++      @seek="seekFromComment" />
++    <VSlider
++      v-model="sliderValue"
++      hide-details
++      :max="runtime"
++      thumb-label
++      validate-on="input"
++      @start="clicked = true"
++      @end="onRelease">
++      <template #prepend>
++        {{ formatTime(playbackManager.currentTime.value) }}
++      </template>
++      <template #thumb-label>
++        {{ formatTime(sliderValue) }}
++      </template>
++      <template #append>
++        {{ formatTime(runtime) }}
++      </template>
++    </VSlider>
++  </div>
+ </template>
+ 
+ <script setup lang="ts">
+-import { computed, ref } from 'vue';
++import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+ import { playbackManager } from '#/store/playback-manager.ts';
+ import { formatTime } from '#/utils/time.ts';
++import CommentTimeline from '#/components/Comments/CommentTimeline.vue';
+ 
++const currentItemId = computed(() => playbackManager.currentItem.value?.Id ?? '');
++const runtimeMs = computed(() => playbackManager.currentItemRuntime.value || 0);
+ const currentInput = ref(0);
+ const clicked = ref(false);
+ const runtime = computed(() => playbackManager.currentItemRuntime.value / 1000);
+@@ -42,4 +54,54 @@ function onRelease(): void {
+   playbackManager.currentTime.value = currentInput.value;
+   clicked.value = false;
+ }
++
++/** Goiás Tec +: clicar em um marcador busca o vídeo na posição do comentário (ticks → ms). */
++function seekFromComment(ticks: number): void {
++  playbackManager.currentTime.value = ticks / 10000;
++}
++
++/* ------------------------------------------------------------------ */
++/* Alinhamento dos marcadores com a trilha do slider.
++   O VSlider tem rótulos de tempo no prepend/append (o VInput usa grid
++   "prepend | control | append"), então a trilha real (`.v-slider__container`,
++   que contém `.v-slider-track`) não ocupa a largura toda do wrapper.
++   Medimos a posição da trilha e encolhemos o overlay de marcadores até
++   ela — assim o `left: X%` dos marcadores bate com a posição do tempo no
++   slider (e com o thumb).                                        */
++/* ------------------------------------------------------------------ */
++const containerRef = ref<HTMLElement>();
++const trackInsets = ref({ left: '0px', right: '0px' });
++
++let resizeObserver: ResizeObserver | undefined;
++
++function measureTrackInsets(): void {
++  const container = containerRef.value;
++  const trackEl = container?.querySelector<HTMLElement>('.v-slider__container');
++  if (!container || !trackEl) return;
++
++  const containerRect = container.getBoundingClientRect();
++  const trackRect = trackEl.getBoundingClientRect();
++
++  trackInsets.value = {
++    left: `${Math.max(0, trackRect.left - containerRect.left)}px`,
++    right: `${Math.max(0, containerRect.right - trackRect.right)}px`
++  };
++}
++
++onMounted(() => {
++  measureTrackInsets();
++
++  // Re-mede quando a trilha refluir (ex.: largura dos rótulos de tempo muda)
++  resizeObserver = new ResizeObserver(measureTrackInsets);
++  if (containerRef.value) resizeObserver.observe(containerRef.value);
++  const trackEl = containerRef.value?.querySelector<HTMLElement>('.v-slider__container');
++  if (trackEl) resizeObserver.observe(trackEl);
++
++  // Re-mede depois que as fontes carregam (afetam a largura dos rótulos)
++  document.fonts?.ready
++    ?.then(() => measureTrackInsets())
++    .catch(() => undefined);
++});
++
++onBeforeUnmount(() => resizeObserver?.disconnect());
+ </script>
+diff --git a/packages/frontend/src/composables/use-playback.ts b/packages/frontend/src/composables/use-playback.ts
+index bd48905..2bb846b 100644
+--- a/packages/frontend/src/composables/use-playback.ts
++++ b/packages/frontend/src/composables/use-playback.ts
+@@ -3,6 +3,7 @@ import { watch } from 'vue';
+ import { router } from '#/plugins/router/index.ts';
+ import { mediaElementRef } from '#/store/index.ts';
+ import { playbackManager } from '#/store/playback-manager.ts';
++import { useCommentsShortcut } from '#/composables/use-comments-shortcut.ts';
+ 
+ /**
+  * Watchers and handlers that are common to fullscreen music and video playback
+@@ -47,5 +48,8 @@ export function usePlayback() {
+   whenever(keys.AudioVolumeUp, playbackManager.volumeUp);
+   whenever(keys.AudioVolumeDown, playbackManager.volumeDown);
+ 
++  // Goiás Tec +: atalho configurável (padrão C) para ligar/desligar os comentários no player
++  useCommentsShortcut();
++
+   return { fullscreen };
+ }
+diff --git a/packages/frontend/src/pages/item/[itemId].vue b/packages/frontend/src/pages/item/[itemId].vue
+index 9acdd12..a7cfdcc 100644
+--- a/packages/frontend/src/pages/item/[itemId].vue
++++ b/packages/frontend/src/pages/item/[itemId].vue
+@@ -278,6 +278,10 @@
+           <RelatedItems :related-items="relatedItems" />
+         </VCol>
+       </VRow>
++      <!-- Goiás Tec +: seção de comentários do vídeo -->
++      <CommentsSection
++        v-if="item && item.MediaType === 'Video' && item.Id"
++        :item-id="item.Id" />
+     </template>
+     <template #right>
+       <div v-if="crew.length">
+@@ -311,6 +315,7 @@ import { getItemizedSelect } from '#/utils/forms.ts';
+ import { useBaseItem } from '#/composables/apis.ts';
+ import { useItemBackdrop } from '#/composables/backdrop.ts';
+ import { useItemPageTitle } from '#/composables/page-title.ts';
++import CommentsSection from '#/components/Comments/CommentsSection.vue';
+ 
+ const route = useRoute('/genre/[itemId]');
+ 
+diff --git a/packages/frontend/src/pages/playback/video.vue b/packages/frontend/src/pages/playback/video.vue
+index 650008f..495a231 100644
+--- a/packages/frontend/src/pages/playback/video.vue
++++ b/packages/frontend/src/pages/playback/video.vue
+@@ -1,7 +1,7 @@
+ <template>
+   <div
+     ref="videoContainerRef"
+-    class="fill-height uno-flex uno-justify-center uno-bg-black !uno-h-screen"
++    class="fill-height uno-flex uno-justify-center uno-bg-black !uno-h-screen uno-relative"
+     :class="{ 'uno-cursor-none': !overlay }"
+     @mousemove.passive="handleMouseMove"
+     @touchend.passive="handleMouseMove">
+@@ -79,6 +79,17 @@
+               <VolumeSlider
+                 v-if="$vuetify.display.smAndUp"
+                 class="uno-mr-2" />
++              <JTooltip
++                position="top"
++                :text="commentsEnabled ? 'Ocultar comentários' : 'Mostrar comentários'">
++                <VBtn
++                  class="uno-self-center"
++                  icon
++                  :color="commentsEnabled ? 'primary' : undefined"
++                  @click="toggleComments()">
++                  <JIcon class="i-mdi:comment-text-multiple-outline" />
++                </VBtn>
++              </JTooltip>
+               <QueueButton close-on-click />
+               <SubtitleSelectionButton
+                 v-if="$vuetify.display.smAndUp"
+@@ -112,13 +123,14 @@
+         </div>
+       </div>
+     </JOverlay>
++    <CommentsPanel v-if="commentsEnabled" />
+   </div>
+ </template>
+ 
+ <script setup lang="ts">
+ import { BaseItemKind } from '@jellyfin/sdk/lib/generated-client';
+ import { useTimeoutFn } from '@vueuse/core';
+-import { computed, shallowRef, watch } from 'vue';
++import { computed, defineAsyncComponent, shallowRef, watch } from 'vue';
+ import { playbackGuard } from '#/plugins/router/middlewares/playback.ts';
+ import {
+   mediaControls
+@@ -127,6 +139,9 @@ import { playbackManager } from '#/store/playback-manager.ts';
+ import { playerElement, videoContainerRef } from '#/store/player-element.ts';
+ import { getEndsAtTime, msToTicks } from '#/utils/time.ts';
+ import { usePlayback } from '#/composables/use-playback.ts';
++import { commentsEnabled, toggleComments } from '#/store/goias-tec-comments.ts';
++
++const CommentsPanel = defineAsyncComponent(() => import('#/components/Comments/CommentsPanel.vue'));
+ 
+ definePage({
+   beforeEnter: playbackGuard,
+diff --git a/packages/frontend/types/global/components.d.ts b/packages/frontend/types/global/components.d.ts
+index e9f276d..4a0948f 100644
+--- a/packages/frontend/types/global/components.d.ts
++++ b/packages/frontend/types/global/components.d.ts
+@@ -26,6 +26,10 @@ declare module 'vue' {
+     CarouselProgressBar: typeof import('./../../src/components/Layout/Carousel/CarouselProgressBar.vue')['default']
+     CastButton: typeof import('./../../src/components/Layout/AppBar/Buttons/CastButton.vue')['default']
+     CollectionTabs: typeof import('./../../src/components/Item/CollectionTabs.vue')['default']
++    CommentItem: typeof import('./../../src/components/Comments/CommentItem.vue')['default']
++    CommentsPanel: typeof import('./../../src/components/Comments/CommentsPanel.vue')['default']
++    CommentsSection: typeof import('./../../src/components/Comments/CommentsSection.vue')['default']
++    CommentTimeline: typeof import('./../../src/components/Comments/CommentTimeline.vue')['default']
+     CommitLink: typeof import('./../../src/components/Layout/Navigation/CommitLink.vue')['default']
+     ConfirmDialog: typeof import('./../../src/components/Dialogs/ConfirmDialog.vue')['default']
+     DateInput: typeof import('./../../src/components/Item/Metadata/DateInput.vue')['default']
+@@ -76,6 +80,7 @@ declare module 'vue' {
+     MusicVisualizer: typeof import('./../../src/components/Playback/MusicVisualizer.vue')['default']
+     NavigationDrawer: typeof import('./../../src/components/Layout/Navigation/NavigationDrawer.vue')['default']
+     NextTrackButton: typeof import('./../../src/components/Buttons/Playback/NextTrackButton.vue')['default']
++    NotificationBell: typeof import('./../../src/components/Notifications/NotificationBell.vue')['default']
+     PeopleList: typeof import('./../../src/components/Item/PeopleList.vue')['default']
+     PersonEditor: typeof import('./../../src/components/Item/Metadata/PersonEditor.vue')['default']
+     PlaybackSettingsButton: typeof import('./../../src/components/Buttons/Playback/PlaybackSettingsButton.vue')['default']

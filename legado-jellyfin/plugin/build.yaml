@@ -1,0 +1,17 @@
+# build.yaml — usado pelo repositório do plugin para publicação automática
+# Documentação: https://jellyfin.org/docs/general/server/plugins
+
+name: "GoiasTecPlus"
+guid: "9f3a7b1c-2d4e-4f5a-8b6c-3d4e5f6a7b8c"
+version: "0.1.0.0"
+targetAbi: "10.11.0.0"
+owner: "goias-tec"
+overview: "Comentários ancorados no tempo, papéis de usuário e sync com Google Drive/YouTube para o Goiás Tec +."
+description: >
+  Plugin do Goiás Tec +: comentários em timestamps com categorias editáveis e fluxo de revisão
+  produtora-cliente, papéis (superadmin/admin/editor/convidado), detecção de novos vídeos no
+  Google Drive (rclone mount) e download de legendas automáticas do YouTube via yt-dlp/deno.
+category: "General"
+artifacts:
+  - "Jellyfin.Plugin.GoiasTecPlus.dll"
+changelog: "Versão inicial."

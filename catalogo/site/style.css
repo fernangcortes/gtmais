@@ -1,0 +1,453 @@
+/* Goiás Tec + — catálogo interno.
+ * Sem framework, sem build. Trocar a marca = trocar o bloco :root abaixo. */
+
+:root {
+  --marca: #0f6b45;
+  --marca-clara: #14895a;
+  --marca-fraca: #e6f2ec;
+  --fundo: #f6f7f8;
+  --superficie: #ffffff;
+  --borda: #dcdfe3;
+  --texto: #16191d;
+  --texto-fraco: #5c646e;
+  --alerta: #8a5a00;
+  --alerta-fundo: #fff6e0;
+  --erro: #a11a1a;
+  --erro-fundo: #fdeceb;
+  --raio: 10px;
+  --sombra: 0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .1);
+  /* A grade única do catálogo ocupa esta largura inteira; em 1180px sobrava
+   * uma faixa vazia à direita nos monitores de trabalho. */
+  --largura: 1400px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --marca: #35c088;
+    --marca-clara: #4ad39a;
+    --marca-fraca: #16241e;
+    --fundo: #101315;
+    --superficie: #191d20;
+    --borda: #2c3237;
+    --texto: #e9edf0;
+    --texto-fraco: #98a2ad;
+    --alerta: #e0b356;
+    --alerta-fundo: #2a2415;
+    --erro: #f08c86;
+    --erro-fundo: #2c1817;
+    --sombra: none;
+  }
+}
+
+* { box-sizing: border-box; }
+
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  background: var(--fundo);
+  color: var(--texto);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+a { color: var(--marca); }
+
+img { max-width: 100%; display: block; }
+
+.limite { max-width: var(--largura); margin: 0 auto; padding: 0 16px; }
+
+.pular {
+  position: absolute; left: -9999px; top: 0; z-index: 100;
+  background: var(--superficie); color: var(--texto); padding: 10px 14px;
+}
+.pular:focus { left: 8px; top: 8px; }
+
+/* --------------------------------------------------------------- cabeçalho */
+
+.topo {
+  background: var(--superficie);
+  border-bottom: 1px solid var(--borda);
+  position: sticky; top: 0; z-index: 20;
+}
+
+.topo-linha {
+  display: flex; align-items: center; gap: 16px;
+  padding-top: 12px; padding-bottom: 12px; flex-wrap: wrap;
+}
+
+.marca {
+  font-size: 20px; font-weight: 700; letter-spacing: -.01em;
+  color: var(--texto); text-decoration: none; white-space: nowrap;
+}
+.marca span { color: var(--marca); }
+
+.marca-sub {
+  font-size: 12px; color: var(--texto-fraco); font-weight: 400;
+  display: block; letter-spacing: 0;
+}
+
+.busca { flex: 1 1 260px; min-width: 0; position: relative; }
+
+.busca input {
+  width: 100%; padding: 9px 12px; font-size: 15px; color: var(--texto);
+  background: var(--fundo); border: 1px solid var(--borda);
+  border-radius: var(--raio);
+}
+.busca input:focus { outline: 2px solid var(--marca); outline-offset: 1px; }
+
+.chips {
+  display: flex; gap: 8px; overflow-x: auto; padding-bottom: 12px;
+  scrollbar-width: thin;
+}
+
+.chip {
+  flex: 0 0 auto; padding: 5px 12px; font-size: 13px; cursor: pointer;
+  background: var(--fundo); color: var(--texto-fraco);
+  border: 1px solid var(--borda); border-radius: 999px;
+  font-family: inherit; white-space: nowrap;
+}
+.chip:hover { color: var(--texto); }
+.chip[aria-pressed="true"] {
+  background: var(--marca); border-color: var(--marca); color: #fff; font-weight: 500;
+}
+@media (prefers-color-scheme: dark) {
+  .chip[aria-pressed="true"] { color: #06120d; }
+}
+
+/* --------------------------------------------------------------- conteúdo */
+
+main { padding: 24px 0 64px; }
+
+.contagem { color: var(--texto-fraco); font-size: 13px; margin: 0 0 18px; }
+
+/* Uma grade só para o catálogo inteiro. Os blocos por série saíram: com 18
+ * séries, cada faixa mostrava um ou dois cartões e sobrava a tela toda à
+ * direita. `min(280px, 100%)` é o que impede a coluna de estourar a largura
+ * em telas estreitas. */
+.grade {
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(min(280px, 100%), 1fr));
+}
+
+.card {
+  background: var(--superficie); border: 1px solid var(--borda);
+  border-radius: var(--raio); overflow: hidden;
+  text-decoration: none; color: inherit;
+  display: flex; flex-direction: column;
+  box-shadow: var(--sombra);
+  transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+}
+.card:hover, .card:focus-visible {
+  transform: translateY(-2px); border-color: var(--marca);
+  box-shadow: 0 4px 14px rgba(16, 24, 40, .1);
+}
+.card:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+
+.card-capa {
+  aspect-ratio: 16 / 9; background: var(--marca-fraca);
+  position: relative; overflow: hidden;
+}
+.card-capa img { width: 100%; height: 100%; object-fit: cover; }
+
+.card-capa-vazia {
+  width: 100%; height: 100%; display: flex; align-items: center;
+  justify-content: center; color: var(--texto-fraco); font-size: 12px;
+}
+
+/* Trecho animado (preview.webp do Bunny) por cima da capa. O <img> só existe
+ * no DOM enquanto o ponteiro está sobre o cartão — quem cria e destrói é
+ * ligarPreview() em app.js, e é isso que evita ~15 MB na tela inicial. */
+.card-previa {
+  position: absolute; inset: 0; z-index: 1;
+  opacity: 0; transition: opacity .2s ease;
+}
+.card-capa-com-previa .card-previa { opacity: 1; }
+
+.card-duracao {
+  position: absolute; right: 8px; bottom: 8px; z-index: 2;
+  background: rgba(0, 0, 0, .78); color: #fff;
+  font-size: 12px; padding: 1px 6px; border-radius: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.card-corpo {
+  padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 5px;
+  flex: 1 1 auto; min-width: 0;
+}
+
+.card-titulo { font-size: 16px; font-weight: 600; line-height: 1.3; margin: 0; }
+
+.card-meta { font-size: 12.5px; color: var(--texto-fraco); margin: 0; }
+
+/* Mini-sinopse: 3 linhas com reticências do próprio navegador. O corte grosso
+ * por caracteres é do resumoSinopse(); aqui é a largura real que manda.
+ * Quando não há sinopse o parágrafo nem chega a existir — nada a esconder. */
+.card-sinopse {
+  font-size: 13.5px; line-height: 1.45; color: var(--texto-fraco); margin: 1px 0 0;
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden;
+}
+
+.selo {
+  display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px;
+  background: var(--alerta-fundo); color: var(--alerta); margin-top: 4px;
+  align-self: flex-start;
+}
+.selo-erro { background: var(--erro-fundo); color: var(--erro); }
+
+/* Quem pediu menos movimento não recebe nem o trecho animado (barrado em
+ * app.js) nem as transições do cartão. */
+@media (prefers-reduced-motion: reduce) {
+  .card, .card-previa { transition: none; }
+  .card:hover, .card:focus-visible { transform: none; }
+}
+
+/* Celular: cartão deitado, capa à esquerda.
+ *
+ * Em retrato, o cartão vertical de largura inteira daria dois títulos por tela
+ * e os 33 viravam 16 rolagens. Em paisagem o problema é a altura: numa tela de
+ * 390 px, um cartão vertical sozinho já tem 359 px.
+ *
+ * O segundo bloco da consulta pede `pointer: coarse` de propósito — janela de
+ * navegador baixinha no computador não é celular deitado e fica de fora.
+ * Uma coluna em retrato e duas em paisagem saem sozinhas do `auto-fill`. */
+@media (max-width: 560px),
+       (orientation: landscape) and (max-height: 480px) and (pointer: coarse) {
+  .grade { grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr)); gap: 12px; }
+  .card { flex-direction: row; }
+  .card:hover, .card:focus-visible { transform: none; }
+  /* `stretch` faz a capa acompanhar a altura do cartão em vez de parar no
+   * 16/9 e deixar uma faixa branca embaixo; o object-fit: cover corta. */
+  .card-capa { flex: 0 0 40%; max-width: 180px; align-self: stretch; min-height: 88px; }
+  .card-corpo { padding: 10px 12px; gap: 4px; }
+  .card-titulo { font-size: 15px; }
+  .card-sinopse { -webkit-line-clamp: 2; line-clamp: 2; font-size: 13px; }
+}
+
+/* ------------------------------------------------------------------ ficha */
+
+.voltar {
+  display: inline-block; margin-bottom: 16px; font-size: 14px;
+  color: var(--texto-fraco); text-decoration: none;
+}
+.voltar:hover { color: var(--marca); }
+
+.ficha { display: grid; gap: 28px; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); }
+
+@media (max-width: 900px) { .ficha { grid-template-columns: 1fr; } }
+
+.player {
+  aspect-ratio: 16 / 9; width: 100%; background: #000;
+  border-radius: var(--raio); overflow: hidden; border: 1px solid var(--borda);
+}
+.player iframe { width: 100%; height: 100%; border: 0; display: block; }
+
+.player-ausente {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  color: #cfd6dd; font-size: 14px; text-align: center; padding: 24px;
+}
+
+.ficha h1 { font-size: 24px; line-height: 1.25; margin: 0 0 6px; }
+
+.ficha-meta { color: var(--texto-fraco); font-size: 14px; margin: 0 0 18px; }
+
+.sinopse { font-size: 15.5px; margin: 0 0 20px; white-space: pre-wrap; }
+.sinopse-vazia { color: var(--texto-fraco); font-style: italic; }
+
+.dados {
+  border-top: 1px solid var(--borda); margin: 0; padding-top: 14px;
+  display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 13.5px;
+}
+.dados dt { color: var(--texto-fraco); }
+.dados dd { margin: 0; }
+
+/* Capítulos — a lista clicável abaixo do player.
+ *
+ * A linha do tempo segmentada e o título no hover são do PLAYER do Bunny, não
+ * daqui: o iframe é de outro domínio e esta folha de estilo não o alcança.
+ *
+ * Rolagem própria com teto de altura: o vídeo mais longo tem 15 capítulos, e
+ * sem o teto a lista empurraria a sinopse para bem abaixo da dobra. */
+.capitulos {
+  margin-top: 22px; border-top: 1px solid var(--borda); padding-top: 16px;
+}
+
+.capitulos-titulo {
+  font-size: 13px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--texto-fraco); margin: 0 0 10px; font-weight: 600;
+}
+
+.capitulos-lista {
+  list-style: none; margin: 0; padding: 0;
+  max-height: 340px; overflow-y: auto; overscroll-behavior: contain;
+}
+
+.capitulo {
+  display: flex; gap: 12px; align-items: baseline; width: 100%; text-align: left;
+  padding: 7px 10px; border: 0; border-radius: var(--raio); background: none;
+  color: var(--texto); font: inherit; font-size: 14.5px;
+  /* `default` e não `pointer`: enquanto o Player.js não responde o clique não
+   * pula nada, e prometer o contrário com o cursor é mentira. A classe
+   * `capitulos-ativos` entra no `ready` e é ela que promove para `pointer`. */
+  cursor: default;
+}
+
+.capitulo-tempo {
+  flex: none; min-width: 46px; font-variant-numeric: tabular-nums;
+  color: var(--marca); font-size: 13.5px;
+}
+
+.capitulo-nome { flex: 1 1 auto; }
+
+.capitulos-ativos .capitulo { cursor: pointer; }
+.capitulos-ativos .capitulo:hover { background: var(--marca-fraca); }
+.capitulo:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
+
+/* O capítulo que está tocando. `aria-current` é o próprio estado, não uma
+ * classe paralela: o leitor de tela anuncia junto com o destaque visual. */
+.capitulo[aria-current] { background: var(--marca-fraca); font-weight: 600; }
+.capitulo[aria-current] .capitulo-tempo { font-weight: 700; }
+
+/* Em telas de toque a lista é o ÚNICO jeito de navegar por capítulo: o hover
+ * na linha do tempo do player não existe. Por isso ela ganha alvo maior aqui,
+ * em vez de encolher. */
+@media (max-width: 900px) {
+  .capitulos-lista { max-height: none; }
+  .capitulo { padding: 11px 10px; }
+}
+
+/* Navegação entre episódios: sempre por clique. Nunca automática. */
+.navegacao {
+  display: flex; gap: 10px; flex-wrap: wrap;
+  border-top: 1px solid var(--borda); margin-top: 22px; padding-top: 16px;
+}
+
+.botao {
+  display: inline-block; padding: 8px 14px; font-size: 14px; cursor: pointer;
+  background: var(--superficie); color: var(--texto); text-decoration: none;
+  border: 1px solid var(--borda); border-radius: var(--raio); font-family: inherit;
+}
+.botao:hover { border-color: var(--marca); color: var(--marca); }
+.botao-primario {
+  background: var(--marca); border-color: var(--marca); color: #fff; font-weight: 500;
+}
+.botao-primario:hover { background: var(--marca-clara); border-color: var(--marca-clara); color: #fff; }
+.botao:disabled, .botao[aria-disabled="true"] { opacity: .5; cursor: not-allowed; }
+
+.aviso {
+  border: 1px solid var(--borda); border-left: 3px solid var(--alerta);
+  background: var(--alerta-fundo); color: var(--alerta);
+  padding: 10px 14px; border-radius: var(--raio); font-size: 14px; margin: 0 0 18px;
+}
+.aviso-erro { border-left-color: var(--erro); background: var(--erro-fundo); color: var(--erro); }
+
+.vazio {
+  text-align: center; padding: 64px 16px; color: var(--texto-fraco);
+}
+.vazio h2 { color: var(--texto); font-size: 18px; margin: 0 0 8px; }
+
+.rodape {
+  border-top: 1px solid var(--borda); padding: 20px 0 40px;
+  color: var(--texto-fraco); font-size: 12.5px;
+}
+
+/* ------------------------------------------------------------------ admin */
+
+.abas { display: flex; gap: 4px; border-bottom: 1px solid var(--borda); margin-bottom: 24px; flex-wrap: wrap; }
+
+.aba {
+  padding: 9px 14px; font-size: 14px; cursor: pointer; font-family: inherit;
+  background: none; border: 0; border-bottom: 2px solid transparent;
+  color: var(--texto-fraco);
+}
+.aba[aria-selected="true"] { color: var(--marca); border-bottom-color: var(--marca); font-weight: 600; }
+
+.painel[hidden] { display: none; }
+
+.cartao {
+  background: var(--superficie); border: 1px solid var(--borda);
+  border-radius: var(--raio); padding: 20px; margin-bottom: 20px;
+}
+
+.campo { margin-bottom: 14px; }
+.campo label { display: block; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.campo .ajuda { font-size: 12px; color: var(--texto-fraco); font-weight: 400; }
+
+.campo input[type="text"], .campo input[type="number"], .campo input[type="password"],
+.campo input[type="file"], .campo textarea, .campo select {
+  width: 100%; padding: 8px 10px; font: inherit; font-size: 14px;
+  color: var(--texto); background: var(--fundo);
+  border: 1px solid var(--borda); border-radius: var(--raio);
+}
+.campo textarea { min-height: 90px; resize: vertical; }
+.campo input:focus, .campo textarea:focus, .campo select:focus {
+  outline: 2px solid var(--marca); outline-offset: 1px;
+}
+
+.campo-linha { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+
+.campo-check { display: flex; align-items: center; gap: 8px; }
+.campo-check input { width: auto; }
+.campo-check label { margin: 0; }
+
+.progresso {
+  height: 10px; background: var(--fundo); border: 1px solid var(--borda);
+  border-radius: 999px; overflow: hidden; margin: 10px 0 6px;
+}
+.progresso i { display: block; height: 100%; width: 0; background: var(--marca); transition: width .2s; }
+
+.registro {
+  font: 12.5px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  color: var(--texto-fraco); white-space: pre-wrap; margin: 8px 0 0;
+  max-height: 180px; overflow: auto;
+}
+
+.lista-admin { display: flex; flex-direction: column; gap: 10px; }
+
+.linha-admin {
+  background: var(--superficie); border: 1px solid var(--borda);
+  border-radius: var(--raio); padding: 12px 14px;
+}
+/* Cabeça da linha: miniatura fixa à esquerda, texto e ações à direita.
+ * Os painéis de edição/capa ficam fora dela, ocupando a largura toda. */
+.linha-admin-cabeca { display: flex; gap: 14px; align-items: flex-start; }
+.linha-admin-conteudo { flex: 1 1 auto; min-width: 0; }
+
+.linha-admin-capa {
+  flex: 0 0 auto; width: 168px; aspect-ratio: 16 / 9;
+  background: var(--marca-fraca); border-radius: 6px;
+  position: relative; overflow: hidden;
+}
+.linha-admin-capa img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.linha-admin-capa-clicavel { cursor: pointer; }
+.linha-admin-capa-clicavel:hover { outline: 2px solid var(--marca); outline-offset: 1px; }
+
+.linha-admin-topo { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
+.linha-admin-titulo { font-weight: 600; font-size: 15px; flex: 1 1 220px; }
+.linha-admin-meta { font-size: 12.5px; color: var(--texto-fraco); }
+
+.acoes { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+
+.editor { border-top: 1px solid var(--borda); margin-top: 12px; padding-top: 14px; }
+.editor[hidden] { display: none; }
+
+.estado {
+  font-size: 13.5px; margin-top: 10px; min-height: 20px;
+}
+.estado-ok { color: var(--marca); }
+.estado-erro { color: var(--erro); }
+
+.entrar { max-width: 380px; margin: 80px auto; }
+
+@media (max-width: 560px) {
+  .linha-admin-cabeca { flex-direction: column; }
+  .linha-admin-capa { width: 100%; }
+}
+
+@media (max-width: 420px) {
+  .topo-linha { gap: 10px; }
+  .marca { font-size: 18px; }
+  .card-titulo { font-size: 14px; }
+  .ficha h1 { font-size: 20px; }
+  .limite { padding: 0 12px; }
+}

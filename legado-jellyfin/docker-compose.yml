@@ -1,0 +1,47 @@
+# Goiás Tec + — stack Docker (Docker Desktop / WSL2)
+#
+# Serviços:
+#   jellyfin : servidor Jellyfin (custom image com yt-dlp + deno + libs Whisper)
+#
+# Biblioteca de vídeo:
+#   O conteúdo do Google Drive é sincronizado para D:\GoiasTecMedia (pasta local, no D: com muito
+#   espaço) via rclone sync. Essa pasta é feita bind-mount no container em /media/goiastec.
+#   (Usamos sync => cópia local, em vez de FUSE mount, porque o FUSE do rclone não funciona de forma
+#   confiável dentro do Docker Desktop/WSL2.)
+#
+# Para atualizar a cópia local:
+#   rclone sync "goiastec:<pasta do drive>" D:/GoiasTecMedia --config=rclone/rclone.conf
+#   (Ou rode o script rclone\sync.ps1 / agende no Agendador do Windows.)
+#
+# Uso:
+#   1) Sincronize a pasta do Drive (ver acima)
+#   2) docker compose up -d
+#   3) Acesse http://localhost:8096
+#
+# Para trocar de pasta do Drive (ex.: quando a CriaLab for liberada):
+#   - Mude a origem do rclone sync
+#   - Ajuste o bind abaixo se necessário (D:\GoiasTecMedia -> /media/goiastec)
+
+name: goias-tec-plus
+
+services:
+  jellyfin:
+    build: ./docker/jellyfin
+    image: goiastec/jellyfin:latest
+    container_name: goiastec-jellyfin
+    restart: unless-stopped
+    ports:
+      - "8096:8096"
+    environment:
+      - TZ=America/Sao_Paulo
+    volumes:
+      - ./data/jellyfin/config:/config        # configuração + plugins + banco do plugin
+      - D:/JellyfinCache:/cache               # cache/transcodes no D: (preserva C:)
+      - D:/GoiasTecMedia:/media/goiastec       # cópia local do Drive -> biblioteca
+      - ./data/whisper:/opt/whisper:ro        # (opcional) binário whisper-cli + modelos
+    # GPU para Whisper (quando a máquina tiver): descomente abaixo
+    # devices:
+    #   - /dev/dri:/dev/dri                   # Intel/AMD (Vulkan)
+    #   # - /dev/nvidia0:/dev/nvidia0         # NVIDIA (CUDA)
+    #   # - /dev/nvidiactl:/dev/nvidiactl
+    #   # - /dev/nvidia-modeset:/dev/nvidia-modeset

@@ -1,0 +1,10 @@
+{
+  "version": "0.1.0.0",
+  "changelog": "Versão inicial.",
+  "targetAbi": "10.11.0.0",
+  "sourceUrl": "https://github.com/goias-tec/goias-tec-plus-plugin",
+  "checksum": "PREENCHIDO_AUTOMATICAMENTE_PELO_CI",
+  "timestamp": "2026-08-04T00:00:00Z",
+  "repositoryName": "Goiás Tec +",
+  "repositoryUrl": "https://github.com/goias-tec/goias-tec-plus-plugin"
+}
