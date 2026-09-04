@@ -27,6 +27,24 @@
 
   var TITULO_BASE = 'Goiás Tec + — catálogo';
 
+  /* O player nosso — padrão desde 03/09, com `?player=embed` como saída de
+   * emergência. Fica aqui fora porque ele tem que ser DESTRUÍDO ao sair
+   * da ficha, e não só removido do DOM: tirar o <video> da página para o
+   * elemento, mas a instância do hls.js continua viva, com os carregadores
+   * dela, puxando segmentos da pull zone para um vídeo que ninguém está vendo.
+   * Com o iframe do Bunny isso não existia — remover o nó bastava. */
+  var playerAtivo = null;
+
+  function destruirPlayer() {
+    if (!playerAtivo) return;
+    playerAtivo.destruir();
+    playerAtivo = null;
+  }
+
+  function playerNovoLigado() {
+    return typeof GTMPlayer !== 'undefined' && GTMPlayer.pedido();
+  }
+
   /* -------------------------------------------------------------- utilidades */
 
   function criar(tag, classe, texto) {
@@ -55,7 +73,13 @@
       })
       .then(function (dados) {
         estado.itens = Array.isArray(dados.itens) ? dados.itens : [];
-        estado.config = dados.config || {};
+        /* Os ajustes do player (o teto do arranco, hoje) viajam DENTRO do
+         * config: é o objeto que já chega ao player e à capa, e criar um
+         * segundo canal para um número seria um caminho a mais para manter.
+         * Eles vêm do catálogo, não do ambiente — por isso são um campo à
+         * parte na resposta da API. */
+        estado.config = Object.assign({}, dados.config || {},
+          { ajustes: dados.ajustes || {} });
         estado.carregado = true;
       });
   }
@@ -208,7 +232,11 @@
     limpar(el.avisos);
     /* Esvaziar a ficha é o que PARA o vídeo. Apenas esconder o contêiner com
      * `hidden` deixa o iframe vivo no DOM, tocando — inclusive o áudio — quando
-     * o usuário volta para a grade pelo botão do navegador. */
+     * o usuário volta para a grade pelo botão do navegador.
+     *
+     * Para o player nosso esvaziar NÃO basta, e por isso `destruirPlayer()` vem
+     * antes: o <video> some junto com a ficha, mas o hls.js sobreviveria. */
+    destruirPlayer();
     limpar(el.ficha);
     el.ficha.hidden = true;
     el.grade.hidden = false;
@@ -250,16 +278,20 @@
 
   /* -------------------------------------------------------------- capítulos */
 
-  /* O player é um iframe de OUTRO domínio (player.mediadelivery.net). A página
-   * não alcança o DOM dele: não recebe hover sobre a linha do tempo, não
-   * desenha nada por cima e não troca a barra de controles. Os capítulos que
-   * segmentam a linha do tempo e mostram o título no hover são os capítulos
-   * NATIVOS do Bunny, gravados no vídeo por scripts/capitulos.mjs — não têm
-   * nada a ver com este arquivo.
+  /* Os capítulos aparecem em DOIS lugares, e quem desenha o primeiro depende
+   * de qual player está no ar:
    *
-   * O que este trecho faz é a outra metade: a lista clicável ao lado do
-   * player. Ela atravessa a fronteira do iframe pelo único caminho que existe,
-   * o Player.js do Bunny, que dá ao pai controle de reprodução por postMessage.
+   *   - na LINHA DO TEMPO. Com o embed, são os capítulos nativos do Bunny,
+   *     gravados no vídeo por scripts/capitulos.mjs: o iframe é de outro
+   *     domínio (player.mediadelivery.net), a página não alcança o DOM dele e
+   *     não desenha nada por cima. Com o player nosso, desde a fase 3, quem
+   *     segmenta a barra e mostra o título sob o ponteiro é player.js.
+   *   - na LISTA clicável abaixo do player, que é o que este trecho monta, e
+   *     que funciona igual nos dois casos.
+   *
+   * Com o embed, a lista atravessa a fronteira do iframe pelo único caminho
+   * que existe: o Player.js do Bunny, que dá ao pai controle de reprodução por
+   * postMessage.
    *
    * REGRA DE PRODUTO: só chamamos `setCurrentTime`. NUNCA `play()`. Pular para
    * um capítulo posiciona o vídeo; quem decide tocar é quem aperta o play. */
@@ -290,7 +322,7 @@
   /* Lista clicável dos capítulos. Devolve null quando o título não tem
    * nenhum — 22 dos 33 no ar não têm, e a ficha deles não pode ganhar uma
    * caixa vazia. */
-  function listaCapitulos(item, iframe) {
+  function listaCapitulos(item, alvo) {
     var caps = GTM.capitulos(item);
     if (!caps.length) return null;
 
@@ -312,13 +344,21 @@
     });
     secao.appendChild(lista);
 
-    var player = null;
-    var pendente = null;   /* clique que chegou antes de o player responder */
+    var posicionar = null;   /* como levar o vídeo a um segundo — depende do alvo */
+    var pendente = null;     /* clique que chegou antes de o player responder */
     var atual = -1;
 
     function procurar(segundos) {
-      if (player) player.setCurrentTime(segundos);
+      if (posicionar) posicionar(segundos);
       else pendente = segundos;
+    }
+
+    /* Um alvo ficou pronto. Daqui para a frente o clique posiciona de verdade,
+     * e o que chegou antes é atendido agora. */
+    function ativar(comoPosicionar) {
+      posicionar = comoPosicionar;
+      secao.classList.add('capitulos-ativos');
+      if (pendente != null) { comoPosicionar(pendente); pendente = null; }
     }
 
     function destacar(indice) {
@@ -335,6 +375,34 @@
       b.addEventListener('click', function () { procurar(caps[i].inicio); });
     });
 
+    /* Dois alvos possíveis, um comportamento só. O que muda é a distância:
+     * o player nosso está do lado, o embed está do outro lado de uma fronteira
+     * de domínio e só responde por postMessage. */
+
+    if (alvo && alvo.irPara) {
+      /* PLAYER NOSSO (fase 0). Já está pronto neste instante — sem script
+       * externo, sem postMessage, sem `ready` para esperar. */
+      ativar(function (s) {
+        alvo.irPara(s);
+        /* Destaca na hora, sem esperar o `timeupdate`. Com `preload: none`,
+         * clicar num capítulo ANTES do primeiro play não dispara timeupdate
+         * nenhum — não há mídia carregada — e a lista ficava sem destaque
+         * como se o clique não tivesse funcionado. */
+        destacar(GTM.capituloEm(caps, s));
+      });
+      /* `aoTempo` e não um `timeupdate` no <video>: o player avisa TAMBÉM nos
+       * pulos que ele mesmo faz — o Ctrl+seta da fase 3 — que sem mídia
+       * carregada não disparam evento nenhum. Ouvir só o <video> deixaria a
+       * lista destacando o capítulo anterior depois de um pulo por tecla. */
+      alvo.aoTempo(function (segundos) {
+        destacar(GTM.capituloEm(caps, segundos));
+      });
+      return secao;
+    }
+
+    /* EMBED DO BUNNY. O iframe é de outro domínio; o Player.js é o único
+     * caminho que atravessa. */
+    var iframe = alvo;
     carregarPlayerjs().then(function (playerjs) {
       /* Voltar para a grade destrói a ficha inteira. Se isso aconteceu enquanto
        * o script carregava, não há mais iframe para conversar — e instanciar o
@@ -344,9 +412,7 @@
       var p = new playerjs.Player(iframe);
       p.on('ready', function () {
         if (!iframe.isConnected) return;
-        player = p;
-        secao.classList.add('capitulos-ativos');
-        if (pendente != null) { p.setCurrentTime(pendente); pendente = null; }
+        ativar(function (s) { p.setCurrentTime(s); });
         /* Só posição: nada aqui reage ao FIM do vídeo, e nada avança sozinho. */
         p.on('timeupdate', function (d) {
           destacar(GTM.capituloEm(caps, d && d.seconds));
@@ -370,6 +436,10 @@
   }
 
   function renderFicha(id) {
+    /* Trocar de episódio pelos botões da série chama renderFicha direto, sem
+     * passar pela grade: sem isto, o hls.js do título anterior continuaria
+     * puxando segmentos enquanto o novo começa. */
+    destruirPlayer();
     limpar(el.ficha);
     limpar(el.avisos);
     el.grade.hidden = true;
@@ -398,7 +468,33 @@
     var caixa = criar('div', 'player');
     var fonte = GTM.resolverFonte(item, estado.config);
 
-    if (fonte) {
+    /* A quem a lista de capítulos vai falar: o player nosso ou o iframe. */
+    var alvoCapitulos = null;
+
+    /* Calculado antes do player porque ele precisa dos vizinhos para o
+     * Shift+N / Shift+P do teclado. Os mesmos vizinhos alimentam os botões de
+     * navegação no fim desta função. */
+    var viz = GTM.vizinhos(estado.itens, item.id);
+
+    /* O player nosso é o PADRÃO desde 03/09. As duas redes de segurança
+     * continuam armadas, e é o que torna a virada barata de desfazer:
+     *
+     *   - `?player=embed` na URL devolve o iframe do Bunny, na hora;
+     *   - se `criar()` devolver null por QUALQUER motivo — ou se o `player.js`
+     *     nem tiver carregado, e aí `GTMPlayer` é `undefined` —, o bloco
+     *     seguinte assume e ninguém fica sem vídeo. */
+    if (fonte && playerNovoLigado()) {
+      playerAtivo = GTMPlayer.criar(item, estado.config, {
+        anterior: viz.anterior, proximo: viz.proximo
+      });
+      if (playerAtivo) {
+        caixa.appendChild(playerAtivo.no);
+        caixa.classList.add('player-nosso');
+        alvoCapitulos = playerAtivo;
+      }
+    }
+
+    if (fonte && !alvoCapitulos) {
       var iframe = document.createElement('iframe');
       iframe.src = GTM.urlEmbed(fonte);
       iframe.title = 'Player — ' + (item.titulo || '');
@@ -408,21 +504,25 @@
       iframe.setAttribute('allow', 'fullscreen; picture-in-picture; encrypted-media');
       iframe.setAttribute('allowfullscreen', '');
       caixa.appendChild(iframe);
-    } else {
+      alvoCapitulos = iframe;
+    }
+
+    if (!fonte) {
       caixa.appendChild(criar('div', 'player-ausente',
         'Vídeo ainda não disponível. O arquivo pode estar em processamento no servidor de vídeo.'));
     }
     coluna.appendChild(caixa);
 
-    /* Capítulos: a linha do tempo segmentada e o título no hover vêm do próprio
-     * Bunny; esta lista é o atalho clicável, e só existe quando há player. */
-    if (fonte) {
-      var caps = listaCapitulos(item, caixa.querySelector('iframe'));
+    /* Capítulos: a linha do tempo segmentada e o título sob o ponteiro vêm do
+     * Bunny quando o player é o embed, e do nosso player.js desde a fase 3.
+     * Esta lista é a outra metade, e funciona igual nos dois casos. */
+    if (alvoCapitulos) {
+      var caps = listaCapitulos(item, alvoCapitulos);
       if (caps) coluna.appendChild(caps);
     }
 
-    /* Navegação explícita: só muda de episódio quando alguém clica. */
-    var viz = GTM.vizinhos(estado.itens, item.id);
+    /* Navegação explícita: só muda de episódio quando alguém clica — ou aperta
+     * Shift+N / Shift+P, que é o mesmo gesto deliberado, pelo teclado. */
     if (viz.anterior || viz.proximo) {
       var nav = criar('nav', 'navegacao');
       nav.setAttribute('aria-label', 'Episódios da série');
@@ -458,12 +558,15 @@
       lado.appendChild(criar('p', 'sinopse sinopse-vazia', 'Sinopse ainda não disponível.'));
     }
 
+    /* Titularidade e nível de evidência SAÍRAM da ficha (04/09). São
+     * classificação interna — quem responde pela obra e o quanto a origem foi
+     * conferida —, e servem a quem cataloga, não a quem vai assistir. O lugar
+     * delas é o /admin, onde continuam inteiras. Saíram também da projeção
+     * pública da API: campo que o site não desenha não precisa viajar. */
     var dl = criar('dl', 'dados');
     linhaDados(dl, 'Tema', item.tema);
     linhaDados(dl, 'Público-alvo', item.publico_alvo);
     linhaDados(dl, 'Tags', (item.tags || []).join(', '));
-    linhaDados(dl, 'Titularidade', item.titularidade);
-    linhaDados(dl, 'Evidência', item.nivel_evidencia);
     if (dl.childNodes.length) lado.appendChild(dl);
 
     grade.appendChild(lado);

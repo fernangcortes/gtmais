@@ -33,3 +33,13 @@ legado-jellyfin/rclone/rclone.conf
 # Sistema
 Thumbs.db
 .DS_Store
+
+# --- fora daqui desde 04/09, pela mesma razão das linhas acima ---
+# Documento de trabalho, irmão do PROXIMA-SESSAO.md: registra o raciocínio de
+# cada fase do player, sessão a sessão. Mora no repositório interno.
+catalogo/PLANO-PLAYER.md
+# Material institucional e notas de levantamento do acervo — não são código.
+apresentacao/
+docs/COMO-EXPORTAR-COOKIES.md
+docs/LEIA-ME_ESTRUTURA.md
+docs/relatorio-acervo-e-plano.md

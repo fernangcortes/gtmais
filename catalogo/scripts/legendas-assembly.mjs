@@ -29,6 +29,26 @@ import { argumentos, lerCatalogo, selecionar, CATALOGO_PADRAO, agora, mb, erroFa
 const API = 'https://api.assemblyai.com/v2';
 const IDIOMA = 'pt';
 
+/* Modelo explícito, escolhido em 02/09/2026 para o lote ORIGEM DE LINK.
+ *
+ * Até aqui o script não mandava `speech_model` e ficava com o padrão da conta —
+ * que mudou de mão quando o AssemblyAI depreciou `best` e `nano` e passou a
+ * roteá-los para outros modelos. Fixar o nome é o que faz duas rodadas do mesmo
+ * acervo saírem comparáveis.
+ *
+ * O preço é POR HORA, não por minuto: US$ 0,21/h neste modelo, US$ 0,15/h no
+ * `universal-2`. As 4h43 deste lote custam ~US$ 0,99. Ver a nota em ESTADO.md:
+ * o número por minuto que circulava no repositório errava por ~30x.
+ *
+ * O campo é `speech_models`, PLURAL e ARRAY — uma lista em ordem de prioridade,
+ * com fallback para o próximo quando o primeiro não atende o idioma.
+ *
+ * Conferido contra a API em 02/09/2026, submetendo 40 s de áudio: o pedido volta
+ * 200 com `speech_models: ["universal-3-5-pro"]` ecoado e `speech_model` (o
+ * singular) em `null` — são campos distintos, e `language_code: "pt"` continua
+ * aceito junto com eles, ao lado de `punctuate` e `format_text`. */
+const MODELO = process.env.ASSEMBLYAI_MODELO || 'universal-3-5-pro';
+
 const op = argumentos();
 const caminhoCatalogo = typeof op.catalogo === 'string' ? op.catalogo : CATALOGO_PADRAO;
 const arquivoEstado = path.join(path.dirname(caminhoCatalogo), 'assemblyai-jobs.json');
@@ -95,7 +115,10 @@ async function submeter(audioUrl) {
   const r = await chamar('/transcript', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ audio_url: audioUrl, language_code: IDIOMA, punctuate: true, format_text: true })
+    body: JSON.stringify({
+      audio_url: audioUrl, language_code: IDIOMA, punctuate: true, format_text: true,
+      speech_models: [MODELO]
+    })
   });
   const t = await r.json();
   if (!t.id) throw new Error('transcript não devolveu id');

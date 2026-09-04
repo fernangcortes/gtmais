@@ -49,6 +49,45 @@
     <div class="abas" role="tablist">
       <button class="aba" role="tab" id="aba-enviar" aria-selected="true" aria-controls="painel-enviar">Enviar título</button>
       <button class="aba" role="tab" id="aba-catalogo" aria-selected="false" aria-controls="painel-catalogo">Catálogo</button>
+      <button class="aba" role="tab" id="aba-ajustes" aria-selected="false" aria-controls="painel-ajustes">Player</button>
+    </div>
+
+    <!-- =========================================================== ajustes -->
+    <div class="painel" id="painel-ajustes" role="tabpanel" aria-labelledby="aba-ajustes" hidden>
+      <div class="cartao">
+        <h2 style="font-size:16px; margin:0 0 4px;">Arrasto na linha do tempo</h2>
+        <p class="card-meta" style="margin:0 0 14px;">
+          No celular, arrastar o dedo na horizontal sobre o vídeo procura no tempo,
+          com aceleração: devagar anda pouco, com pressa anda muito. Este número é
+          o <strong>teto</strong> — o quanto um arranco de ponta a ponta da tela
+          pode atravessar, em porcentagem do próprio vídeo. Vale para o player
+          novo (<code>?player=novo</code>).
+        </p>
+
+        <div class="campo">
+          <label for="a-teto">Máximo por arranco <span class="ajuda">— % da duração do vídeo</span></label>
+          <input type="number" id="a-teto" min="5" max="100" step="1" style="max-width:140px;">
+        </div>
+
+        <p class="card-meta" id="a-exemplos" style="margin:2px 0 18px;"></p>
+
+        <h2 style="font-size:16px; margin:0 0 4px;">Sumiço dos controles</h2>
+        <p class="card-meta" style="margin:0 0 14px;">
+          Quantos segundos de quietude até a barra e os botões saírem de cena.
+          Eles voltam ao primeiro toque, ao mexer o ponteiro ou a qualquer tecla.
+          Só somem com o vídeo <strong>tocando</strong> — parado, ficam.
+          <strong>0 desliga</strong> o sumiço.
+        </p>
+
+        <div class="campo">
+          <label for="a-sumico">Sumir depois de <span class="ajuda">— segundos</span></label>
+          <input type="number" id="a-sumico" min="0" max="30" step="1" style="max-width:140px;">
+        </div>
+
+        <button type="button" class="botao botao-primario" id="a-salvar">Salvar</button>
+        <button type="button" class="botao" id="a-padrao">Voltar ao padrão</button>
+        <p class="estado" id="estado-ajustes"></p>
+      </div>
     </div>
 
     <!-- ============================================================ enviar -->

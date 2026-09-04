@@ -28,9 +28,16 @@ try {
   const catalogo = await lerCatalogo(caminhoCatalogo);
   const escolhidos = selecionar(catalogo.itens, op).filter(i => {
     /* Cartelas e sobras nao viram titulo do catalogo: subir e pagar
-     * armazenamento por algo que nunca sera publicado. */
-    if (i.pendencia === 'nao_e_conteudo') {
-      console.log(`  · pulando (nao e conteudo): ${i.titulo}`);
+     * armazenamento por algo que nunca sera publicado.
+     *
+     * Duplicata reconhecida ANTES do upload entra na mesma regra. As dez
+     * `versao_duplicada` de 20/08 so foram identificadas depois de subir, e por
+     * isso ja tem videoId — para elas este filtro nao muda nada. Ele existe
+     * para as que chegam ja sabidas, como as duas de 02/09 vindas da pasta
+     * ORIGEM DE LINK, identicas em duracao e tamanho ao que ja esta no ar. */
+    if (i.pendencia === 'nao_e_conteudo' || i.pendencia === 'versao_duplicada') {
+      const motivo = i.pendencia === 'nao_e_conteudo' ? 'nao e conteudo' : 'versao duplicada';
+      console.log(`  · pulando (${motivo}): ${i.titulo}`);
       return false;
     }
     return true;

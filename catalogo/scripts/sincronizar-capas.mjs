@@ -64,7 +64,17 @@ try {
 
   if (mudou) await gravarCatalogo(catalogo, caminhoCatalogo);
   console.log(`\natualizados: ${mudou}  ·  já corretos: ${iguais}  ·  erros: ${erros}`);
-  if (mudou) console.log('lembre de publicar no KV: node scripts/semear.mjs --sobrescrever');
+  /* Este aviso já mandou rodar `semear.mjs --sobrescrever`, que leva o
+   * `capa_arquivo` ao KV mas reverte junto tudo que a tela de admin editou —
+   * eram 18 títulos renomeados em 02/09/2026. Qual é o caminho certo depende de
+   * o título já estar no KV ou não, então o aviso pergunta em vez de mandar. */
+  if (mudou) {
+    console.log('\npara o `capa_arquivo` chegar ao KV:');
+    console.log('  · título ainda NÃO está no KV  ->  node scripts/acrescentar-ao-kv.mjs');
+    console.log('  · título JÁ está no KV         ->  pela tela de admin, ou semear.mjs');
+    console.log('    --sobrescrever, que REVERTE título/série editados pela tela: leia o aviso');
+    console.log('    que ele imprime antes de gravar.');
+  }
 } catch (e) {
   erroFatal(e);
 }

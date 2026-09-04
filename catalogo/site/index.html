@@ -54,7 +54,11 @@
   </div>
 </footer>
 
+<!-- O hls.js NÃO entra aqui: player.js o carrega sob demanda, e só na ficha de
+     quem abriu com ?player=novo. A grade não paga 353 KB por ele. -->
 <script src="catalogo-core.js"></script>
+<script src="player-core.js"></script>
+<script src="player.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

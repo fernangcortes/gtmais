@@ -29,8 +29,9 @@ function paraPublico(item) {
     tema: item.tema || '',
     publico_alvo: item.publico_alvo || '',
     tags: Array.isArray(item.tags) ? item.tags : [],
-    titularidade: item.titularidade || '',
-    nivel_evidencia: item.nivel_evidencia || '',
+    /* `titularidade` e `nivel_evidencia` NÃO saem mais (04/09): são
+     * classificação interna de quem cataloga, a ficha parou de desenhá-las e
+     * o /admin as lê por `?completo=1`, que devolve o item cru do KV. */
     pendencia: item.pendencia || null,
     publicar: true,
     /* Sem estes dois a grade nunca vê a capa nova: o Bunny renomeia o arquivo
@@ -57,6 +58,29 @@ function config(env) {
   };
 }
 
+/* Ajustes do player, editados em /admin e guardados no PRÓPRIO catálogo.
+ *
+ * Não vão em `config` porque `config` vem do ambiente e o PUT o descarta —
+ * um ajuste que se apaga a cada gravação não serve para nada. Ficam num campo
+ * de topo do documento, que o `salvarCatalogo` do admin preserva porque
+ * grava o documento inteiro de volta.
+ *
+ * A validação é de forma, não de gosto: quem decide se 0,4 é o número certo é
+ * quem usa o gesto, e quem apara valor absurdo é o `player-core`. Aqui só se
+ * garante que o que sai é número, para o cliente não receber uma string. */
+function ajustes(guardado) {
+  const a = (guardado && guardado.ajustes) || {};
+  const teto = Number(a.arrastoTeto);
+  const espera = Number(a.controlesEspera);
+  return {
+    arrastoTeto: Number.isFinite(teto) && teto > 0 ? teto : null,
+    /* `0` é uma escolha válida — "os controles nunca somem" —, então a
+     * checagem é `>= 0` e não a de valor verdadeiro. Um `!espera` aqui
+     * transformaria "nunca some" em "some no padrão", em silêncio. */
+    controlesEspera: Number.isFinite(espera) && espera >= 0 ? espera : null
+  };
+}
+
 async function lerCatalogo(env) {
   if (!env.CATALOGO) return null;
   return await env.CATALOGO.get(CHAVE, 'json');
@@ -72,6 +96,7 @@ export async function onRequestGet({ env, request, data }) {
   if (!guardado) {
     return json(200, {
       versao: 1, rev: 0, itens: [], vazio: true, config: config(env),
+      ajustes: ajustes(null),
       observacao: 'catálogo ainda não importado — rode scripts/semear.mjs'
     });
   }
@@ -79,7 +104,9 @@ export async function onRequestGet({ env, request, data }) {
   const completo = new URL(request.url).searchParams.get('completo') === '1';
   if (completo) {
     if (!data.admin) return json(401, { erro: 'não autorizado' });
-    return json(200, Object.assign({}, guardado, { config: config(env) }));
+    return json(200, Object.assign({}, guardado, {
+      config: config(env), ajustes: ajustes(guardado)
+    }));
   }
 
   const itens = (guardado.itens || [])
@@ -92,6 +119,7 @@ export async function onRequestGet({ env, request, data }) {
     atualizado_em: guardado.atualizado_em || null,
     total: itens.length,
     config: config(env),
+    ajustes: ajustes(guardado),
     itens
   });
 }

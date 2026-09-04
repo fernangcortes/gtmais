@@ -354,11 +354,314 @@
     { "inicio": 156, "titulo": "Patrimônio e identidade cultural" },
     { "inicio": 172, "titulo": "Quase três séculos de tradição" }
    ]
+  },
+  "blabla-s02e01-tecnologias-digitais-2026-master": {
+   "titulo": "Blá Blá Blá: Tecnologias digitais e inteligência artificial",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura e apresentação dos convidados" },
+    { "inicio": 103, "titulo": "De ferramenta a ambiente: o que mudou no século 21" },
+    { "inicio": 232, "titulo": "Redes sociais: da internet democrática às big techs" },
+    { "inicio": 361, "titulo": "Alienação, ou as brechas que restam" },
+    { "inicio": 459, "titulo": "Excesso, compulsão e saúde mental de crianças e adolescentes" },
+    { "inicio": 583, "titulo": "Déficit de atenção como resultado de uma cultura" },
+    { "inicio": 648, "titulo": "A ausência de neutralidade e a caixa-preta dos algoritmos" },
+    { "inicio": 743, "titulo": "Memória terceirizada: a foto do quadro no lugar da anotação" },
+    { "inicio": 805, "titulo": "O que não se substitui: presencialidade e mediação humana" },
+    { "inicio": 869, "titulo": "O papel da escola na formação crítica" },
+    { "inicio": 1029, "titulo": "Hipertexto, tempo de leitura e o direito à literatura" },
+    { "inicio": 1160, "titulo": "Ler em papel e ler em tela: o que dizem os estudos" },
+    { "inicio": 1253, "titulo": "Fake news e desinformação como projeto político" },
+    { "inicio": 1446, "titulo": "Cultura leva tempo; imposição digital não é cultura" },
+    { "inicio": 1702, "titulo": "Trabalho: precarização e os trabalhadores do clique" },
+    { "inicio": 1857, "titulo": "Água, energia e a colonização de dados" },
+    { "inicio": 2211, "titulo": "Equilíbrio entre a vida online e a offline" },
+    { "inicio": 2306, "titulo": "A família, as campanhas e a criança do quarto" },
+    { "inicio": 2468, "titulo": "Inteligência artificial e o imediatismo" },
+    { "inicio": 2564, "titulo": "ChatGPT como plágio sofisticado, segundo Chomsky" },
+    { "inicio": 2631, "titulo": "Autossabotagem e perda de autonomia" },
+    { "inicio": 2824, "titulo": "Leitura como entretenimento e o cuidado com os idosos" },
+    { "inicio": 2982, "titulo": "Herança cultural e a elaboração do futuro" },
+    { "inicio": 3045, "titulo": "Considerações finais" }
+   ]
+  },
+  "leitura-s01e03-bariani-ortencio-2025-master": {
+   "titulo": "Projeto Leitura: Bariani Ortêncio (Episódio 3)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "O próprio autor conta como escolheu o nome" },
+    { "inicio": 64, "titulo": "Quem foi Bariani Ortêncio" },
+    { "inicio": 97, "titulo": "De Igarapava a Goiânia, aos 15 anos" },
+    { "inicio": 129, "titulo": "A goianidade e o meio cultural em ebulição" },
+    { "inicio": 224, "titulo": "A pesquisa do falar e da comida do interior goiano" },
+    { "inicio": 352, "titulo": "O paulista que se fez goiano" },
+    { "inicio": 385, "titulo": "O Bazar Paulistinha e o comércio de discos" },
+    { "inicio": 445, "titulo": "Jornais, crônicas e a Rádio Clube de Goiânia" },
+    { "inicio": 477, "titulo": "Sertão Sem Fim e o reconhecimento literário" },
+    { "inicio": 510, "titulo": "O compositor e o músico" },
+    { "inicio": 576, "titulo": "O legado, um ano após a morte" },
+    { "inicio": 703, "titulo": "O estilo: fala popular, humor e pertencimento" },
+    { "inicio": 736, "titulo": "Prêmios, dicionários e a Academia" },
+    { "inicio": 840, "titulo": "O concurso literário que leva o seu nome" },
+    { "inicio": 938, "titulo": "A lei que garante o concurso e quem o organiza" },
+    { "inicio": 1003, "titulo": "Mais de 130 mil alunos inscritos" },
+    { "inicio": 1066, "titulo": "O impacto na formação de professores e estudantes" },
+    { "inicio": 1196, "titulo": "Homem de ajudar quem entrava pela porta" },
+    { "inicio": 1227, "titulo": "O paulistinha que encantou Goiás" }
+   ]
+  },
+  "kalunga-s01e01-comunidade-quilombola-2024-master": {
+   "titulo": "Série Kalunga: Território e Romaria de São João (Episódio 1)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Kalunga: a origem da palavra" },
+    { "inicio": 58, "titulo": "O ouro, a escravidão e a fuga para o Rio Paranã" },
+    { "inicio": 90, "titulo": "A comunidade Sucuri e a Romaria de São João" },
+    { "inicio": 126, "titulo": "Moradores lembram a vida antiga na roça" },
+    { "inicio": 191, "titulo": "Por que escolheram este território" },
+    { "inicio": 224, "titulo": "O que é um quilombo" },
+    { "inicio": 257, "titulo": "Povos indígenas refugiados na Chapada" },
+    { "inicio": 324, "titulo": "Trezentos anos de formação do quilombo" },
+    { "inicio": 388, "titulo": "Comunidades com nomes tirados da natureza" },
+    { "inicio": 422, "titulo": "Usar a terra sem degradar: roça, pesca e fogo" },
+    { "inicio": 521, "titulo": "Reserva de natureza e espécies ameaçadas" },
+    { "inicio": 554, "titulo": "Reconhecimento pela ONU" },
+    { "inicio": 586, "titulo": "Turismo de base comunitária" },
+    { "inicio": 618, "titulo": "O que a Romaria significa para quem vive ali" },
+    { "inicio": 683, "titulo": "As manifestações culturais dos próximos episódios" }
+   ]
+  },
+  "dof-advogada-2025-master": {
+   "titulo": "De Olho no Futuro: Advogada",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura do programa" },
+    { "inicio": 37, "titulo": "Quem é a convidada" },
+    { "inicio": 68, "titulo": "A dúvida sobre qual caminho seguir no Direito" },
+    { "inicio": 129, "titulo": "Estagiar em várias áreas antes de escolher" },
+    { "inicio": 285, "titulo": "A Comissão da Advocacia Jovem" },
+    { "inicio": 318, "titulo": "Advogar é empreender: as habilidades que a faculdade não ensina" },
+    { "inicio": 383, "titulo": "Os maiores desafios do início de carreira" },
+    { "inicio": 414, "titulo": "A prova da OAB" },
+    { "inicio": 480, "titulo": "O mercado está saturado?" },
+    { "inicio": 544, "titulo": "Áreas novas: startups, direito societário e regulamentação" },
+    { "inicio": 609, "titulo": "O conselho: calma e paciência" },
+    { "inicio": 672, "titulo": "De tímida a advogada: falar em público se aprende" },
+    { "inicio": 798, "titulo": "Insegurança ao escolher a profissão aos 17 anos" },
+    { "inicio": 862, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-desenvolvedor-de-jogos-2025-master": {
+   "titulo": "De Olho no Futuro: Desenvolvedor de jogos",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura do programa" },
+    { "inicio": 37, "titulo": "Quem é o convidado" },
+    { "inicio": 70, "titulo": "A trajetória: da graduação à especialização" },
+    { "inicio": 137, "titulo": "Desmontar computadores nos anos do 286" },
+    { "inicio": 167, "titulo": "Os desafios e as três perguntas que orientam a escolha" },
+    { "inicio": 232, "titulo": "Vale a pena fazer curso técnico?" },
+    { "inicio": 294, "titulo": "Anos de manutenção de redes e eletrônica" },
+    { "inicio": 327, "titulo": "Existe mercado para quem gosta de jogar?" },
+    { "inicio": 391, "titulo": "De jogador a criador do próprio jogo" },
+    { "inicio": 424, "titulo": "O conselho: linguagens de programação" },
+    { "inicio": 488, "titulo": "Soft skills como diferencial no mercado" },
+    { "inicio": 585, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-licenciatura-em-letras-2025-master": {
+   "titulo": "De Olho no Futuro: Licenciatura em Letras",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura do programa" },
+    { "inicio": 38, "titulo": "Quem é o convidado" },
+    { "inicio": 69, "titulo": "Da biologia às letras: como a escolha mudou" },
+    { "inicio": 132, "titulo": "Vinte anos de sala de aula" },
+    { "inicio": 164, "titulo": "A instabilidade de não ser concursado" },
+    { "inicio": 197, "titulo": "O projeto pioneiro de livros didáticos de inglês" },
+    { "inicio": 261, "titulo": "Por que poucos querem ser professores" },
+    { "inicio": 324, "titulo": "Entram poucos na licenciatura e saem menos ainda" },
+    { "inicio": 385, "titulo": "Concurso público, rede estadual e rede particular" },
+    { "inicio": 449, "titulo": "O estágio é onde se descobre se é aquilo mesmo" },
+    { "inicio": 481, "titulo": "O que você pode multiplicar como profissional" },
+    { "inicio": 546, "titulo": "O conselho: projete-se daqui a 10, 15, 25 anos" },
+    { "inicio": 609, "titulo": "O estigma de ser professor" },
+    { "inicio": 704, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-professor-de-quimica-2025-master": {
+   "titulo": "De Olho no Futuro: Professor de Química",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura do programa" },
+    { "inicio": 36, "titulo": "Quem é o convidado" },
+    { "inicio": 70, "titulo": "A trajetória e o sacrifício dos pais" },
+    { "inicio": 132, "titulo": "Vir para Goiânia aos 14 anos e aprender a se virar" },
+    { "inicio": 197, "titulo": "Onde trabalha hoje e o tamanho do mercado" },
+    { "inicio": 259, "titulo": "Dois concursos e as duas interfaces da Química" },
+    { "inicio": 291, "titulo": "O que é cristalografia" },
+    { "inicio": 383, "titulo": "Estrutura da molécula e bioatividade de um fármaco" },
+    { "inicio": 415, "titulo": "O conselho: pesquise o mercado e arrisque" },
+    { "inicio": 477, "titulo": "Encerramento" }
+   ]
+  },
+  "dof-tecnico-integrado-ensino-medio-2025-master": {
+   "titulo": "De Olho no Futuro: Técnico integrado ao ensino médio",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura do programa" },
+    { "inicio": 34, "titulo": "Quem é a convidada" },
+    { "inicio": 67, "titulo": "Trabalhar cedo e o primeiro emprego" },
+    { "inicio": 130, "titulo": "Escolher a psicologia para desenvolver pessoas" },
+    { "inicio": 162, "titulo": "O técnico abre as portas do mercado de trabalho" },
+    { "inicio": 194, "titulo": "Os desafios de lidar com pessoas" },
+    { "inicio": 257, "titulo": "Do RH ao ensino: os caminhos dentro da psicologia" },
+    { "inicio": 290, "titulo": "O curso técnico em administração e o mercado" },
+    { "inicio": 353, "titulo": "Conhecer os próprios pontos fortes" },
+    { "inicio": 383, "titulo": "Encerramento" }
+   ]
+  },
+  "depoimentos-estudantes-goias-tec-2024-master": {
+   "titulo": "Depoimentos de estudantes do Goiás Tec",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Cinquenta quilômetros até a escola" },
+    { "inicio": 35, "titulo": "Morar na fazenda e depender do transporte escolar" },
+    { "inicio": 70, "titulo": "Os professores e os mediadores" },
+    { "inicio": 134, "titulo": "Aulas interativas e material didático" },
+    { "inicio": 167, "titulo": "A família que não pôde estudar por causa da distância" },
+    { "inicio": 230, "titulo": "Planos: faculdade e vestibular" },
+    { "inicio": 294, "titulo": "A escola de ensino médio mais próxima era longe demais" },
+    { "inicio": 358, "titulo": "Preparação para a redação desde o primeiro ano" },
+    { "inicio": 483, "titulo": "Um ensino inclusivo" },
+    { "inicio": 547, "titulo": "Cursando matemática em Quirinópolis" },
+    { "inicio": 579, "titulo": "Voltar para dar aula onde estudou" }
+   ]
+  },
+  "aula-radioatividade-cesio-137-2024-master": {
+   "titulo": "Aula: Radioatividade e o césio-137",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Imagens de arquivo da contaminação em Goiânia" },
+    { "inicio": 36, "titulo": "O que a aula vai cobrir" },
+    { "inicio": 66, "titulo": "Radiação ionizante e não ionizante" },
+    { "inicio": 98, "titulo": "Raios-X, alfa, beta e gama" },
+    { "inicio": 161, "titulo": "13 de setembro de 1987: o aparelho no ferro-velho" },
+    { "inicio": 195, "titulo": "O pó que brilhava azul no escuro" },
+    { "inicio": 226, "titulo": "Leide das Neves e as primeiras vítimas" },
+    { "inicio": 258, "titulo": "Oito pontos de contaminação e a resposta da CNEN" },
+    { "inicio": 290, "titulo": "Seis mil toneladas de rejeito radioativo" },
+    { "inicio": 323, "titulo": "Comparação com Chernobyl" },
+    { "inicio": 354, "titulo": "Acidente radiológico e acidente nuclear: a diferença" },
+    { "inicio": 386, "titulo": "A escala de gravidade e Fukushima" },
+    { "inicio": 417, "titulo": "O acidente de Maiak" },
+    { "inicio": 448, "titulo": "O que fica como alerta" }
+   ]
+  },
+  "paraquedismo-s01e02-academia-2024-master": {
+   "titulo": "PCAs na Natureza: Preparação física para o salto (Episódio 2)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "O peso exigido para saltar de paraquedas" },
+    { "inicio": 43, "titulo": "O que é treinamento funcional" },
+    { "inicio": 75, "titulo": "Primeiro exercício" },
+    { "inicio": 139, "titulo": "Prancha abdominal" },
+    { "inicio": 174, "titulo": "Abdominais no solo, sem equipamento" },
+    { "inicio": 206, "titulo": "O ciclo: cinco exercícios e o descanso entre séries" },
+    { "inicio": 238, "titulo": "Correção de postura, escápulas e cotovelo" },
+    { "inicio": 361, "titulo": "Treinamento intervalado: 8 tiros de 20 segundos" },
+    { "inicio": 394, "titulo": "HIIT e para quem ele serve" },
+    { "inicio": 425, "titulo": "Déficit calórico e o objetivo de emagrecimento" },
+    { "inicio": 488, "titulo": "O salto" }
+   ]
+  },
+  "blabla-s01e01-literatura-e-cidadania-2026-master": {
+   "titulo": "Blá Blá Blá: Literatura e cidadania (Parte 1)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Abertura e o tema do podcast" },
+    { "inicio": 67, "titulo": "Apresentação da convidada" },
+    { "inicio": 133, "titulo": "Dá para viver sem leitura?" },
+    { "inicio": 194, "titulo": "Repertório linguístico e a redação do Enem" },
+    { "inicio": 258, "titulo": "Modelos de redação engessam o raciocínio" },
+    { "inicio": 320, "titulo": "O que faz uma redação de sucesso" },
+    { "inicio": 384, "titulo": "Armandinho e a leitura como entretenimento" },
+    { "inicio": 448, "titulo": "O professor que lê é o exemplo do aluno" },
+    { "inicio": 514, "titulo": "A partir das redes, mas não por elas" },
+    { "inicio": 548, "titulo": "A responsabilidade da família" },
+    { "inicio": 612, "titulo": "O que estimulou cada uma a gostar de ler" },
+    { "inicio": 678, "titulo": "Os gibis que a mãe trouxe do interior" }
+   ]
+  },
+  "blabla-s01e02-literatura-e-cidadania-2026-master": {
+   "titulo": "Blá Blá Blá: Literatura e cidadania (Parte 2)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Que tipo de literatura recomendar" },
+    { "inicio": 35, "titulo": "O aluno que não tem livro em casa" },
+    { "inicio": 67, "titulo": "Aventura e romance policial para começar" },
+    { "inicio": 132, "titulo": "Não engessar: o risco de afastar pela formalidade" },
+    { "inicio": 165, "titulo": "Os contos e os grandes contistas" },
+    { "inicio": 228, "titulo": "Repórter investigativo: uma proposta de sala" },
+    { "inicio": 260, "titulo": "Vários gêneros para a produção do aluno" },
+    { "inicio": 293, "titulo": "A literatura goiana e o preconceito com o interior" },
+    { "inicio": 357, "titulo": "Não deve nada à literatura do eixo Rio-São Paulo" },
+    { "inicio": 422, "titulo": "Escritores que saíram da universidade" },
+    { "inicio": 486, "titulo": "Bernardo Élis, Hugo de Carvalho Ramos e Miguel Jorge" },
+    { "inicio": 548, "titulo": "A Mãe da Mãe de Suas Filhas e outros títulos" },
+    { "inicio": 643, "titulo": "Romances históricos goianos" }
+   ]
+  },
+  "blabla-s01e03-literatura-e-cidadania-2026-master": {
+   "titulo": "Blá Blá Blá: Literatura e cidadania (Parte 3)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "A literatura regional ajuda a entender a mundial?" },
+    { "inicio": 35, "titulo": "Miguel Jorge e a correção sobre Veias e Vinhos" },
+    { "inicio": 68, "titulo": "Um romance que se passa em Goiânia" },
+    { "inicio": 130, "titulo": "Dramas humanos e o bairrismo goiano" },
+    { "inicio": 193, "titulo": "O que interessa ao estudante da rede pública" },
+    { "inicio": 227, "titulo": "Por que ler os clássicos, segundo Ítalo Calvino" },
+    { "inicio": 259, "titulo": "Vidas Secas e Os Sertões" },
+    { "inicio": 325, "titulo": "Ler Guimarães Rosa em voz alta" },
+    { "inicio": 388, "titulo": "O som que devolve a palavra dos avós" },
+    { "inicio": 420, "titulo": "Personagens que vêm de vivências reais" },
+    { "inicio": 454, "titulo": "Jorge Amado, Ariano Suassuna e as adaptações" },
+    { "inicio": 515, "titulo": "Quando o aluno vê o filme antes de ler" },
+    { "inicio": 582, "titulo": "A história contada por qualquer das artes" },
+    { "inicio": 711, "titulo": "Poema, tirinha e reportagem sobre o mesmo assunto" },
+    { "inicio": 804, "titulo": "O meteoro e o Didico" }
+   ]
+  },
+  "blabla-s01e04-literatura-e-cidadania-2026-master": {
+   "titulo": "Blá Blá Blá: Literatura e cidadania (Parte 4)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "Formar o leitor sem sair do digital" },
+    { "inicio": 70, "titulo": "Uma proposta de sala nascida do Twitter" },
+    { "inicio": 137, "titulo": "Poema e poesia: as formas técnicas de produção" },
+    { "inicio": 170, "titulo": "O concurso de haikais" },
+    { "inicio": 202, "titulo": "O que é uma ode, o que é um hino" },
+    { "inicio": 233, "titulo": "Tirar Monteiro Lobato do PNLD?" },
+    { "inicio": 263, "titulo": "Bernardo Élis e os assuntos sensíveis" },
+    { "inicio": 328, "titulo": "Discutir o preconceito em vez de excluir o livro" },
+    { "inicio": 392, "titulo": "O projeto Biblioteca Humana" },
+    { "inicio": 423, "titulo": "Toda a escola com um livro na mão" },
+    { "inicio": 456, "titulo": "Como estimular a visita à biblioteca" },
+    { "inicio": 487, "titulo": "O direito de ler do jeito que der prazer" },
+    { "inicio": 519, "titulo": "O Dia D da leitura" },
+    { "inicio": 647, "titulo": "Um projeto sobre os contos de Bernardo Élis" },
+    { "inicio": 744, "titulo": "O orgulho de escrever em Goiás" },
+    { "inicio": 806, "titulo": "Maria José Silveira e Damiana da Cunha" }
+   ]
+  },
+  "blabla-s01e05-literatura-e-cidadania-2026-master": {
+   "titulo": "Blá Blá Blá: Literatura e cidadania (Parte 5)",
+   "capitulos": [
+    { "inicio": 0, "titulo": "O balanço do projeto pela coordenação pedagógica" },
+    { "inicio": 36, "titulo": "O que os estudantes produziram, inclusive no digital" },
+    { "inicio": 67, "titulo": "Chegar à Academia Brasileira de Letras" },
+    { "inicio": 130, "titulo": "Literatura brasileira produzida em Goiás" },
+    { "inicio": 162, "titulo": "Paulina Chiziane e o Prêmio Camões" },
+    { "inicio": 193, "titulo": "Um perfil de rede social para cada personagem" },
+    { "inicio": 256, "titulo": "O Museu Conde dos Arcos e a cidade como texto" },
+    { "inicio": 318, "titulo": "A metáfora que fala do século 21" },
+    { "inicio": 350, "titulo": "Os cursos e o lugar da literatura goiana no currículo" },
+    { "inicio": 444, "titulo": "O recado aos estudantes do Goiás Tec" },
+    { "inicio": 510, "titulo": "Ler para se comunicar com o professor" },
+    { "inicio": 576, "titulo": "A leitura é um direito, e alguém precisa dar a ferramenta" },
+    { "inicio": 706, "titulo": "Encerramento" }
+   ]
   }
  },
  "sem_capitulos": {
   "observacao": "Publicados que NÃO ganham capítulo, e por quê. Está aqui para a próxima sessão não refazer a análise — e, no caso do institucional, para ninguém mandá-lo para a fila de transcrição paga por engano.",
-  "inst-video-geral-goias-tec-2025-master": "NÃO TEM LEGENDA NENHUMA — `captions: []` na API e 404 em captions/pt.vtt na pull zone (conferido em 31/08/2026). O áudio é só trilha musical e o AssemblyAI devolveu zero palavras. Não há de onde tirar capítulo, e gerá-la custaria transcrição paga (US$ 0,10 por minuto) sobre um vídeo sem fala. É o mesmo título que está no ar sem sinopse.",
+  "inst-video-geral-goias-tec-2025-master": "NÃO TEM LEGENDA NENHUMA — `captions: []` na API e 404 em captions/pt.vtt na pull zone (conferido em 31/08/2026). O áudio é só trilha musical e o AssemblyAI devolveu zero palavras: não há fala para legendar, logo não há de onde tirar capítulo. (O custo não é o motivo: a tabela do AssemblyAI é por hora — US$ 0,15 a 0,21/h —, o que dá US$ 0,018 para estes 5 min. Até 02/09/2026 esta nota dizia \"US$ 0,10 por minuto\", errado por ~30x.) É o mesmo título que está no ar sem sinopse.",
   "evento-5-encontro-2024-master": "4:12 de depoimentos seguidos sobre o mesmo assunto (IDEB e formações), sem troca de tema e sem nome de quem fala na legenda. Qualquer corte seria arbitrário.",
   "videoclipe-pequipod-ciranda-da-arte-2025-master": "Videoclipe. A legenda é letra de música.",
   "campanha-boas-ferias-2024-master": "2:50 de peça de campanha, 4 blocos de fala.",
@@ -367,6 +670,23 @@
   "curta-paraquedismo-2024-v2": "Curta de 1:59 — 2 blocos de fala.",
   "curta-matematicidades-2024-v2": "Curta de 1:49 — 3 blocos de fala.",
   "curta-kalunga-2024-v2": "Curta de 1:43 — 3 blocos de fala.",
-  "curta-leitura-2024-v2": "Curta de 1:42 — 3 blocos de fala."
+  "curta-leitura-2024-v2": "Curta de 1:42 — 3 blocos de fala.",
+  "data-aniversario-de-goiania-2025-master": "São 3:07 de narração contínua sobre a fundação de Goiânia, encadeada em ordem cronológica sem nenhuma quebra de assunto. Cortar aqui seria fatiar uma única frase histórica em pedaços arbitrários — o mesmo critério que deixou o 5º Encontro de fora.",
+  "campanha-boas-vindas-2024-master": "Peça de campanha de 2:57 em que os professores se revezam listando o que a rede oferece. É uma fala só, distribuída entre várias pessoas, e não muda de assunto: não há onde marcar um corte que signifique alguma coisa.",
+  "campanha-enem-nota-1000-redes-2024-vertical": "Tem 1:29 e é uma chamada de campanha sobre um único assunto, a premiação da redação do Enem. Vídeo curto de peça publicitária não comporta capítulo: a barra ficaria mais picada do que o conteúdo.",
+  "campanha-enem-nota-1000-libras-2024-master": "Mesma peça de 1:29 do corte vertical, aqui com janela de Libras. O motivo é o mesmo: um assunto só, curto demais para segmentar.",
+  "enquete-s01e01-portugues-2024-master": "São 2:02 de perguntas rápidas de língua portuguesa, uma emendada na outra. Cada pergunta dura poucos segundos: capítulo por pergunta produziria uma barra ilegível, e capítulo por bloco não existe — o vídeo é um bloco só.",
+  "enquete-s01e02-portugues-2024-master": "Mesmo formato do Episódio 1, em 2:10: perguntas curtas em sequência, sem mudança de assunto que justifique corte.",
+  "enquete-s01e03-portugues-2024-master": "Mesmo formato dos episódios anteriores, em 2:02: perguntas curtas em sequência, sem bloco interno que sustente um capítulo.",
+  "inst-institucional-goias-tec-2025-master": "Tem 1:56 de narração institucional corrida, apresentando o programa de uma ponta à outra. É curto e é um argumento único: não há corte que ajude quem assiste.",
+  "campanha-matriculas-goias-tec-2024-master": "É o vídeo mais curto da leva, 0:56, e é uma chamada de matrícula com um único recado. Capítulo aqui não teria o que separar.",
+  "papo-s01e01-linguagem-e-variacoes-2026-master": "Tem 2:53 e explica um conceito só, as variações linguísticas, com exemplos que se sucedem sem quebra. A série inteira é feita de peças curtas de conceito único — é o formato, não um descuido.",
+  "papo-s01e02-contexto-2026-master": "Tem 2:28 sobre um conceito único, o contexto na comunicação. Mesmo formato de peça curta da série: não há bloco interno para segmentar.",
+  "papo-s01e03-linguagem-padrao-2026-master": "Tem 2:58 sobre um conceito único, a linguagem padrão. Mesmo formato de peça curta da série.",
+  "papo-s01e04-linguagem-nas-redes-2026-master": "Tem 3:54 sobre um conceito único, a escrita nas redes sociais. Mesmo formato de peça curta da série.",
+  "papo-poder-2026-master": "Tem 3:02 e desenvolve um argumento só — a palavra como instrumento de poder —, encadeando Bakhtin, o exemplo das manchetes e a retórica clássica sem trocar de assunto. Cortar quebraria o raciocínio no meio.",
+  "inst-transformando-educacao-2024-master": "Tem 2:30 de narração institucional contínua explicando que a rotina do estudante não muda. É um argumento único, curto: não há o que separar.",
+  "evento-formandos-2025-master": "São 2:59 de mensagem de formatura construída sobre uma única metáfora, a da semente que floresce. Cortar a metáfora ao meio é pior do que não cortar.",
+  "evento-visita-tecnica-seduc-2024-master": "Tem 2:01 e é uma sequência de depoimentos curtos sobre o mesmo assunto, a visita técnica. É exatamente o caso do 5º Encontro: corte ali seria arbitrário."
  }
 }

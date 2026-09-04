@@ -11,7 +11,7 @@
   var TAMANHO_PEDACO = 50 * 1024 * 1024;   /* 50 MB por PATCH: progresso fino e retomada barata */
 
   var sessao = { token: null, expira: 0 };
-  var catalogo = { rev: 0, itens: [], config: {} };
+  var catalogo = { rev: 0, itens: [], config: {}, ajustes: {} };
   var envio = { upload: null, videoId: null, arquivo: null, titulo: '' };
 
   var $ = function (id) { return document.getElementById(id); };
@@ -104,9 +104,11 @@
       catalogo = {
         rev: dados.rev || 0,
         itens: Array.isArray(dados.itens) ? dados.itens : [],
-        config: dados.config || {}
+        config: dados.config || {},
+        ajustes: dados.ajustes || {}
       };
       preencherSeries();
+      preencherAjustes();
       renderLista();
       return catalogo;
     });
@@ -164,15 +166,106 @@
 
   /* ------------------------------------------------------------------ abas */
 
+  var ABAS = ['enviar', 'catalogo', 'ajustes'];
+
   function trocarAba(qual) {
-    var enviar = qual === 'enviar';
-    $('aba-enviar').setAttribute('aria-selected', String(enviar));
-    $('aba-catalogo').setAttribute('aria-selected', String(!enviar));
-    $('painel-enviar').hidden = !enviar;
-    $('painel-catalogo').hidden = enviar;
+    ABAS.forEach(function (a) {
+      var ativa = a === qual;
+      $('aba-' + a).setAttribute('aria-selected', String(ativa));
+      $('painel-' + a).hidden = !ativa;
+    });
   }
-  $('aba-enviar').addEventListener('click', function () { trocarAba('enviar'); });
-  $('aba-catalogo').addEventListener('click', function () { trocarAba('catalogo'); });
+  ABAS.forEach(function (a) {
+    $('aba-' + a).addEventListener('click', function () { trocarAba(a); });
+  });
+
+  /* ------------------------------------------------- ajustes do player
+   *
+   * Um número só, por enquanto: o teto do arrasto acelerado. Ele mora no
+   * PRÓPRIO catálogo (campo `ajustes`), e não em `config` — `config` vem do
+   * ambiente e o PUT o descarta, então um ajuste guardado ali se apagaria na
+   * gravação seguinte.
+   *
+   * A conta dos exemplos é a definição do número, não uma aproximação: o teto
+   * É a fração da duração que um arranco de ponta a ponta atravessa. Por isso
+   * ela é feita aqui com uma multiplicação, sem precisar do `player-core`
+   * nesta tela. */
+  function tetoEmPorcento() {
+    var f = Number(catalogo.ajustes && catalogo.ajustes.arrastoTeto);
+    return isFinite(f) && f > 0 ? Math.round(f * 100) : 40;
+  }
+
+  function mostrarExemplos() {
+    var pct = Number($('a-teto').value);
+    var alvo = $('a-exemplos');
+    if (!isFinite(pct) || pct < 5 || pct > 100) {
+      alvo.textContent = 'Escolha entre 5% e 100%.';
+      return;
+    }
+    /* Os extremos do acervo de verdade, e não durações inventadas: é neles
+     * que o número vai doer primeiro. */
+    var duracoes = catalogo.itens
+      .filter(function (i) { return i && i.publicar === true && Number(i.duracao_seg) > 0; })
+      .map(function (i) { return Number(i.duracao_seg); });
+    var amostras = duracoes.length
+      ? [Math.min.apply(null, duracoes), Math.max.apply(null, duracoes), 3600]
+      : [120, 1200, 3600];
+    var vistos = {};
+    alvo.textContent = 'Com ' + Math.round(pct) + '%: ' + amostras
+      .filter(function (d) { if (vistos[d]) return false; vistos[d] = 1; return true; })
+      .map(function (d) {
+        return 'um vídeo de ' + GTM.formatarTempo(d) +
+          ' pula no máximo ' + GTM.formatarTempo(Math.round(d * pct / 100));
+      })
+      .join(' · ') + '.';
+  }
+
+  /* `0` é uma escolha válida — "nunca some" — e por isso a checagem é por
+   * `null`/vazio, e não por falsidade: `0 || 3` daria 3 e engoliria o pedido. */
+  function segundosDoSumico() {
+    var s = catalogo.ajustes && catalogo.ajustes.controlesEspera;
+    return s === null || s === undefined || !isFinite(Number(s)) ? 3 : Number(s);
+  }
+
+  function preencherAjustes() {
+    $('a-teto').value = String(tetoEmPorcento());
+    $('a-sumico').value = String(segundosDoSumico());
+    mostrarExemplos();
+  }
+
+  $('a-teto').addEventListener('input', mostrarExemplos);
+
+  $('a-padrao').addEventListener('click', function () {
+    $('a-teto').value = '40';
+    $('a-sumico').value = '3';
+    mostrarExemplos();
+  });
+
+  $('a-salvar').addEventListener('click', function () {
+    var pct = Number($('a-teto').value);
+    if (!isFinite(pct) || pct < 5 || pct > 100) {
+      texto($('estado-ajustes'), 'Escolha entre 5% e 100%.', 'estado-erro');
+      return;
+    }
+    var seg = Number($('a-sumico').value);
+    if (!isFinite(seg) || seg < 0 || seg > 30) {
+      texto($('estado-ajustes'), 'O sumiço vai de 0 a 30 segundos.', 'estado-erro');
+      return;
+    }
+    texto($('estado-ajustes'), 'Salvando…');
+    salvarCatalogo(function (c) {
+      c.ajustes = Object.assign({}, c.ajustes, {
+        arrastoTeto: Math.round(pct) / 100,
+        controlesEspera: Math.round(seg)
+      });
+    }).then(function () {
+      /* A ficha lê o catálogo ao carregar: quem já está com uma aberta continua
+       * com o número velho até recarregar, e dizer isso evita o susto. */
+      texto($('estado-ajustes'), 'Salvo. Vale nas fichas abertas a partir de agora.', 'estado-ok');
+    }).catch(function (e) {
+      texto($('estado-ajustes'), e.message || 'não deu para salvar', 'estado-erro');
+    });
+  });
 
   /* ---------------------------------------------------------------- upload */
 

@@ -91,6 +91,38 @@ try {
     console.log(`preservados do KV: ${preservados} campos que não existem no arquivo local`);
   }
 
+  /* O merge acima só protege campo que NÃO existe no arquivo local. `titulo`,
+   * `serie`, `temporada` e `episodio` existem nos dois — logo o valor do arquivo
+   * ganha, e a curadoria feita pela tela de admin volta atrás sem aviso. Em
+   * 02/09/2026 isso eram 18 títulos: rodar aqui devolveria `Dof Ep01 Com
+   * Vinheta 2024` ao lugar de `De Olho no Futuro: Piloto de aeronave`.
+   *
+   * O aviso não bloqueia — semear continua sendo a ferramenta certa para
+   * restaurar o KV de um backup. Ele só deixa de ser silencioso. Para APENAS
+   * acrescentar títulos novos sem tocar no resto, use acrescentar-ao-kv.mjs. */
+  const regressoes = [];
+  for (const item of local.itens) {
+    const antigo = noKvPorId.get(item.id);
+    if (!antigo) continue;
+    for (const campo of ['titulo', 'serie', 'temporada', 'episodio']) {
+      if (String(antigo[campo]) !== String(item[campo])) {
+        regressoes.push({ id: item.id, campo, kv: antigo[campo], arquivo: item[campo] });
+      }
+    }
+  }
+
+  if (regressoes.length) {
+    console.log(`\n⚠  ${regressoes.length} campos editados pela tela de admin VÃO SER SOBRESCRITOS pelo arquivo local:`);
+    for (const r of regressoes.slice(0, 20)) {
+      console.log(`   ${r.id} · ${r.campo}`);
+      console.log(`      no ar:   ${r.kv}`);
+      console.log(`      vai virar: ${r.arquivo}`);
+    }
+    if (regressoes.length > 20) console.log(`   … e mais ${regressoes.length - 20}`);
+    console.log('   Se a intenção era só acrescentar títulos novos, pare aqui e use:');
+    console.log('     node scripts/acrescentar-ao-kv.mjs --simular\n');
+  }
+
   const corpo = { ...local, itens, rev: noKv.rev || 0 };
   delete corpo.config;
 
