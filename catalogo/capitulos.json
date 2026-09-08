@@ -1,6 +1,6 @@
 {
  "versao": 1,
- "observacao": "Capítulos escritos à mão a partir da legenda de cada vídeo (31/08/2026). Cada item tem só `inicio` (em segundos) e `titulo`: o `end` que o Bunny exige é derivado por scripts/capitulos.mjs, que fecha cada capítulo no início do seguinte e o último na duração do vídeo. Assim a linha do tempo fica inteira segmentada, sem buraco, e mover um corte não obriga a mexer no vizinho. Ver o cabeçalho de scripts/capitulos.mjs.",
+ "observacao": "Capítulos escritos à mão a partir da legenda de cada vídeo (31/08/2026). Cada item tem só `inicio` (em segundos) e `titulo`: o `end` que o Bunny exige é derivado por scripts/capitulos.mjs, que fecha cada capítulo no início do seguinte e o último na duração do vídeo. Assim a linha do tempo fica inteira segmentada, sem buraco, e mover um corte não obriga a mexer no vizinho. Ver o cabeçalho de scripts/capitulos.mjs. || Correção de 08/09/2026: os capítulos de 'De Olho no Futuro: Analista de Sistemas' estavam presos ao id de um upload DUPLICADO do mesmo master, que nunca foi publicado — e por isso o título ficou no ar sem capítulo nenhum desde 31/08. O id aqui passou a ser o do catálogo. Antes de transferir, foi conferido que os dois masters são o mesmo conteúdo: mesma duração (12:34) e a legenda do vídeo PUBLICADO confirmando os cortes — 55s cai em 'como que você escolheu a sua profissão', 399s no 'mês das mulheres', 722s no 'estamos chegando ao final'. Carimbo errado é pior do que capítulo nenhum. A lição: antes de escrever capítulo para um título, confira o id contra /api/catalogo — um id que não existe lá não dá erro, só não aplica, e o script roda limpo enquanto o vídeo fica sem nada.",
  "titulos": {
   "esportes-s01e01-vamos-falar-de-futebol-2024-master": {
    "titulo": "Esportes de Invasão: Vamos falar de futebol (Episódio 1)",
@@ -126,8 +126,8 @@
     { "inicio": 731, "titulo": "Encerramento" }
    ]
   },
-  "dof-analista-de-sistemas-2024-master": {
-   "titulo": "De Olho no Futuro: Analista de sistemas",
+  "dof-ep02-2024-master": {
+   "titulo": "De Olho no Futuro: Analista de Sistemas",
    "capitulos": [
     { "inicio": 0, "titulo": "Abertura: Daiane Caetano" },
     { "inicio": 55, "titulo": "Da Bahia à computação: como escolheu" },
