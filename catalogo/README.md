@@ -56,7 +56,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test                  # 51 testes, sem rede nem credenciais
+node --test                  # 257 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **tela de administração** (`/admin.html`), não por
@@ -92,7 +92,7 @@ não duplica nada. Os que trabalham sobre o catálogo aceitam `--piloto`, `--ite
 | Script | O que faz |
 |---|---|
 | `publicar.mjs` | Publica na grade quem passa nas três condições: sem pendência registrada, com `fonte.videoId`, e encoding concluído no Bunny. `--com-pendencia` força; `--despublicar <id>` desfaz. |
-| `capitulos.mjs` | Grava os capítulos de `capitulos.json` **em dois lugares**: no Bunny (segmenta a linha do tempo do player, que é iframe de outro domínio — só ele desenha aquilo) e no catálogo (alimenta a lista clicável da ficha). `--so bunny` / `--so site` separam. `--transcricao <id>` imprime a legenda em blocos, para escrever cortes novos. `--limpar <id>` desfaz. |
+| `capitulos.mjs` | Grava os capítulos de `capitulos.json` **em dois lugares**: no Bunny (segmenta a linha do tempo do embed, que é iframe de outro domínio — lá só ele desenha aquilo) e no catálogo (de onde saem tanto a lista clicável da ficha quanto os segmentos que o player próprio pinta na barra). `--so bunny` / `--so site` separam. `--transcricao <id>` imprime a legenda em blocos, para escrever cortes novos. `--limpar <id>` desfaz. |
 | `semear.mjs` | Leva o catálogo local para o KV. Recusa-se a sobrescrever um KV já populado; `--baixar backup.json` antes, `--sobrescrever` depois. |
 
 **Trabalham sobre o Bunny e o `catalogo.seed.json` local:**
@@ -125,13 +125,19 @@ node --test
 
 ### O que os testes garantem
 
-`tests/catalogo.test.js` cobre as três restrições inegociáveis do produto:
+`tests/catalogo.test.js` cobre as três restrições inegociáveis do produto. Desde que o player
+passou a ser nosso, elas valem em **dois lugares** — o player próprio e o embed do Bunny, que
+continua sendo o plano B —, e os dois têm teste:
 
-- **não toca sozinho** — a URL do player sempre leva `autoplay=false`. É a armadilha principal do
-  projeto: o padrão do Bunny é `true`. O teste falha se o parâmetro sumir.
-- **não repete** — `loop=false` na URL.
-- **não avança** — nenhum arquivo servido ao navegador escuta o fim do vídeo, e o `allow` do
-  iframe **não** inclui `autoplay` (segunda tranca, no nível do navegador).
+- **não toca sozinho** — no player próprio, uma **única** chamada de `play()` no projeto inteiro,
+  dentro de `alternarPlay`; o teste conta as ocorrências no arquivo, e se o número subir é porque
+  alguém arrumou um segundo lugar de onde o vídeo pode começar sozinho. No embed, a URL sempre leva
+  `autoplay=false` — a armadilha principal do projeto, porque o padrão do Bunny é `true`.
+- **não repete** — o `<video>` nasce sem `loop`, e a URL do embed leva `loop=false`.
+- **não avança** — nenhum arquivo servido ao navegador escuta o fim do vídeo (o teste varre os
+  quatro atrás da string `'ended'`), e o `allow` do iframe **não** inclui `autoplay`. Esta regra é
+  uma AUSÊNCIA de código, e é assim de propósito: sem o ouvinte não existe lugar conveniente para
+  alguém pendurar um "próximo episódio" automático.
 
 Mais: a AccessKey do Bunny não aparece em nenhum arquivo servido ao navegador; a grade só mostra
 `publicar: true`; a ordenação usa temporada/episódio e não nome de arquivo; a lista de capítulos
