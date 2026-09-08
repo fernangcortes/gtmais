@@ -239,6 +239,20 @@
     var controles = criar('div', 'pl-controles');
 
     var bPlay = botao('pl-b pl-play', 'Reproduzir');
+
+    /* As setas de capítulo (a decisão 1 da §5 do PROXIMA-SESSAO.md, 08/09).
+     *
+     * O gesto de dois dedos e o `Ctrl`+seta pulam capítulo desde a fase 3 e a
+     * fase 5, e os dois têm o mesmo defeito: a §4.6 do plano já avisava que o
+     * gesto não existe no YouTube e ninguém o descobre sozinho. Um atalho de
+     * teclado tem o mesmo problema. O que faltava era o caminho VISÍVEL.
+     *
+     * Elas só existem quando o título TEM capítulo — 39 dos 66. Nos outros 27
+     * a linha fica idêntica à de hoje, em vez de ganhar dois botões apagados
+     * que só sabem dizer "este título não tem capítulos". */
+    var bCapAnt = caps.length ? botao('pl-b pl-cap-ant', 'Capítulo anterior') : null;
+    var bCapProx = caps.length ? botao('pl-b pl-cap-prox', 'Próximo capítulo') : null;
+
     var bCC = botao('pl-b pl-cc', 'Legenda');
     var bMudo = botao('pl-b pl-mudo', 'Silenciar');
     var bCheia = botao('pl-b pl-cheia', 'Tela cheia');
@@ -267,6 +281,16 @@
     bMudo.appendChild(icone('pl-ic pl-ic-mudo',
       [ALTOFALANTE, ['M16 10l4 4m0-4l-4 4', true]]));
     bCheia.appendChild(icone('pl-ic', [['M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5', true]]));
+
+    /* O par de setas é o desenho de "faixa anterior / próxima faixa" de
+     * qualquer tocador — triângulo encostado numa barra —, e um é o espelho do
+     * outro em torno de x=12. É de propósito que não sejam as setas duplas do
+     * pular 5 s: aquelas andam no tempo, estas andam na LISTA, e o desenho
+     * precisa dizer isso antes de alguém apertar. */
+    if (bCapAnt) {
+      bCapAnt.appendChild(icone('pl-ic', ['M5 5h2v14H5z', 'M17 5v14l-9-7z']));
+      bCapProx.appendChild(icone('pl-ic', ['M7 5v14l9-7z', 'M17 5h2v14h-2z']));
+    }
 
     /* O cadeado é o mesmo desenho nos dois estados — corpo cheio e arco em
      * contorno. Aberto e fechado seriam dois desenhos para manter, e quem diz
@@ -399,8 +423,47 @@
     caixa.appendChild(camadaLegenda);
 
     controles.appendChild(bPlay);
-    controles.appendChild(tempo);
-    controles.appendChild(barra);
+
+    /* As setas ficam coladas no play, e não no fim da linha: as três juntas
+     * são o transporte — o que anda no vídeo —, e o resto da linha é ajuste.
+     *
+     * O relógio e a barra passam a andar JUNTOS, dentro de um contêiner. É o
+     * que faz o desenho caber, e a conta é esta, medida em 375 px: a linha tem
+     * 325 px de conteúdo, e hoje o play, o relógio, o CC, o som e a tela cheia
+     * comem 282,9 — sobram 42,1 px, e um botão de 44 px com o vão de 10 pede
+     * 54. Duas setas são impossíveis: só os itens já somam 330,9 px, mais do
+     * que a linha inteira.
+     *
+     * A largura sai do RELÓGIO, que sobe para a linha da barra no celular —
+     * onde a barra já mora sozinha desde a fase 3. A linha dos botões fica com
+     * seis de 44 px: 310 dos 325 px, com o par de capítulo contando como um.
+     * É o desenho do YouTube no celular, e não uma invenção nossa.
+     *
+     * E as duas setas moram num contêiner DELAS (`pl-cap-par`), encostadas uma
+     * na outra. Pular capítulo é uma função só, com duas direções — como o
+     * `Ctrl`+seta é uma tecla só com dois sentidos —, e duas setas separadas
+     * pelo mesmo vão de todo o resto leem como dois botões sem parentesco.
+     * O contêiner também é o que faz o par sobreviver ao `space-between` do
+     * celular: ali a linha distribui a sobra ENTRE os itens, e sem o par ser
+     * um item as duas setas se afastariam justamente onde deviam se juntar.
+     *
+     * Os contêineres só nascem quando há capítulo. Sem eles o DOM continua
+     * sendo o de hoje, item por item — a promessa de que os 27 títulos sem
+     * capítulo não pagam nada por esta entrega vale para o desenho E para a
+     * árvore. */
+    if (bCapAnt) {
+      var capPar = criar('div', 'pl-cap-par');
+      capPar.appendChild(bCapAnt);
+      capPar.appendChild(bCapProx);
+      controles.appendChild(capPar);
+      var tempoBarra = criar('div', 'pl-tempo-barra');
+      tempoBarra.appendChild(tempo);
+      tempoBarra.appendChild(barra);
+      controles.appendChild(tempoBarra);
+    } else {
+      controles.appendChild(tempo);
+      controles.appendChild(barra);
+    }
     controles.appendChild(bCC);
     controles.appendChild(somCaixa);
     controles.appendChild(bTrava);
@@ -1996,6 +2059,18 @@
     /* ------------------------------------------------------------- ligação */
 
     bPlay.addEventListener('click', alternarPlay);
+
+    /* As setas caem em `irParaCapitulo`, a MESMA função do `Ctrl`+seta e do
+     * gesto de dois dedos. Nada de caminho novo: o botão da esquerda recomeça
+     * o capítulo quando já se andou nele, mostra "Primeiro capítulo" quando
+     * não há para onde ir, e nunca chama play() — as três coisas vêm de graça
+     * por ser a mesma função, e é por isso que o botão foi ligado nela em vez
+     * de ganhar lógica própria. */
+    if (bCapAnt) {
+      bCapAnt.addEventListener('click', function () { irParaCapitulo(-1); });
+      bCapProx.addEventListener('click', function () { irParaCapitulo(1); });
+    }
+
     bCC.addEventListener('click', alternarLegenda);
 
     /* ------------------------------------------------ ligação do som (fase 4) */

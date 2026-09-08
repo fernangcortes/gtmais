@@ -1,5 +1,9 @@
 /* Testes das regras que o produto não pode perder. Rodar com:
- *     node --test tests/
+ *     node --test tests/catalogo.test.js
+ * de dentro de `catalogo`. O ARQUIVO, não a pasta: `node --test tests/` falha
+ * no Node 24 com um erro sem sentido (`test at tests:1:1`), e este comentário
+ * mandava fazer exatamente isso — o item 6 de "Erros que custaram caro" do
+ * ESTADO.md já apontava para cá desde então.
  * Sem dependências: só o test runner embutido do Node.
  */
 const { test } = require('node:test');
@@ -3126,6 +3130,151 @@ test('o botão de bloqueio só aparece em tela cheia', () => {
   assert.match(css, /\.pl-cadeado\[hidden\] \{ display: none; \}/);
 });
 
+/* ------------------------- as setas de capítulo (08/09) -------------------
+ *
+ * A decisão 1 da §5 do PROXIMA-SESSAO.md. O gesto de dois dedos e o
+ * `Ctrl`+seta pulam capítulo desde as fases 3 e 5, e a §4.6 do plano já
+ * avisava que ninguém descobre nenhum dos dois sozinho. O que faltava era o
+ * caminho VISÍVEL, e é ele. */
+
+test('as setas de capítulo só nascem para quem tem capítulo', () => {
+  assert.match(PLAYER_JS, /var bCapAnt = caps\.length \? botao\('pl-b pl-cap-ant'/,
+    'a seta da esquerda deveria depender de caps.length');
+  assert.match(PLAYER_JS, /var bCapProx = caps\.length \? botao\('pl-b pl-cap-prox'/,
+    'a seta da direita deveria depender de caps.length');
+
+  /* Sem capítulo o DOM continua sendo o de antes desta entrega — relógio e
+     barra soltos na linha, sem contêiner nenhum. É a promessa feita aos 27
+     títulos sem capítulo, e ela vale para a ÁRVORE, não só para o desenho. */
+  const montagem = PLAYER_JS.match(
+    /if \(bCapAnt\) \{[\s\S]*?\} else \{([\s\S]*?)\n    \}/);
+  assert.ok(montagem, 'não achei a montagem das setas em player.js');
+  assert.match(montagem[1], /controles\.appendChild\(tempo\);/,
+    'sem capítulo o relógio tem que entrar solto, como antes');
+  assert.match(montagem[1], /controles\.appendChild\(barra\);/,
+    'sem capítulo a barra tem que entrar solta, como antes');
+});
+
+/* O valor de ligar o botão na função que já existe: o recomeço do capítulo, os
+ * recados de ponta ("Primeiro capítulo") e o "nunca chama play()" vêm de
+ * graça. Um caminho próprio teria que reconquistar os três, e é assim que dois
+ * botões passam a divergir do atalho de teclado que deveriam espelhar. */
+test('as setas caem na mesma função do Ctrl+seta e do gesto', () => {
+  assert.match(PLAYER_CODIGO, /bCapAnt\.addEventListener\('click', function \(\) \{ irParaCapitulo\(-1\); \}\)/);
+  assert.match(PLAYER_CODIGO, /bCapProx\.addEventListener\('click', function \(\) \{ irParaCapitulo\(1\); \}\)/);
+
+  /* E `irParaCapitulo` continua sendo quem NÃO liga o play: pular de capítulo
+     num vídeo pausado deixa o vídeo pausado, como a lista clicável da ficha. */
+  const corpo = PLAYER_JS.match(/function irParaCapitulo\(direcao\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(corpo, 'não achei irParaCapitulo em player.js');
+  assert.ok(!/[^a-zA-Z]play\(\)/.test(corpo[1]), 'irParaCapitulo passou a ligar o play');
+});
+
+/* A lição de largura da fase 3, cobrada pela terceira vez — e agora com a
+ * conta escrita, porque foi ela que decidiu o desenho.
+ *
+ * Em 375 px a linha do player tem 349 px, e com os 12 px de padding de cada
+ * lado sobram 325 de conteúdo. As duas setas pediam 108 px onde havia 42,1
+ * livres, e uma linha com sete botões soma 330,9 só de itens — mais do que a
+ * linha inteira. A largura saiu do RELÓGIO, que sobe para a linha da barra. */
+/* "Pular capítulo é uma função só, com duas direções" — o pedido de quem usa o
+ * site, depois de ver as setas num Android (08/09). Duas setas separadas pelo
+ * mesmo vão de todo o resto leem como dois botões sem parentesco.
+ *
+ * O contêiner não é enfeite: no celular a linha distribui a sobra ENTRE os
+ * itens, e sem o par ser UM item as duas setas se afastariam exatamente onde
+ * deviam se juntar. */
+test('as duas setas são um item só da linha, e não dois', () => {
+  const montagem = PLAYER_CODIGO.match(/if \(bCapAnt\) \{([\s\S]*?)\n      var tempoBarra/);
+  assert.ok(montagem, 'não achei a montagem do par em player.js');
+  assert.match(montagem[1], /criar\('div', 'pl-cap-par'\)/,
+    'as setas deveriam entrar num contêiner delas');
+  assert.match(montagem[1], /capPar\.appendChild\(bCapAnt\)/);
+  assert.match(montagem[1], /capPar\.appendChild\(bCapProx\)/);
+  assert.ok(!/controles\.appendChild\(bCapAnt\)/.test(montagem[1]),
+    'a seta da esquerda ainda entra solta na linha — o par se desfaz no space-between');
+  assert.ok(!/controles\.appendChild\(bCapProx\)/.test(montagem[1]),
+    'a seta da direita ainda entra solta na linha — o par se desfaz no space-between');
+});
+
+
+test('a linha de 375 px cabe, com as setas e sem o relógio', () => {
+  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const alvo = css.match(/\.pl-b \{[^}]*?width: (\d+)px/);
+  assert.ok(alvo, 'não achei a largura do botão em .pl-b');
+  const botao = Number(alvo[1]);
+  assert.equal(botao, 44, 'o alvo de toque de 44 px é a medida de que a conta depende');
+
+  const vao = css.match(/\.pl-controles \{[\s\S]*?gap: (\d+)px/);
+  assert.ok(vao, 'não achei o vão de .pl-controles');
+  const normal = Number(vao[1]);
+
+  /* As duas setas são UM item da linha, não dois: elas moram num contêiner com
+     o vão delas. Quem conta itens tem que contar assim, senão a conta abaixo
+     descreve uma linha que não existe. */
+  const vaoPar = css.match(/\.pl-cap-par \{[^}]*?gap: (\d+)px/);
+  assert.ok(vaoPar, 'não achei o vão de dentro do par de capítulo');
+  const par = 2 * botao + Number(vaoPar[1]);
+
+  /* O par tem que ser MAIS APERTADO que a linha, senão ele não é um par — é
+     isso que faz duas setas lerem como uma função só com duas direções. */
+  assert.ok(Number(vaoPar[1]) < normal,
+    'o vão de dentro do par (' + vaoPar[1] + ') não é menor que o da linha (' + normal + ')');
+
+  const CONTEUDO = 349 - 12 - 12;          /* a linha em 375 px, menos o padding */
+  const soma = (itens, largura, g) => largura + (itens - 1) * g;
+
+  /* Fora da tela cheia, com capítulo: play, o PAR, CC, som e cheia — cinco
+     itens, seis botões. */
+  const fora = soma(5, botao * 4 + par, normal);
+  assert.ok(fora <= CONTEUDO,
+    'a linha de fora da tela cheia não cabe em ' + CONTEUDO + ' px: ' + fora);
+
+  /* Dentro dela entra o cadeado: seis itens, sete botões. Em pé não há 10 px
+     de vão para eles — e não havia antes desta entrega tampouco: a linha já
+     quebrava em três, com a tela cheia sozinha no terceiro andar (medido em
+     08/09: os controles iam de 88 px de altura para 134). */
+  const vaoCheia = css.match(/\.pl-cheia \.pl-controles \{ column-gap: (\d+)px; \}/);
+  assert.ok(vaoCheia, 'não achei o piso do vão da tela cheia em retrato');
+  const cheia = soma(6, botao * 5 + par, Number(vaoCheia[1]));
+  assert.ok(cheia <= CONTEUDO,
+    'a linha da tela cheia não cabe em ' + CONTEUDO + ' px: ' + cheia);
+
+  /* E a prova de que o piso apertado é NECESSÁRIO: com o vão normal, a linha
+     da tela cheia não caberia. Se um dia couber, ele virou enfeite e sai. */
+  assert.ok(soma(6, botao * 5 + par, normal) > CONTEUDO,
+    'a tela cheia passou a caber com o vão normal — o column-gap de 2 px não serve mais para nada');
+
+  /* O 2 px é PISO, não medida final. Sem isto a sobra de um aparelho mais
+     largo — 68 px num Android de 412 px em tela cheia — ia toda para um vazio
+     à direita, do tamanho de um botão. Foi o que se viu no aparelho em 08/09. */
+  const blocos = css.match(/@media \(max-width: 700px\) \{[\s\S]*?\n\}/g) || [];
+  const celular = blocos.find((b) => b.includes('.pl-controles {'));
+  assert.ok(celular, 'não achei o bloco de celular dos controles');
+  assert.match(celular, /\.pl-controles \{ justify-content: space-between; \}/,
+    'sem distribuir a sobra, a linha amontoa os botões à esquerda em toda tela maior que 375 px');
+});
+
+/* O contêiner do relógio + barra é o que faz os dois subirem JUNTOS no
+ * celular. Sem a segunda regra, o `flex-basis: 100%` que a fase 3 pôs na barra
+ * é herdado dentro dele, o relógio vai para uma linha e a barra para outra —
+ * três linhas, que é exatamente o que a fase 3 evitou. */
+test('no celular o relógio sobe junto com a barra, e não sozinho', () => {
+  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  /* Há mais de um `@media (max-width: 700px)` no arquivo — a legenda tem o
+     dela. O que interessa é o bloco em que os CONTROLES moram. */
+  const blocos = css.match(/@media \(max-width: 700px\) \{[\s\S]*?\n\}/g) || [];
+  const celular = blocos.find((b) => b.includes('.pl-controles {'));
+  assert.ok(celular, 'não achei o bloco de celular dos controles');
+  assert.match(celular, /\.pl-tempo-barra \{ order: -1; flex-basis: 100%; \}/);
+  assert.match(celular, /\.pl-tempo-barra \.pl-barra \{ order: 0; flex-basis: auto; \}/,
+    'sem devolver a barra ao normal dentro do contêiner, ela empurra o relógio para outra linha');
+
+  /* E o contêiner precisa poder encolher: um filho de flex não vai abaixo do
+     conteúdo sem `min-width: 0`, e a barra não tem largura de conteúdo. */
+  assert.match(css, /\.pl-tempo-barra \{[\s\S]*?min-width: 0;/);
+});
+
 /* ---------------------------------- item 6, o scrubber (fase 6, 03/09) ---
  *
  * Não existe storyboard no Bunny — são 5 quadros por vídeo, tanto num de 10
@@ -3551,5 +3700,48 @@ test('a AccessKey do Bunny não aparece em nenhum arquivo servido ao navegador',
     assert.ok(!/AccessKey\s*[:=]/.test(conteudo), arquivo + ' usa AccessKey como header/variável');
     assert.ok(!/BUNNY_API_KEY/.test(conteudo), arquivo + ' menciona BUNNY_API_KEY');
     assert.ok(!guid.test(conteudo), arquivo + ' contém um literal com cara de chave do Bunny');
+  }
+});
+
+/* ============================ capa: um arquivo, dois fregueses ========== */
+
+/* Armadilha de 08/09, ao encolher as capas: a §5.5 mediu a caixa do CARTÃO
+ * (180 px no celular, 321 no computador) e concluiu que 360-400 px bastavam.
+ * A mesma URL é o `poster` do player, num quadro de 881 px — a 400 px ele
+ * subiria 2,2x. Este teste existe para que a próxima pessoa que for mexer no
+ * tamanho da capa ESBARRE no segundo freguês antes de escolher o número. */
+test('a capa também é o poster do player — quem encolher a capa mexe nos dois', () => {
+  const player = fs.readFileSync(path.join(SITE, 'player.js'), 'utf8');
+  assert.match(player, /\.poster\s*=/,
+    'player.js não define poster nenhum — se isso saiu de propósito, tire este teste junto');
+  assert.match(player, /GTM\.urlCapa\(/,
+    'o poster do player tem que sair de GTM.urlCapa, o mesmo lugar que a grade usa');
+
+  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  assert.match(app, /GTM\.urlCapa\(/, 'a grade também tem que passar por urlCapa');
+});
+
+/* ============================ a curadoria do repositório aberto ========= */
+
+/* Uma das DUAS travas da §3.2. A outra é o `.gitignore` do repositório ABERTO,
+ * que não está nesta árvore e por isso nenhum teste daqui alcança — quem
+ * confere as duas juntas é o ensaio do espelho-publico.mjs. O que dá para
+ * guardar aqui é que a lista não perdeu a linha, e que ela casa com o nome da
+ * pasta LETRA POR LETRA: o espaço no meio é a parte que erra sozinha. */
+test('toda pasta interna na raiz está na lista PROIBIDOS do espelho', () => {
+  const raiz = path.join(__dirname, '..', '..');
+  const espelho = fs.readFileSync(
+    path.join(__dirname, '..', 'scripts', 'espelho-publico.mjs'), 'utf8');
+  const bloco = espelho.match(/const PROIBIDOS = \[([\s\S]*?)\n\];/);
+  assert.ok(bloco, 'não achei a lista PROIBIDOS em espelho-publico.mjs');
+  const proibidos = [...bloco[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+
+  /* Derivado do disco, não escrito à mão: se a pasta for renomeada, é o nome
+   * novo que a lista passa a dever. */
+  for (const nome of ['briefing visual', 'inventario', 'apresentacao']) {
+    if (!fs.existsSync(path.join(raiz, nome))) continue;
+    assert.ok(proibidos.includes(nome + '/'),
+      'a pasta "' + nome + '" existe na raiz e NÃO está em PROIBIDOS — ' +
+      'ela sairia no snapshot se o .gitignore de lá também esquecesse dela');
   }
 });

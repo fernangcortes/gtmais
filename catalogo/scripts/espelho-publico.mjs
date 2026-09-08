@@ -45,6 +45,12 @@ import { argumentos, erroFatal } from './lib/catalogo.mjs';
 const PROIBIDOS = [
   'inventario/',
   'apresentacao/',
+  /* O ESPAÇO no nome é literal, e é a parte que erra sozinha: aqui a
+   * comparação é por prefixo de string, então `briefing visual/` casa; no
+   * `.gitignore` do repositório aberto a linha é a mesma, sem espaço sobrando
+   * no fim — lá um espaço no fim da linha é ignorado pelo git e a trava não
+   * pegaria nada. As duas foram conferidas em 08/09 pelo ensaio do script. */
+  'briefing visual/',
   'catalogo.seed.json',
   'catalogo.kv.json',
   'assemblyai-jobs.json',
@@ -81,8 +87,12 @@ const ehProibido = (caminho) =>
 
 /* Qual remoto é o aberto? Descoberto pela URL, e não pelo nome.
  *
- * O nome é a parte frágil: hoje o aberto se chama `origin`, que é o nome que
- * todo tutorial manda digitar; amanhã pode se chamar `publico`. A URL não
+ * O nome é a parte frágil, e ele JÁ mudou uma vez: o aberto se chamava
+ * `origin` até 08/09 — o nome que todo tutorial manda digitar, e por isso o
+ * mais perigoso de apontar para o repositório onde o acervo não pode chegar.
+ * Passou a se chamar `publico`, e `origin` virou o privado, que é para onde o
+ * `git push` de todo dia deve ir. Este script atravessou a troca sem uma
+ * linha alterada, porque nunca dependeu do nome. A URL não
  * muda de significado. E o teste é pela NEGATIVA — `gtmais-intra` é o
  * privado —, para que um remoto novo nunca seja confundido com o aberto. */
 function acharRemotoAberto(escolhido) {

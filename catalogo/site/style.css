@@ -520,6 +520,31 @@ main { padding: 24px 0 64px; }
 }
 .pl-tempo-sep { opacity: .6; }
 
+/* As duas setas de capítulo, encostadas uma na outra (08/09). Pular capítulo é
+   uma função só com duas direções, e o vão de 10 px que separa os OUTROS
+   controles as faria ler como dois botões sem parentesco. Aqui são 2 px, que
+   com os 10 px de respiro que cada alvo de 44 já tem em volta do desenho de 24
+   viram 22 px entre um ícone e o outro — contra os 15 ou mais que o
+   `space-between` do celular põe entre os itens vizinhos.
+
+   Ele também é o que faz o par SOBREVIVER a esse `space-between`: a linha
+   distribui a sobra entre os ITENS, e sem o par ser um item só as duas setas
+   se afastariam exatamente onde deviam se juntar. */
+.pl-cap-par { display: flex; align-items: center; gap: 2px; flex: none; }
+
+/* O relógio e a barra, juntos (08/09). No computador o contêiner é inerte —
+   ele ocupa a mesma largura que os dois ocupavam soltos. Ele existe pelo
+   celular, onde é ele que sobe inteiro para a linha da barra e devolve à linha
+   dos botões os 66,9 px do relógio, que é onde as setas de capítulo cabem.
+
+   `min-width: 0` porque um filho de flex não encolhe abaixo do conteúdo sem
+   isso, e a barra tem largura mínima de conteúdo zero — sem a linha, uma
+   janela estreita empurraria a barra para fora em vez de encolhê-la. */
+.pl-tempo-barra {
+  display: flex; align-items: center; gap: 10px;
+  flex: 1 1 auto; min-width: 0;
+}
+
 .pl-barra {
   flex: 1 1 auto; position: relative; height: 20px; cursor: pointer;
   /* Sem isto, arrastar na barra rola a página no celular em vez de procurar. */
@@ -539,6 +564,45 @@ main { padding: 24px 0 64px; }
      que cobriam antes — com a barra dez vezes maior. */
   .pl-controles { flex-wrap: wrap; padding-top: 12px; row-gap: 2px; }
   .pl-barra { order: -1; flex-basis: 100%; }
+
+  /* A linha dos botões DISTRIBUI a sobra, em vez de amontoar tudo à esquerda
+     (08/09, depois de ver num Android). O vão é um MÍNIMO, não a medida final:
+     em 375 px os botões enchem a linha e o `space-between` não tem o que
+     distribuir, mas num aparelho de 412 px em tela cheia sobravam 68 px — e
+     eles ficavam todos num vazio à direita, do tamanho de um botão, como se
+     faltasse alguma coisa ali. A barra da linha de cima já vai de ponta a
+     ponta; a dos botões passa a ir também. */
+  .pl-controles { justify-content: space-between; }
+
+  /* Com capítulo, o RELÓGIO sobe junto com a barra, e é daí que sai a largura
+     das duas setas (08/09). Medido em 375 px: a linha tem 325 px de conteúdo,
+     e os seis botões de 44 px com cinco vãos de 10 comem 314 — antes eram
+     282,9 com o relógio dentro, e as duas setas pediam 108 para 42,1 livres.
+
+     O relógio e a barra andam juntos porque estão no mesmo contêiner, e não
+     por um `flex-basis` calculado: `calc(100% - 77px)` daria o mesmo desenho
+     hoje e mentiria no dia em que o relógio mudar de largura — um título de
+     mais de uma hora, ou a fonte do sistema aumentada. O contêiner mede o
+     relógio sozinho. */
+  .pl-tempo-barra { order: -1; flex-basis: 100%; }
+  /* Dentro do contêiner a barra volta a ser o que era antes da regra acima:
+     sem ela, o `flex-basis: 100%` herdado empurraria o relógio para uma linha
+     só dele e a barra para outra — três linhas de novo. */
+  .pl-tempo-barra .pl-barra { order: 0; flex-basis: auto; }
+
+  /* Tela cheia em RETRATO é a linha mais apertada que existe, porque é a única
+     em que o cadeado (fase 5) divide 325 px com todo o resto. Ela já quebrava
+     em TRÊS linhas antes desta entrega — os controles iam de 88 px de altura
+     para 134, e a tela cheia ia sozinha para o terceiro andar. O comentário do
+     `.pl-trava` dizia "deitado em tela cheia sobra largura": deitado sobra,
+     em pé não.
+
+     Com sete botões de 44 px sobram 17 px para os cinco vãos (o par de capítulo
+     conta como um item). O vão cai para 2 px, e ele é o PISO: onde a tela é
+     mais larga que 375 px, o `space-between` acima distribui o resto. Antes
+     de ele existir, este 2 px era a medida final e a sobra toda ia para a
+     direita — foi o que se viu num Android e o que mandou consertar. */
+  .pl-cheia .pl-controles { column-gap: 2px; }
 }
 /* Os trilhos (fase 3). A barra é SEMPRE feita de segmentos: um por capítulo
    quando o título tem, um só quando não tem — 22 dos 33 no ar. Assim existe um
