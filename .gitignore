@@ -43,3 +43,9 @@ apresentacao/
 docs/COMO-EXPORTAR-COOKIES.md
 docs/LEIA-ME_ESTRUTURA.md
 docs/relatorio-acervo-e-plano.md
+
+# --- fora daqui desde 08/09, pela mesma razão das linhas acima ---
+# Peça de comunicação do projeto (uma página só, publicada à parte na Vercel).
+# Não é código do catálogo, e o repositório aberto guarda só o código. O espaço
+# no nome é de propósito — é o nome da pasta, e a linha tem que casar com ele.
+briefing visual/
