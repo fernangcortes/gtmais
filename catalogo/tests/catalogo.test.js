@@ -14,6 +14,23 @@ const path = require('node:path');
 const GTM = require('../site/catalogo-core.js');
 const SITE = path.join(__dirname, '..', 'site');
 
+/* Todo arquivo lido aqui passa por este helper, e o 
+ vira 
+.
+ *
+ * NÃO é enfeite, e custou uma investigação: a árvore de trabalho no Windows é
+ * CRLF (`core.autocrlf=true`), o repositório guarda LF, e um regex que
+ * atravessa uma quebra de linha — `/.pl-b {
+/` — casa no blob e FALHA no
+ * checkout. O teste "o painel de som encosta no ícone" ficou assim: passava no
+ * CI (Linux, LF) e reprovava em qualquer clone Windows, inclusive no
+ * repositório ABERTO, onde o README promete que os testes rodam.
+ *
+ * Normalizar na LEITURA resolve a classe inteira de uma vez, em vez de caçar
+ * cada regex. Quem acrescentar um `fs.readFileSync` cru aqui reabre o buraco;
+ * há teste varrendo o arquivo atrás disso. */
+const lerTexto = (caminho) => fs.readFileSync(caminho, 'utf8').split('\r\n').join('\n');
+
 const fonte = { tipo: 'bunny', libraryId: '123456', videoId: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee' };
 
 /* ============================ as três restrições inegociáveis ============ */
@@ -39,7 +56,7 @@ test('nenhum dos quatro parâmetros pode faltar na URL do player', () => {
 
 test('a interface não reage ao fim do vídeo — nada de avanço automático', () => {
   for (const arquivo of ['app.js', 'admin.js', 'player.js', 'player-core.js']) {
-    const fonteJs = fs.readFileSync(path.join(SITE, arquivo), 'utf8');
+    const fonteJs = lerTexto(path.join(SITE, arquivo));
     assert.ok(!/['"]ended['"]/.test(fonteJs), arquivo + ' escuta o fim do vídeo');
     assert.ok(!/autoplay\s*[:=]\s*['"]?true/.test(fonteJs), arquivo + ' liga autoplay');
     assert.ok(!/setTimeout[^)]*proximo/i.test(fonteJs), arquivo + ' agenda ir para o próximo');
@@ -51,7 +68,7 @@ test('a interface não reage ao fim do vídeo — nada de avanço automático', 
  * do Bunny, que é protegida justamente por Allowed Referrers. Resultado: 403 em
  * todas as capas, no próprio site. */
 test('a página não usa no-referrer — quebraria as capas servidas pelo Bunny', () => {
-  const html = fs.readFileSync(path.join(SITE, 'index.html'), 'utf8');
+  const html = lerTexto(path.join(SITE, 'index.html'));
   const m = html.match(/<meta\s+name="referrer"\s+content="([^"]*)"/);
   assert.ok(m, 'index.html precisa declarar uma política de referrer');
   assert.notEqual(m[1], 'no-referrer', 'no-referrer faz a pull zone do Bunny responder 403');
@@ -62,7 +79,7 @@ test('a página não usa no-referrer — quebraria as capas servidas pelo Bunny'
  * escondia a ficha com `hidden` mas deixava o iframe no DOM — e o vídeo seguia
  * tocando, com áudio, por cima da grade. Só remover o elemento interrompe. */
 test('voltar para a grade destrói o player — esconder não para o vídeo', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const corpo = app.match(/function renderGrade\(\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(corpo, 'não achei renderGrade em app.js');
   assert.match(corpo[1], /limpar\(el\.ficha\)/,
@@ -73,7 +90,7 @@ test('voltar para a grade destrói o player — esconder não para o vídeo', ()
  * `urlCapa` depende de `capa_versao` para furar o cache do CDN — e a projeção
  * pública não estava mandando esse campo. */
 test('a projeção pública leva capa_versao — sem ela a grade mostra a capa em cache', () => {
-  const fn = fs.readFileSync(path.join(SITE, 'functions', 'api', 'catalogo.js'), 'utf8');
+  const fn = lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js'));
   const proj = fn.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(proj, 'não achei paraPublico em functions/api/catalogo.js');
   assert.match(proj[1], /capa_versao/,
@@ -81,7 +98,7 @@ test('a projeção pública leva capa_versao — sem ela a grade mostra a capa e
 });
 
 test('o iframe não recebe permissão de autoplay na permission policy', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const m = app.match(/setAttribute\('allow',\s*'([^']*)'/);
   assert.ok(m, 'não achei o atributo allow do iframe');
   assert.ok(!m[1].includes('autoplay'), 'allow do iframe contém autoplay: ' + m[1]);
@@ -128,7 +145,7 @@ test('o trecho animado do hover vem do preview.webp da pull zone', () => {
  * dezenas de MB e a tela inicial morre no celular — por isso o <img> só pode nascer no mouseenter e
  * tem que morrer no mouseleave. */
 test('o preview do hover não é carregado junto com a grade', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
 
   const feitura = app.match(/function cartao\(item\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(feitura, 'não achei cartao() em app.js');
@@ -148,7 +165,7 @@ test('o preview do hover não é carregado junto com a grade', () => {
 /* Em tela de toque não existe hover, e quem pediu menos movimento não quer um
  * trecho rodando sozinho: nesses casos o cartão fica só com a capa. */
 test('o preview do hover se protege contra toque e prefers-reduced-motion', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /\(hover:\s*hover\)\s*and\s*\(pointer:\s*fine\)/,
     'falta a guarda de hover/pointer antes de carregar o preview');
   assert.match(app, /prefers-reduced-motion:\s*reduce/,
@@ -158,7 +175,7 @@ test('o preview do hover se protege contra toque e prefers-reduced-motion', () =
 /* Mesma armadilha do <meta> do index.html, agora dentro do JS: qualquer imagem
  * marcada com referrerpolicy="no-referrer" leva 403 da pull zone. */
 test('nenhuma imagem da grade define referrerpolicy por conta própria', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const semComentarios = app.replace(/\/\*[\s\S]*?\*\//g, '');
   assert.ok(!/referrerpolicy/i.test(semComentarios),
     'app.js define referrerpolicy numa imagem; a política tem que vir do <meta>');
@@ -191,7 +208,7 @@ test('a mini-sinopse some quando não há sinopse, sem quebrar o cartão', () =>
   assert.equal(GTM.resumoSinopse({}), '');
   assert.equal(GTM.resumoSinopse(null), '');
 
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const feitura = app.match(/function cartao\(item\)\s*\{([\s\S]*?)\n  \}/);
   assert.match(feitura[1], /if \(resumo\)/,
     'cartao() precisa pular o parágrafo da sinopse quando o resumo vem vazio');
@@ -226,7 +243,7 @@ test('séries de triagem vão para o fim da grade', () => {
  * sozinho por faixa e a tela inteira vazia à direita. Filtrar por um chip
  * continua valendo — o que saiu foi só o agrupamento visual. */
 test('a aba "Todas" é uma grade única, sem cabeçalho de série', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const corpo = app.match(/function renderGrade\(\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(corpo, 'não achei renderGrade em app.js');
   assert.ok(!/serie-bloco|serie-titulo/.test(corpo[1]),
@@ -234,7 +251,7 @@ test('a aba "Todas" é uma grade única, sem cabeçalho de série', () => {
   assert.match(corpo[1], /GTM\.ordenar\(/,
     'a grade única ainda precisa da ordem de ordenar(): série, temporada, episódio');
 
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   assert.ok(!/\.serie-titulo/.test(css), 'sobrou CSS morto do cabeçalho de série');
 });
 
@@ -465,7 +482,7 @@ test('o tempo do capítulo é escrito como o resto do site', () => {
  * O que não muda em nenhum dos dois: ela NÃO pode chamar play(). Pular para um
  * capítulo posiciona o vídeo; quem decide tocar é quem aperta o play. */
 test('a lista de capítulos só posiciona o vídeo — nunca manda tocar', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const corpo = app.match(/function listaCapitulos\(item, alvo\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(corpo, 'não achei listaCapitulos em app.js');
   assert.match(corpo[1], /setCurrentTime/,
@@ -490,7 +507,7 @@ test('a lista de capítulos só posiciona o vídeo — nunca manda tocar', () =>
  * Nada disso aparece com mouse, e nada disso apareceu em cinco fases de
  * emulação de toque. Por isso tem teste. */
 test('a lista de capítulos não engole o dedo de quem está rolando a página', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
 
   /* Onde o teto sai, o contêiner de rolagem sai junto. Há mais de um bloco de
    * 900 px na folha — o que importa é o que fala da lista. */
@@ -512,9 +529,9 @@ test('a lista de capítulos não engole o dedo de quem está rolando a página',
 /* O Player.js é externo. Carregá-lo na tela inicial custaria um script a quem
  * só está olhando a grade — e ele só serve na ficha de quem tem capítulos. */
 test('o Player.js é carregado sob demanda, não junto com a página', () => {
-  const html = fs.readFileSync(path.join(SITE, 'index.html'), 'utf8');
+  const html = lerTexto(path.join(SITE, 'index.html'));
   assert.ok(!/playerjs/i.test(html), 'index.html carrega o Player.js de saída');
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /function carregarPlayerjs\(\)/);
   assert.match(app, /iframe\.isConnected/,
     'voltar para a grade destrói a ficha; o Player.js só pode se ligar a um iframe ainda vivo');
@@ -523,7 +540,7 @@ test('o Player.js é carregado sob demanda, não junto com a página', () => {
 /* Mesmo bug da capa: campo que não sai por paraPublico não existe para a
  * grade, e a lista de capítulos sumiria da ficha sem ninguém entender por quê. */
 test('a projeção pública leva os capítulos — sem eles a lista some da ficha', () => {
-  const fn = fs.readFileSync(path.join(SITE, 'functions', 'api', 'catalogo.js'), 'utf8');
+  const fn = lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js'));
   const proj = fn.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(proj, 'não achei paraPublico em functions/api/catalogo.js');
   assert.match(proj[1], /capitulos/, 'paraPublico precisa incluir capitulos');
@@ -536,7 +553,7 @@ test('a projeção pública leva os capítulos — sem eles a lista some da fich
  * Sem esta linha o número chega ao KV por `scripts/framerate.mjs` e nunca
  * chega ao navegador — e o sintoma seria o atalho simplesmente não existir. */
 test('a projeção pública leva o framerate — sem ele o passo de quadro não tem régua', () => {
-  const fn = fs.readFileSync(path.join(SITE, 'functions', 'api', 'catalogo.js'), 'utf8');
+  const fn = lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js'));
   const proj = fn.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(proj, 'não achei paraPublico em functions/api/catalogo.js');
   assert.match(proj[1], /framerate/, 'paraPublico precisa incluir framerate');
@@ -552,7 +569,7 @@ test('a projeção pública leva o framerate — sem ele o passo de quadro não 
  * comentário que explica justamente por que não se usa aquele script aqui. Um
  * teste que reprovasse a palavra puniria a explicação. */
 test('o framerate.mjs lê o KV e grava no KV — nunca no seed como fonte', () => {
-  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'framerate.mjs'), 'utf8');
+  const src = lerTexto(path.join(__dirname, '..', 'scripts', 'framerate.mjs'));
   assert.match(src, /completo=1/, 'framerate.mjs precisa ler o KV por ?completo=1');
   assert.match(src, /method:\s*'PUT'/, 'framerate.mjs precisa gravar o KV por PUT');
   assert.doesNotMatch(src, /^\s*import[^\n]*semear/m,
@@ -578,7 +595,7 @@ test('nenhum script que grava o catálogo apaga os `ajustes` antes do PUT', () =
   const pasta = path.join(__dirname, '..', 'scripts');
   const gravam = fs.readdirSync(pasta)
     .filter(n => n.endsWith('.mjs'))
-    .map(n => ({ nome: n, src: fs.readFileSync(path.join(pasta, n), 'utf8') }))
+    .map(n => ({ nome: n, src: lerTexto(path.join(pasta, n)) }))
     .filter(a => /method:\s*'PUT'/.test(a.src));
 
   assert.ok(gravam.length >= 2,
@@ -596,7 +613,7 @@ test('nenhum script que grava o catálogo apaga os `ajustes` antes do PUT', () =
  * ótimo. O 5º Encontro tem 4:12 de depoimentos sobre o mesmo assunto — corte
  * ali seria arbitrário. O que este teste guarda é a disciplina do arquivo. */
 test('capitulos.json: todo título é decidido, e nenhum está nas duas listas', () => {
-  const definidos = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'capitulos.json'), 'utf8'));
+  const definidos = JSON.parse(lerTexto(path.join(__dirname, '..', 'capitulos.json')));
   const comCapitulo = Object.keys(definidos.titulos);
   const semCapitulo = Object.keys(definidos.sem_capitulos).filter(k => k !== 'observacao');
 
@@ -647,7 +664,7 @@ test('capitulos.json: todo título é decidido, e nenhum está nas duas listas',
  * Gerar capítulo para ele exigiria transcrição paga de um vídeo sem fala. Ele
  * tem que continuar do lado de fora, com o motivo escrito. */
 test('o vídeo institucional, que não tem legenda, fica fora e com o motivo escrito', () => {
-  const definidos = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'capitulos.json'), 'utf8'));
+  const definidos = JSON.parse(lerTexto(path.join(__dirname, '..', 'capitulos.json')));
   const id = 'inst-video-geral-goias-tec-2025-master';
   assert.ok(!(id in definidos.titulos), id + ' ganhou capítulos, mas não tem legenda de onde tirá-los');
   assert.match(definidos.sem_capitulos[id], /LEGENDA/,
@@ -663,7 +680,7 @@ test('o vídeo institucional, que não tem legenda, fica fora e com o motivo esc
  */
 
 const GTMP = require('../site/player-core.js');
-const PLAYER_JS = fs.readFileSync(path.join(SITE, 'player.js'), 'utf8');
+const PLAYER_JS = lerTexto(path.join(SITE, 'player.js'));
 
 /* Este arquivo é comentado de propósito, e os comentários FALAM das regras —
  * "o único lugar que chama video.play()". Contar ocorrências no texto cru
@@ -704,7 +721,7 @@ test('o player nosso é o padrão, e o embed continua a uma URL de distância', 
   /* A segunda rede: se `criar()` devolver null — ou se o player.js nem tiver
    * carregado, e `GTMPlayer` for undefined — o iframe assume sozinho, e o
    * `urlEmbed()` continua existindo para isso. */
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /typeof GTMPlayer !== 'undefined' && GTMPlayer\.pedido\(\)/);
   assert.match(app, /if \(fonte && !alvoCapitulos\) \{/,
     'sem este bloco, quem cair fora do player novo fica sem vídeo nenhum');
@@ -807,7 +824,7 @@ test('sair da ficha destrói o hls.js, não só o elemento', () => {
   assert.match(destruir[1], /removeAttribute\('src'\)/,
     'sem tirar o src, o download em andamento continua até o fim');
 
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   for (const fn of ['renderGrade', 'renderFicha']) {
     const corpo = app.match(new RegExp('function ' + fn + '\\([^)]*\\)\\s*\\{([\\s\\S]*?)\\n  \\}'));
     assert.ok(corpo, 'não achei ' + fn + ' em app.js');
@@ -905,7 +922,7 @@ test('o <video> nasce com playsinline e crossorigin — as duas travas do iOS', 
 /* Mesma disciplina do Player.js dos capítulos: quem abre a grade não paga por
  * uma biblioteca que a grade não usa. São 353 KB. */
 test('o hls.js é carregado sob demanda, nunca junto com a página', () => {
-  const html = fs.readFileSync(path.join(SITE, 'index.html'), 'utf8');
+  const html = lerTexto(path.join(SITE, 'index.html'));
   assert.ok(!/<script[^>]+hls/i.test(html), 'index.html carrega o hls.js de saída');
   assert.match(html, /<script src="player-core\.js"><\/script>/);
   assert.match(html, /<script src="player\.js"><\/script>/);
@@ -915,11 +932,11 @@ test('o hls.js é carregado sob demanda, nunca junto com a página', () => {
 /* A única dependência de terceiros do projeto. Se a versão do arquivo e a do
  * LEIA-ME divergirem, ninguém mais sabe o que está no ar. */
 test('a versão do hls.js vendorizada é a que o LEIA-ME declara', () => {
-  const leiaMe = fs.readFileSync(path.join(SITE, 'vendor', 'LEIA-ME.md'), 'utf8');
+  const leiaMe = lerTexto(path.join(SITE, 'vendor', 'LEIA-ME.md'));
   const declarada = leiaMe.match(/hls\.js\s+(\d+\.\d+\.\d+)/);
   assert.ok(declarada, 'o LEIA-ME do vendor precisa declarar a versão do hls.js');
 
-  const bundle = fs.readFileSync(path.join(SITE, 'vendor', 'hls.light.min.js'), 'utf8');
+  const bundle = lerTexto(path.join(SITE, 'vendor', 'hls.light.min.js'));
   assert.ok(bundle.includes('"' + declarada[1] + '"'),
     'o arquivo vendorizado não é a versão ' + declarada[1] + ' que o LEIA-ME declara');
   assert.ok(!/sourceMappingURL/.test(bundle),
@@ -1400,7 +1417,7 @@ test('nada neste player pergunta qual é o navegador', () => {
    * `userAgent` para dizer que não se fareja é justamente o que o comentário
    * do probe faz. Citar é permitido; usar, não. */
   for (const arquivo of ['player.js', 'player-core.js', 'app.js', 'catalogo-core.js']) {
-    const codigo = semComentarios(fs.readFileSync(path.join(SITE, arquivo), 'utf8'));
+    const codigo = semComentarios(lerTexto(path.join(SITE, arquivo)));
     assert.ok(!/userAgent|navigator\.platform|navigator\.vendor/.test(codigo),
       arquivo + ' fareja o navegador em vez de perguntar pelo recurso');
   }
@@ -2034,7 +2051,7 @@ test('os segmentos são montados no início e refeitos quando a duração chega'
  * onde um capítulo começa — e ninguém entenderia por quê. */
 test('o player e a lista leem os capítulos pela mesma função', () => {
   assert.match(PLAYER_CODIGO, /var caps = GTM\.capitulos\(item\)/);
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /var caps = GTM\.capitulos\(item\)/);
 });
 
@@ -2043,7 +2060,7 @@ test('o player e a lista leem os capítulos pela mesma função', () => {
  * `timeupdate` do <video>, um pulo por Ctrl+seta antes do primeiro play
  * deixaria o destaque no capítulo anterior, como se a tecla não funcionasse. */
 test('a lista de capítulos ouve o player, não o <video>', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   const lista = app.match(/function listaCapitulos\(item, alvo\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(lista, 'não achei listaCapitulos em app.js');
   assert.match(lista[1], /alvo\.aoTempo\(/, 'a lista precisa se inscrever no player');
@@ -2663,7 +2680,7 @@ test('o filtro de brilho saiu do CSS junto com o gesto', () => {
    * depois saber o que existia. Procurar no arquivo cru acharia a citação e
    * daria o teste por reprovado — que é a mesma armadilha do `semear` no
    * teste do framerate.mjs: um teste que reprova a EXPLICAÇÃO da remoção. */
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8')
+  const css = lerTexto(path.join(SITE, 'style.css'))
     .replace(/\/\*[\s\S]*?\*\//g, '');
   assert.doesNotMatch(css, /\.pl-brilho\s+\.pl-video/,
     'a regra do brilho continua no CSS — o gesto saiu e ela ficou órfã');
@@ -3086,7 +3103,7 @@ test('quem liga a pinça é a tela cheia, e o navegador fica com o zoom da pági
   /* Sair da tela cheia limpa a transformação na TELA, e não só na máquina. */
   assert.match(PLAYER_CODIGO, /if \(!cheia\) \{ definirZoom\(GTMP\.ZOOM_MIN, 0, 0\)/);
 
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   /* A linha que ENTREGA a pinça ao navegador fora da tela cheia. Tirar
    * `pinch-zoom` daqui é tirar o zoom da página de cima do vídeo, e isso é
    * acessibilidade: quem precisa de letra maior no site inteiro perderia o
@@ -3096,7 +3113,7 @@ test('quem liga a pinça é a tela cheia, e o navegador fica com o zoom da pági
 });
 
 test('a transformação do zoom escala primeiro e desloca depois', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   const regra = css.match(/\.pl-zoom \.pl-video \{([\s\S]*?)\}/);
   assert.ok(regra, 'não achei .pl-zoom .pl-video em style.css');
   /* A ordem não é gosto: `translate` por fora deixa o deslocamento em pixels
@@ -3188,7 +3205,7 @@ test('os ouvintes de tela cheia e o relógio do segurar saem ao sair da ficha', 
 
 test('quem liga o arrasto vertical é a tela cheia, e só ela', () => {
   assert.match(PLAYER_CODIGO, /gestos\.permitirVertical\(cheia\)/);
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   assert.match(css, /\.pl \{[\s\S]{0,600}?touch-action: pan-y/,
     'sem pan-y a ficha não rola com o dedo no vídeo');
   assert.match(css, /\.pl-cheia \{ touch-action: none; \}/);
@@ -3204,7 +3221,7 @@ test('quem liga o arrasto vertical é a tela cheia, e só ela', () => {
  * o relógio comem 317 dos 349 px da linha. Um quinto botão a quebraria em
  * três — então ele só existe onde há largura, que é a tela cheia. */
 test('o botão de bloqueio só aparece em tela cheia', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   assert.match(css, /\.pl-trava \{ display: none; \}/);
   assert.match(css, /\.pl-cheia \.pl-trava \{ display: inline-flex; \}/);
   /* A lição do `hidden` da fase 3: `display` do autor ganha do `hidden` do
@@ -3281,7 +3298,7 @@ test('as duas setas são um item só da linha, e não dois', () => {
 
 
 test('a linha de 375 px cabe, com as setas e sem o relógio', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   const alvo = css.match(/\.pl-b \{[^}]*?width: (\d+)px/);
   assert.ok(alvo, 'não achei a largura do botão em .pl-b');
   const botao = Number(alvo[1]);
@@ -3342,7 +3359,7 @@ test('a linha de 375 px cabe, com as setas e sem o relógio', () => {
  * é herdado dentro dele, o relógio vai para uma linha e a barra para outra —
  * três linhas, que é exatamente o que a fase 3 evitou. */
 test('no celular o relógio sobe junto com a barra, e não sozinho', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   /* Há mais de um `@media (max-width: 700px)` no arquivo — a legenda tem o
      dela. O que interessa é o bloco em que os CONTROLES moram. */
   const blocos = css.match(/@media \(max-width: 700px\) \{[\s\S]*?\n\}/g) || [];
@@ -3413,7 +3430,7 @@ test('a prévia é destruída ao sair da ficha, como o hls.js e o AudioContext',
  * cobre o meio e a metade de baixo do quadro, e na barra ela cobre justamente
  * a dica que a fase 3 desenhou logo acima dela. */
 test('a prévia fica no canto superior esquerdo, onde a mão não cobre', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   const caixa = css.match(/\n\.pl-previa \{([\s\S]*?)\n\}/);
   assert.ok(caixa, 'não achei .pl-previa em style.css');
   assert.match(caixa[1], /left: 12px; top: 12px/,
@@ -3524,7 +3541,7 @@ test('a moldura volta para o canto quando o dedo assume', () => {
 
   /* E o CSS desfaz a âncora do canto: sem `top: auto` o `top: 12px` da regra
    * de cima ganharia do `bottom` em linha, e a moldura ficaria no alto. */
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   assert.match(css, /\.pl-previa-barra \{ top: auto; \}/);
 });
 
@@ -3549,7 +3566,7 @@ test('a moldura sobre a barra substitui a dica, e a dica é a reserva', () => {
  * de errar é o primeiro: `config` vem do AMBIENTE e o PUT o descarta, então um
  * ajuste guardado ali se apagaria na gravação seguinte, sem erro nenhum. */
 test('o ajuste do player mora no catálogo, não no config do ambiente', () => {
-  const api = fs.readFileSync(path.join(SITE, 'functions', 'api', 'catalogo.js'), 'utf8');
+  const api = lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js'));
 
   /* O PUT continua apagando o config — e não pode apagar os ajustes. */
   assert.match(api, /delete novo\.config;/);
@@ -3564,7 +3581,7 @@ test('o ajuste do player mora no catálogo, não no config do ambiente', () => {
   assert.match(get[0], /ajustes: ajustes\(guardado\)/);
 
   /* A grade repassa ao player. */
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /ajustes: dados\.ajustes \|\| \{\}/);
   assert.match(PLAYER_CODIGO, /config\.ajustes\) \? config\.ajustes\.arrastoTeto/);
 
@@ -3576,11 +3593,11 @@ test('o ajuste do player mora no catálogo, não no config do ambiente', () => {
 });
 
 test('o /admin tem onde ajustar o teto, e só grava o que está na faixa', () => {
-  const html = fs.readFileSync(path.join(SITE, 'admin.html'), 'utf8');
+  const html = lerTexto(path.join(SITE, 'admin.html'));
   assert.match(html, /id="aba-ajustes"/);
   assert.match(html, /id="a-teto"/);
 
-  const admin = fs.readFileSync(path.join(SITE, 'admin.js'), 'utf8');
+  const admin = lerTexto(path.join(SITE, 'admin.js'));
   /* Grava a FRAÇÃO, não a porcentagem: a tela fala em % porque é o que se lê,
    * e o player-core trabalha em fração. Trocar isso silenciosamente faria o
    * teto valer 40 vezes o vídeo. */
@@ -3635,7 +3652,7 @@ test('"não configurado" não pode virar "nunca some"', () => {
 test('o sumiço volta ao primeiro sinal de vida, e o teclado é um deles', () => {
   /* `opacity` e não `display: none`: o Tab ainda chega aos controles, e o
    * `focusin` os traz de volta antes de o foco pousar num botão invisível. */
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   assert.match(css, /\.pl-sem-controles \.pl-controles \{ opacity: 0; pointer-events: none; \}/);
   assert.ok(!/\.pl-sem-controles \.pl-controles \{[^}]*display: none/.test(css),
     'display:none tiraria os controles do alcance do Tab');
@@ -3665,7 +3682,7 @@ test('soltar o dedo devolve a velocidade que estava, não 1×', () => {
  * "repetir" e "baixar" — a REGRA 2 e a pull zone. */
 test('o menu de contexto do vídeo fica fora do caminho do segurar', () => {
   assert.match(PLAYER_CODIGO, /addEventListener\('contextmenu'/);
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   assert.match(css, /-webkit-touch-callout: none/);
   assert.match(css, /user-select: none/);
 });
@@ -3682,7 +3699,7 @@ test('o menu de contexto do vídeo fica fora do caminho do segurar', () => {
  * deitado na mesma altura do ícone: o caminho do ponteiro é uma reta de 0 px
  * de espaço vazio. */
 test('o painel de som encosta no ícone — vão nenhum entre os dois', () => {
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
+  const css = lerTexto(path.join(SITE, 'style.css'));
   const painel = css.match(/\n\.pl-som \{([\s\S]*?)\n\}/);
   assert.ok(painel, 'não achei .pl-som em style.css');
   assert.match(painel[1], /right: 100%/,
@@ -3750,12 +3767,12 @@ test('o painel de som fecha ao sair, mesmo depois de um clique dentro dele', () 
  * também da projeção pública: campo que o site não desenha não precisa
  * viajar. O /admin continua com as duas, lendo o item cru por `?completo=1`. */
 test('titularidade e evidência só existem no /admin', () => {
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.ok(!/linhaDados\(dl, 'Titularidade'/.test(app), 'a ficha voltou a mostrar titularidade');
   assert.ok(!/linhaDados\(dl, 'Evid/.test(app), 'a ficha voltou a mostrar o nível de evidência');
 
   const api = semComentarios(
-    fs.readFileSync(path.join(SITE, 'functions', 'api', 'catalogo.js'), 'utf8'));
+    lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js')));
   const publico = api.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(publico, 'não achei paraPublico em catalogo.js');
   assert.ok(!/titularidade|nivel_evidencia/.test(publico[1]),
@@ -3763,10 +3780,10 @@ test('titularidade e evidência só existem no /admin', () => {
 
   /* E o /admin não perdeu nada: o formulário continua lá, e ele lê o catálogo
    * inteiro, não a projeção. */
-  const admin = fs.readFileSync(path.join(SITE, 'admin.html'), 'utf8');
+  const admin = lerTexto(path.join(SITE, 'admin.html'));
   assert.match(admin, /id="m-titularidade"/);
   assert.match(admin, /id="m-evidencia"/);
-  assert.match(fs.readFileSync(path.join(SITE, 'admin.js'), 'utf8'), /\/api\/catalogo\?completo=1/);
+  assert.match(lerTexto(path.join(SITE, 'admin.js')), /\/api\/catalogo\?completo=1/);
 });
 
 /* ============================ segredos ================================== */
@@ -3776,7 +3793,7 @@ test('a AccessKey do Bunny não aparece em nenhum arquivo servido ao navegador',
     'index.html', 'admin.html'];
   const guid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
   for (const arquivo of servidos) {
-    const conteudo = fs.readFileSync(path.join(SITE, arquivo), 'utf8');
+    const conteudo = lerTexto(path.join(SITE, arquivo));
     /* Citar a AccessKey num comentário é permitido; usá-la como header ou
      * variável, não. O que a busca procura é o uso, e a chave literal. */
     assert.ok(!/AccessKey\s*[:=]/.test(conteudo), arquivo + ' usa AccessKey como header/variável');
@@ -3793,13 +3810,13 @@ test('a AccessKey do Bunny não aparece em nenhum arquivo servido ao navegador',
  * subiria 2,2x. Este teste existe para que a próxima pessoa que for mexer no
  * tamanho da capa ESBARRE no segundo freguês antes de escolher o número. */
 test('a capa também é o poster do player — quem encolher a capa mexe nos dois', () => {
-  const player = fs.readFileSync(path.join(SITE, 'player.js'), 'utf8');
+  const player = lerTexto(path.join(SITE, 'player.js'));
   assert.match(player, /\.poster\s*=/,
     'player.js não define poster nenhum — se isso saiu de propósito, tire este teste junto');
   assert.match(player, /GTM\.urlCapa\(/,
     'o poster do player tem que sair de GTM.urlCapa, o mesmo lugar que a grade usa');
 
-  const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
+  const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /GTM\.urlCapa\(/, 'a grade também tem que passar por urlCapa');
 });
 
@@ -3812,8 +3829,8 @@ test('a capa também é o poster do player — quem encolher a capa mexe nos doi
  * pasta LETRA POR LETRA: o espaço no meio é a parte que erra sozinha. */
 test('toda pasta interna na raiz está na lista PROIBIDOS do espelho', () => {
   const raiz = path.join(__dirname, '..', '..');
-  const espelho = fs.readFileSync(
-    path.join(__dirname, '..', 'scripts', 'espelho-publico.mjs'), 'utf8');
+  const espelho = lerTexto(
+    path.join(__dirname, '..', 'scripts', 'espelho-publico.mjs'));
   const bloco = espelho.match(/const PROIBIDOS = \[([\s\S]*?)\n\];/);
   assert.ok(bloco, 'não achei a lista PROIBIDOS em espelho-publico.mjs');
   const proibidos = [...bloco[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
@@ -3826,4 +3843,39 @@ test('toda pasta interna na raiz está na lista PROIBIDOS do espelho', () => {
       'a pasta "' + nome + '" existe na raiz e NÃO está em PROIBIDOS — ' +
       'ela sairia no snapshot se o .gitignore de lá também esquecesse dela');
   }
+});
+
+/* ------------------- a trava do CRLF (09/09) ---------------------------- */
+
+/* CUSTOU UMA INVESTIGAÇÃO, e o defeito estava no ar no repositório ABERTO.
+ *
+ * A árvore de trabalho no Windows é CRLF (`core.autocrlf=true`) e o
+ * repositório guarda LF. Um regex que atravessa uma quebra de linha —
+ * `/\.pl-b \{\n\s*flex: none/` — casa contra o blob e FALHA contra o arquivo
+ * do disco, onde há um `\r` antes do `\n`. O teste do painel de som estava
+ * assim: **verde no CI (Linux, LF) e vermelho em todo clone Windows**, do lado
+ * de cá e do lado de lá, onde o README promete que os testes rodam.
+ *
+ * Ele nunca apareceu aqui porque as leituras dos arquivos servidos vinham de
+ * uma árvore que, por acaso, estava em LF. É a armadilha clássica desta
+ * plataforma vista pelo avesso: em vez de acusar formatação onde não há, ela
+ * ESCONDE um teste quebrado.
+ *
+ * O conserto foi normalizar na LEITURA (`lerTexto`), o que mata a classe
+ * inteira em vez de cada regex. Este teste guarda a porta: um
+ * `fs.readFileSync` cru reabre o buraco, e a próxima pessoa que precisar ler
+ * um arquivo vai copiar a linha de cima. */
+test('todo arquivo lido nos testes passa pelo lerTexto — CRLF não pode decidir nada', () => {
+  const eu = lerTexto(__filename);
+  /* A definição do helper e a menção dele nos comentários são as únicas
+   * ocorrências permitidas: uma é o próprio conserto, a outra o explica. */
+  const crus = eu.split('\n')
+    .map((linha, i) => ({ linha, n: i + 1 }))
+    .filter(({ linha }) => /fs\.readFileSync\(/.test(linha))
+    .filter(({ linha }) => !/^const lerTexto =/.test(linha.trim()))
+    .filter(({ linha }) => !/^\s*\*/.test(linha));
+
+  assert.deepEqual(crus, [],
+    'leitura crua de arquivo nos testes: use lerTexto(), senão um regex com \\n ' +
+    'passa no CI em Linux e reprova em qualquer clone Windows');
 });
