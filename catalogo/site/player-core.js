@@ -1254,6 +1254,58 @@
    * apara é `proximoVolume`. */
   var ARRASTO_VOLUME = 1;
 
+  /* ------------------------------- os dois deslizes (itens 4 e 5, fase 7)
+   *
+   * Decididos em 09/09/2026, e eles são **duas metades de um gesto só**: ↑ é
+   * "me dá mais tela", ↓ é "acabei". Qual das duas vale depende da ORIENTAÇÃO,
+   * e é isso que impede as duas de disputarem o mesmo dedo:
+   *
+   *   em pé     ↑  deita a imagem, sem o usuário girar o telefone
+   *   deitado   ↓  fecha o player e volta para a ficha, fora da tela cheia
+   *
+   * **A orientação sai das medidas que já existem** — `largura > altura` —, e
+   * não de `screen.orientation`. Em tela cheia o quadro É a tela, então a
+   * geometria responde a mesma coisa; e é a geometria que importa, porque é
+   * ela que decide se ainda há tela a ganhar. Nada novo precisou entrar no
+   * `medir()`.
+   *
+   * O limiar é uma FRAÇÃO da altura, com piso em pixels — a mesma forma do
+   * `limiarDeCancelar`, e pelo mesmo motivo: em tela cheia deitada a altura é
+   * menos da metade da de pé, e uma distância fixa seria fácil demais num modo
+   * e exaustiva no outro. Num telefone de 375×812 dá **203 px em pé e 93,75
+   * deitado**, que é o gesto proporcional nos dois.
+   *
+   * O piso de 64 px não é para telefone nenhum: ele só assume abaixo de 256 px
+   * de altura, que é quadro de janela pequena no computador. Está aqui para
+   * que uma caixa baixa não transforme o fechar do player num gesto de dez
+   * pixels — e 64 é bem acima dos 10 que separam toque de arrasto, então
+   * nenhuma tremida de mão fecha coisa nenhuma. */
+  var DESLIZE_FRACAO = 0.25;
+  var DESLIZE_MIN_PX = 64;
+
+  function limiarDeDeslize(altura) {
+    var A = Number(altura);
+    if (!isFinite(A) || A <= 0) return DESLIZE_MIN_PX;
+    var l = A * DESLIZE_FRACAO;
+    return l < DESLIZE_MIN_PX ? DESLIZE_MIN_PX : l;
+  }
+
+  /* Para onde este deslize aponta, dado o quadro e o quanto o dedo andou.
+   *
+   * `null` é resposta legítima e o caso comum: ↓ em pé e ↑ deitado não fazem
+   * nada. Em pé não há o que fechar por gesto — quem quiser sair tem o botão
+   * de tela cheia, que continua onde sempre esteve; deitado não há mais tela a
+   * ganhar. Devolver `null` em vez de inventar um segundo significado para
+   * cada direção é o que mantém o gesto explicável numa frase. */
+  function alvoDoDeslize(dy, medidas) {
+    var L = Number(medidas && medidas.largura) || 0;
+    var A = Number(medidas && medidas.altura) || 0;
+    if (!L || !A) return null;
+    var deitado = L > A;
+    if (deitado) return dy > 0 ? 'fechar' : null;
+    return dy < 0 ? 'deitar' : null;
+  }
+
   /* O BRILHO SAIU em 09/09/2026 — o item 10a não existe mais.
    *
    * Ele nunca foi o brilho da tela: nenhum navegador mexe nisso, não há API, e
@@ -1402,6 +1454,10 @@
     var ordem = [];         /* ids na ordem em que desceram */
     var eixo = null;        /* null | 'x' | 'y' | 'morto' */
     var arrasto = null;     /* {alvo, x, y, ultimo} — a origem, já sem o limiar */
+    /* O deslize da fase 7 (itens 4 e 5). Guarda só de ONDE o dedo saiu: ao
+     * contrário do arrasto, ele não tem valor corrente para acumular — o que
+     * importa é a distância total no fim, e ela se mede do começo. */
+    var deslize = null;     /* {y0} */
     var segurando = false;
     var doisDedos = null;   /* {t, dist, toque} */
     var ultimoToque = null; /* {x, y, t} do toque anterior, para o duplo */
@@ -1550,6 +1606,14 @@
       var saida = null;
       if (zoomAtivo) {
         saida = encerrarZoom();
+      } else if (deslize) {
+        /* O deslize morre SEM fazer nada, mesmo que a distância já bastasse.
+         * Um segundo dedo chegando é o começo de outro gesto — pinça ou
+         * capítulo —, e fechar o player no meio dele seria o pior desfecho
+         * possível: destrutivo e não pedido. O `progresso: 0` do `alvo: null`
+         * é o que apaga o aviso da tela. */
+        deslize = null;
+        saida = { acao: 'deslize', alvo: null, fase: 'fim', progresso: 0, feito: false };
       } else if (arrasto) {
         saida = { acao: 'arrastar', alvo: arrasto.alvo, fase: 'fim', valor: arrasto.ultimo };
         arrasto = null;
@@ -1726,6 +1790,11 @@
 
       if (d.tipo === 'mouse' || travado) return null;
 
+      /* O deslize em andamento, pela mesma razão que o arrasto logo abaixo: o
+       * dedo está consumido, e a recusa por `consumido` lá embaixo congelaria
+       * o gesto no primeiro movimento. */
+      if (deslize) return acaoDeslize(d, 'mover');
+
       /* O arrasto em andamento vem ANTES de qualquer recusa: o dedo que
        * arrasta está marcado como consumido — foi ele que virou o arrasto —, e
        * uma recusa por `consumido` aqui em cima congelaria o gesto no primeiro
@@ -1815,21 +1884,52 @@
         };
       } else {
         if (!verticalPermitido) { eixo = 'morto'; return null; }
-        /* Só a zona DIREITA tem arrasto vertical desde 09/09. A esquerda era o
-         * brilho, que saiu por ser um filtro na imagem vendido como brilho de
-         * tela; ela fica reservada para os dois gestos da fase 7, que ainda
-         * não existem. Enquanto não existirem, `morto` é a resposta certa: um
-         * arrasto que não faz nada é melhor do que um que faz a coisa errada,
-         * e o centro sempre foi assim. */
-        if (zonaDoToque(d.x0, medidas.largura) !== 'direita') {
-          eixo = 'morto';
-          return null;
-        }
         eixo = 'y';
-        arrasto = { alvo: 'volume', x: d.x, y: d.y, ultimo: 0 };
+        /* A DIREITA é o volume, e continua sendo. O resto do quadro — a
+         * esquerda que era o brilho e o centro, que nunca teve vertical — é o
+         * deslize da fase 7.
+         *
+         * São 70% da largura para um gesto e 30% para o outro, e a diferença
+         * não é descuido: o volume tem o painel e as setas do teclado como
+         * outros caminhos, e o deslize não tem nenhum. Um alvo estreito para o
+         * único caminho de uma função é o que faz gesto não ser descoberto. */
+        if (zonaDoToque(d.x0, medidas.largura) === 'direita') {
+          arrasto = { alvo: 'volume', x: d.x, y: d.y, ultimo: 0 };
+          d.consumido = true;
+          return { acao: 'arrastar', alvo: 'volume', fase: 'inicio', valor: 0 };
+        }
+        deslize = { y0: d.y0 };
+        d.consumido = true;
+        return acaoDeslize(d, 'inicio');
       }
       d.consumido = true;
       return { acao: 'arrastar', alvo: arrasto.alvo, fase: 'inicio', valor: 0 };
+    }
+
+    /* O deslize, traduzido para a tela, em qualquer uma das três fases.
+     *
+     * Ele SEMPRE se anuncia enquanto acontece, e isso não é enfeite: é um
+     * gesto que ninguém descobre sozinho — a mesma condição que o `descarte`
+     * do arrasto horizontal resolveu na §14.2. O `progresso` de 0 a 1 deixa a
+     * tela dizer o que vai acontecer ANTES de acontecer, e some se o dedo
+     * voltar. Sem isso, fechar o player seria uma surpresa.
+     *
+     * `alvo: null` — ↓ em pé, ↑ deitado — continua devolvendo ação, com
+     * progresso zerado. Quem executa precisa saber que o gesto acabou para
+     * tirar o aviso da tela; devolver `null` aqui deixaria o selo pendurado. */
+    function acaoDeslize(d, fase) {
+      var dy = d.y - deslize.y0;
+      var alvo = alvoDoDeslize(dy, medidas);
+      var limiar = limiarDeDeslize(medidas.altura);
+      var andado = alvo ? Math.abs(dy) : 0;
+      var progresso = Math.round(Math.max(0, Math.min(1, andado / limiar)) * 100) / 100;
+      return {
+        acao: 'deslize', alvo: alvo, fase: fase, progresso: progresso,
+        /* Só o `fim` decide. Nas outras fases isto é sempre falso, e é o que
+         * impede a tela de agir no meio do gesto — a lição do `pointerup`
+         * engolido da §6: o efeito acontece no evento que está na mão. */
+        feito: fase === 'fim' && !!alvo && progresso >= 1
+      };
     }
 
     function subir(p) {
@@ -1866,6 +1966,9 @@
         }
       } else if (zoomAtivo === 'pan') {
         saida = encerrarZoom();
+      } else if (deslize) {
+        saida = acaoDeslize(d, 'fim');
+        deslize = null;
       } else if (arrasto) {
         arrasto.ultimo = valorDoArrasto(d);
         saida = { acao: 'arrastar', alvo: arrasto.alvo, fase: 'fim', valor: arrasto.ultimo };
@@ -1900,6 +2003,7 @@
       var saida = encerrarUmDedo();
       dedos = {}; ordem = [];
       eixo = null; segurando = false; doisDedos = null; ultimoToque = null;
+      deslize = null;
       /* O gesto morre; a ampliação fica. O navegador tomar o dedo para si não é
        * motivo para o vídeo voltar ao tamanho normal na cara de quem estava
        * lendo o slide. */
@@ -1982,6 +2086,7 @@
           dedos: ordem.length,
           eixo: eixo,
           arrasto: arrasto ? arrasto.alvo : null,
+          deslize: !!deslize,
           segurando: segurando,
           travado: travado,
           vertical: verticalPermitido,
@@ -2062,6 +2167,10 @@
     SUMICO_PADRAO_S: SUMICO_PADRAO_S,
     SUMICO_MAX_S: SUMICO_MAX_S,
     segundosDeSumico: segundosDeSumico,
+    DESLIZE_FRACAO: DESLIZE_FRACAO,
+    DESLIZE_MIN_PX: DESLIZE_MIN_PX,
+    limiarDeDeslize: limiarDeDeslize,
+    alvoDoDeslize: alvoDoDeslize,
     CANCELAR_FRACAO: CANCELAR_FRACAO,
     CANCELAR_MIN_PX: CANCELAR_MIN_PX,
     limiarDeCancelar: limiarDeCancelar,

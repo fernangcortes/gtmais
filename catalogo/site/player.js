@@ -195,7 +195,14 @@
     /* `ganchos.anterior` e `ganchos.proximo` são os vizinhos da série, que só
      * o app.js conhece — o player recebe um item, não o catálogo. Servem a
      * Shift+N / Shift+P, que é navegação EXPLÍCITA por tecla, não avanço
-     * automático: nada disso é chamado pelo fim do vídeo. */
+     * automático: nada disso é chamado pelo fim do vídeo.
+     *
+     * `ganchos.aoFechar` é o deslize ↓ da fase 7: o player pede para ser
+     * destruído e a ficha, redesenhada. Ele NÃO faz isso sozinho — quem sabe
+     * montar a ficha é o app.js, e um player que se arranca do DOM em que
+     * outra pessoa o pôs deixa a página com um buraco. Sem o gancho o gesto
+     * simplesmente não existe, que é o que acontece no /admin e em qualquer
+     * outro lugar que monte um player fora da ficha. */
     var g = ganchos || {};
 
     /* Os capítulos do item, saneados pelo MESMO `GTM.capitulos` que a lista
@@ -1901,10 +1908,102 @@
       zoomNoSelo = a.fase === 'fim' ? 0 : a.escala;
     }
 
+    /* Os dois deslizes da fase 7 (itens 4 e 5).
+     *
+     * O `player-core` já decidiu QUAL dos dois cabe na orientação de agora, e
+     * se a distância bastou. Aqui só se desenha o aviso enquanto o dedo anda —
+     * um gesto que ninguém descobre sozinho precisa se anunciar antes de
+     * acontecer, que é a lição do `descarte` do arrasto horizontal — e se
+     * executa no `fim`.
+     *
+     * `alvo: null` chega de propósito (↓ em pé, ↑ deitado) e serve para APAGAR
+     * o aviso: sem esta passagem o selo ficaria pendurado depois de um deslize
+     * que não fez nada. */
+    var ROTULO_DESLIZE = { deitar: '⟳ Deitar a imagem', fechar: '✕ Fechar o vídeo' };
+
+    function aplicarDeslize(a) {
+      if (a.fase !== 'fim') {
+        if (a.alvo) {
+          /* Enquanto não chegou, o aviso diz que ainda falta; ao chegar, ele
+           * afirma. É a diferença entre "solte agora e acontece" e "continue". */
+          mostrarSelo(ROTULO_DESLIZE[a.alvo] + (a.progresso >= 1 ? '' : '…'), true);
+        }
+        return;
+      }
+      if (!a.feito) { esconderSelo(); return; }
+      if (a.alvo === 'deitar') { deitarImagem(); return; }
+      if (a.alvo === 'fechar') fecharPlayer();
+    }
+
+    /* Deita a IMAGEM sem o usuário girar o telefone.
+     *
+     * `screen.orientation.lock()` só existe dentro de tela cheia, e é a única
+     * forma de vencer a trava de rotação do aparelho — que é o estado normal
+     * de muita gente, e sem a qual girar o telefone não faz nada.
+     *
+     * **Não existe no iOS**, nem no iPhone nem no iPad, e isso é decisão
+     * tomada e não pendência: lá a tela cheia já é do player da Apple, que
+     * gira sozinho. O gesto simplesmente não acontece naquele aparelho.
+     *
+     * A promessa REJEITA por motivos normais — o navegador não permitir, o
+     * usuário ter saído da tela cheia no meio. Rejeitar não é erro, e o
+     * `catch` existe para que a página não registre exceção não tratada por
+     * uma coisa que só não aconteceu. */
+    function deitarImagem() {
+      var o = raiz.screen && raiz.screen.orientation;
+      if (!o || typeof o.lock !== 'function') {
+        mostrarSelo('Gire o aparelho para ver maior');
+        return;
+      }
+      try {
+        var pedido = o.lock('landscape');
+        if (pedido && typeof pedido.catch === 'function') {
+          pedido.catch(function () { mostrarSelo('Gire o aparelho para ver maior'); });
+        }
+      } catch (e) {
+        mostrarSelo('Gire o aparelho para ver maior');
+      }
+    }
+
+    /* Fecha o player e devolve quem estava assistindo à FICHA do título, fora
+     * da tela cheia.
+     *
+     * A ordem importa e não é gosto: sair da tela cheia PRIMEIRO. Destruir o
+     * elemento que está em tela cheia deixa o navegador saindo dela sozinho
+     * depois, com um quadro em que a página já mudou embaixo — e no meio disso
+     * o `fullscreenchange` do próprio player dispara sobre um player que não
+     * existe mais.
+     *
+     * Quem redesenha a ficha é o app.js, pelo `aoFechar`: ele é o dono do DOM
+     * onde este player foi pendurado. Sem o gancho o gesto não faz nada, e é
+     * melhor assim do que um player que se arranca da página. */
+    function fecharPlayer() {
+      var doc = document;
+      var saindo = doc.fullscreenElement || doc.webkitFullscreenElement;
+      if (saindo) {
+        /* `exitFullscreen()` devolve uma PROMESSA, e ela rejeita quando o
+         * navegador acha que já não está em tela cheia — o que acontece se o
+         * estado tiver saído de sincronia por qualquer caminho. O `try/catch`
+         * sozinho não basta: ele pega o lançamento síncrono e deixa a rejeição
+         * passar como promessa não tratada, que o navegador registra no
+         * console de quem está assistindo. Achado na conferência, simulando o
+         * gesto fora de uma tela cheia de verdade.
+         *
+         * Rejeitar aqui não é erro e não muda nada do que vem depois: já
+         * estamos saindo. */
+        try {
+          var pedido = (doc.exitFullscreen || doc.webkitExitFullscreen).call(doc);
+          if (pedido && typeof pedido.catch === 'function') pedido.catch(function () { /* já saiu */ });
+        } catch (e) { /* já saiu */ }
+      }
+      if (typeof g.aoFechar === 'function') g.aoFechar();
+    }
+
     function aoGesto(acao) {
       if (!acao) return;
       switch (acao.acao) {
         case 'arrastar': aplicarArrasto(acao); break;
+        case 'deslize': aplicarDeslize(acao); break;
         case 'zoom': aplicarZoomGesto(acao); break;
         case 'velocidadeTemporaria': velocidadeTemporaria(acao.ligada); break;
         case 'avisoTravado':

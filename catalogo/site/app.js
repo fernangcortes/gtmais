@@ -485,7 +485,17 @@
      *     seguinte assume e ninguém fica sem vídeo. */
     if (fonte && playerNovoLigado()) {
       playerAtivo = GTMPlayer.criar(item, estado.config, {
-        anterior: viz.anterior, proximo: viz.proximo
+        anterior: viz.anterior, proximo: viz.proximo,
+        /* O deslize ↓ da fase 7, em tela cheia deitada: o player pede para ser
+         * fechado, e quem sabe fazer isso é daqui.
+         *
+         * `renderFicha` do MESMO id é o caminho certo, e não um `location.hash`:
+         * já estamos nessa rota, então trocar o hash para ele não dispara
+         * `hashchange` e nada aconteceria. Ela começa por `destruirPlayer()`,
+         * que mata a instância do hls.js — numa conexão de escola, parar de
+         * puxar segmentos é metade do valor do gesto — e remonta a ficha com a
+         * capa no lugar do vídeo, que é onde quem deslizou esperava parar. */
+        aoFechar: function () { renderFicha(item.id); }
       });
       if (playerAtivo) {
         caixa.appendChild(playerAtivo.no);

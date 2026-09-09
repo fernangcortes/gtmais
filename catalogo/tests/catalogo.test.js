@@ -2119,6 +2119,9 @@ test('Ctrl+seta num título sem capítulos avisa em vez de não fazer nada', () 
 
 const QUADRO_TELEFONE = { largura: 375, altura: 211 };   /* 16:9 em 375 px */
 const QUADRO_CHEIO = { largura: 812, altura: 375 };      /* o mesmo, deitado */
+/* Tela cheia com o aparelho EM PÉ: a tela toda, não o 16:9. É o quadro em que
+ * o deslize ↑ da fase 7 tem o que fazer — há altura sobrando para ganhar. */
+const QUADRO_CHEIO_EM_PE = { largura: 375, altura: 812 };
 
 const gestosDe = (medidas) => {
   const g = GTMP.criarGestos();
@@ -2652,14 +2655,14 @@ test('fora da tela cheia não existe arrasto vertical — a página rola', () =>
  * fase 7 (arrastar ↑ e ↓). Enquanto eles não existirem, `morto` é a resposta
  * certa — um arrasto que não faz nada é melhor do que um que faz a coisa
  * errada, e é assim que o centro sempre se comportou. */
-test('em tela cheia: à esquerda nada, à direita o volume', () => {
-  const esq = gestosDe(QUADRO_CHEIO);
-  esq.permitirVertical(true);
-  esq.descer(dedo(1, 60, 300, 0));
-  assert.equal(esq.mover(dedo(1, 60, 280, 40)), null,
-    'a zona do brilho não pode ter herdado outra função ao ficar vaga');
-  assert.equal(esq.estado().eixo, 'morto');
-
+/* O BRILHO SAIU em 09/09/2026, e este teste é o que sobrou daquele — ele
+ * cobrava "à esquerda o brilho, à direita o volume".
+ *
+ * A esquerda não ficou morta: virou o DESLIZE da fase 7, junto com o centro.
+ * São 70% da largura para um gesto e 30% para o outro, e a diferença é
+ * deliberada — o volume tem o painel e as setas do teclado como outros
+ * caminhos, o deslize não tem nenhum. */
+test('em tela cheia: à direita o volume, no resto o deslize', () => {
   const dir = gestosDe(QUADRO_CHEIO);
   dir.permitirVertical(true);
   dir.descer(dedo(1, 750, 300, 0));
@@ -2668,6 +2671,16 @@ test('em tela cheia: à esquerda nada, à direita o volume', () => {
   /* Metade da altura × a faixa de 1 do volume = 0,5, ou 50 pontos. */
   assert.deepEqual(dir.mover(dedo(1, 750, 92.5, 200)),
     { acao: 'arrastar', alvo: 'volume', fase: 'mover', valor: 0.5 });
+
+  for (const [zona, x] of [['esquerda', 60], ['centro', 400]]) {
+    const g = gestosDe(QUADRO_CHEIO);
+    g.permitirVertical(true);
+    g.descer(dedo(1, x, 300, 0));
+    const inicio = g.mover(dedo(1, x, 320, 40));
+    assert.equal(inicio.acao, 'deslize', zona + ' precisa abrir o deslize');
+    assert.equal(g.estado().deslize, true);
+    assert.equal(g.estado().arrasto, null, zona + ' não pode virar volume');
+  }
 });
 
 /* O `filter: brightness()` era a única coisa que obrigava o navegador a compor
@@ -2699,14 +2712,187 @@ test('para cima é MAIS: o eixo da tela cresce para baixo, o volume não', () =>
   assert.equal(desceu.valor, -0.5, 'descer o dedo abaixa o volume');
 });
 
-/* O centro é do arrasto horizontal e do play/pause. Uma terceira coisa ali
- * disputaria com os dois gestos que a pessoa já conhece. */
-test('no centro não existe arrasto vertical, nem em tela cheia', () => {
+/* O centro não tem arrasto VERTICAL de valor — nada ali segue o dedo ponto a
+ * ponto. Ele é do arrasto horizontal, do play/pause e, desde 09/09, do
+ * deslize da fase 7, que é discreto: decide no fim, não no caminho. */
+test('no centro não existe arrasto de valor — o vertical ali é o deslize', () => {
   const g = gestosDe(QUADRO_CHEIO);
   g.permitirVertical(true);
   g.descer(dedo(1, 400, 300, 0));
-  assert.equal(g.mover(dedo(1, 400, 200, 60)), null);
+  const a = g.mover(dedo(1, 400, 200, 60));
+  assert.equal(a.acao, 'deslize');
+  assert.equal(g.estado().arrasto, null, 'nada no centro pode virar arrasto de valor');
+});
+
+/* ------------- os dois deslizes da fase 7 (itens 4 e 5, 09/09) ----------- */
+
+/* A ORIENTAÇÃO é o desempate, e sai das medidas que já existem — `largura >
+ * altura` —, não de `screen.orientation`. Em tela cheia o quadro É a tela, e é
+ * a geometria que decide se ainda há tela a ganhar. */
+test('a orientação decide qual dos dois deslizes existe', () => {
+  const emPe = QUADRO_CHEIO_EM_PE, deitado = QUADRO_CHEIO;
+  assert.equal(GTMP.alvoDoDeslize(-100, emPe), 'deitar', 'em pé, ↑ deita a imagem');
+  assert.equal(GTMP.alvoDoDeslize(100, emPe), null, 'em pé, ↓ não fecha nada');
+  assert.equal(GTMP.alvoDoDeslize(100, deitado), 'fechar', 'deitado, ↓ fecha');
+  assert.equal(GTMP.alvoDoDeslize(-100, deitado), null, 'deitado, ↑ não tem tela a ganhar');
+  /* Sem medida não há orientação, e inventar uma fecharia players por engano. */
+  assert.equal(GTMP.alvoDoDeslize(100, { largura: 0, altura: 0 }), null);
+});
+
+/* O limiar é fração da altura com piso em px: em tela cheia deitada a altura é
+ * menos da metade da de pé, e uma distância fixa seria fácil demais num modo e
+ * exaustiva no outro. */
+test('o limiar do deslize acompanha a altura, e tem piso', () => {
+  assert.equal(GTMP.limiarDeDeslize(812), 203);
+  assert.equal(GTMP.limiarDeDeslize(375), 93.75);
+  /* O piso só assume abaixo de 256 px — janela pequena de computador, nunca
+   * telefone. Sem ele, fechar o player viraria um gesto de dez pixels. */
+  assert.equal(GTMP.limiarDeDeslize(120), GTMP.DESLIZE_MIN_PX);
+  assert.equal(GTMP.limiarDeDeslize(0), GTMP.DESLIZE_MIN_PX);
+  assert.equal(GTMP.limiarDeDeslize(NaN), GTMP.DESLIZE_MIN_PX);
+});
+
+test('deitado, o deslize ↓ completo fecha o player', () => {
+  const g = gestosDe(QUADRO_CHEIO);           /* 812 × 375 → limiar 93,75 */
+  g.permitirVertical(true);
+  g.descer(dedo(1, 200, 100, 0));
+  const meio = g.mover(dedo(1, 200, 150, 40));
+  assert.equal(meio.alvo, 'fechar');
+  assert.equal(meio.feito, false, 'no meio do caminho NADA pode acontecer');
+  assert.equal(meio.progresso, 0.53, '50 de 93,75');
+
+  const fim = g.subir(dedo(1, 200, 250, 300));   /* 150 px, acima do limiar */
+  assert.deepEqual(fim, { acao: 'deslize', alvo: 'fechar', fase: 'fim', progresso: 1, feito: true });
+});
+
+test('em pé, o deslize ↑ completo deita a imagem', () => {
+  const g = gestosDe(QUADRO_CHEIO_EM_PE);    /* 375 × 812 → limiar 203 */
+  g.permitirVertical(true);
+  g.descer(dedo(1, 100, 600, 0));
+  assert.equal(g.mover(dedo(1, 100, 560, 40)).alvo, 'deitar');
+  const fim = g.subir(dedo(1, 100, 350, 300));   /* 250 px para cima */
+  assert.equal(fim.feito, true);
+  assert.equal(fim.alvo, 'deitar');
+});
+
+/* Curto demais NÃO faz nada, e é o que deixa desistir no meio: o dedo volta e
+ * o gesto morre. Vale principalmente para o `fechar`, que é destrutivo. */
+test('o deslize curto não faz nada — dá para desistir no meio', () => {
+  const g = gestosDe(QUADRO_CHEIO);
+  g.permitirVertical(true);
+  g.descer(dedo(1, 200, 100, 0));
+  g.mover(dedo(1, 200, 170, 40));
+  const fim = g.subir(dedo(1, 200, 130, 300));   /* voltou: só 30 px */
+  assert.equal(fim.feito, false, 'faltou distância — não pode fechar');
+  assert.ok(fim.progresso < 1);
+});
+
+/* A direção errada devolve ação, com alvo nulo e progresso zero. NÃO devolve
+ * `null`: quem executa precisa saber que o gesto acabou para tirar o aviso da
+ * tela, senão o selo fica pendurado. */
+test('a direção sem função devolve o fim, para a tela poder se limpar', () => {
+  const g = gestosDe(QUADRO_CHEIO);
+  g.permitirVertical(true);
+  g.descer(dedo(1, 200, 300, 0));
+  g.mover(dedo(1, 200, 200, 40));
+  const fim = g.subir(dedo(1, 200, 60, 300));    /* ↑ deitado: não faz nada */
+  assert.deepEqual(fim, { acao: 'deslize', alvo: null, fase: 'fim', progresso: 0, feito: false });
+});
+
+/* Fora da tela cheia o vertical é do NAVEGADOR — a página rola com o dedo no
+ * vídeo. O deslize não pode existir ali, nem em pé nem deitado. */
+test('fora da tela cheia não há deslize nenhum', () => {
+  const g = gestosDe(QUADRO_TELEFONE);
+  g.descer(dedo(1, 100, 150, 0));
+  assert.equal(g.mover(dedo(1, 100, 40, 60)), null);
   assert.equal(g.estado().eixo, 'morto');
+  assert.equal(g.estado().deslize, false);
+});
+
+/* Um segundo dedo é o começo de OUTRO gesto — pinça ou capítulo. Fechar o
+ * player no meio dele seria o pior desfecho possível: destrutivo e não pedido. */
+test('um segundo dedo mata o deslize sem executá-lo', () => {
+  const g = gestosDe(QUADRO_CHEIO);
+  g.permitirVertical(true);
+  g.descer(dedo(1, 200, 100, 0));
+  g.mover(dedo(1, 200, 260, 40));            /* 160 px: já passou do limiar */
+  const morte = g.descer(dedo(2, 400, 120, 60));
+  assert.equal(morte.acao, 'deslize');
+  assert.equal(morte.feito, false, 'a distância bastava, e mesmo assim não pode fechar');
+  assert.equal(g.estado().deslize, false);
+});
+
+/* Com a tela BLOQUEADA (item 9) nada responde ao dedo — é o ponto inteiro do
+ * cadeado, e fechar o player seria o pior a escapar dele. */
+test('a tela bloqueada não deixa o deslize começar', () => {
+  const g = gestosDe(QUADRO_CHEIO);
+  g.permitirVertical(true);
+  g.travar(true);
+  g.descer(dedo(1, 200, 100, 0));
+  assert.equal(g.mover(dedo(1, 200, 260, 40)), null);
+  assert.equal(g.estado().deslize, false);
+});
+
+/* `screen.orientation.lock()` REJEITA por motivos normais — o navegador não
+ * permitir, a tela cheia ter acabado no meio. Rejeitar não é erro, e sem o
+ * `catch` a página registra exceção não tratada por uma coisa que só não
+ * aconteceu. E `lock` não existe no iOS, o que precisa ser CHECADO antes de
+ * chamar: lá o acesso direto lançaria. */
+test('o deitar trata a ausência e a recusa do lock — no iOS ele nem existe', () => {
+  const corpo = PLAYER_CODIGO.match(/function deitarImagem\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(corpo, 'não achei deitarImagem em player.js');
+  assert.match(corpo[1], /typeof o\.lock !== 'function'/,
+    'precisa checar se o lock existe: no iOS ele não existe');
+  assert.match(corpo[1], /\.catch\(/, 'a promessa do lock rejeita, e rejeitar é normal');
+  assert.match(corpo[1], /try\s*\{/, 'o lock também lança de forma síncrona em alguns navegadores');
+});
+
+/* A ORDEM importa: sair da tela cheia ANTES de redesenhar. Destruir o elemento
+ * que está em tela cheia deixa o navegador saindo dela sozinho depois, com a
+ * página já trocada embaixo — e o `fullscreenchange` do próprio player
+ * disparando sobre um player que não existe mais. */
+test('o fechar sai da tela cheia antes de devolver a ficha', () => {
+  const corpo = PLAYER_CODIGO.match(/function fecharPlayer\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(corpo, 'não achei fecharPlayer em player.js');
+  const saida = corpo[1].search(/exitFullscreen/);
+  const gancho = corpo[1].search(/g\.aoFechar\(\)/);
+  assert.ok(saida > -1 && gancho > -1, 'os dois passos precisam existir');
+  assert.ok(saida < gancho, 'a saída da tela cheia vem ANTES de redesenhar a ficha');
+  assert.match(corpo[1], /typeof g\.aoFechar === 'function'/,
+    'sem o gancho o gesto não faz nada — um player não se arranca do DOM alheio');
+  /* ACHADO NA CONFERÊNCIA, no navegador: `exitFullscreen()` devolve uma
+   * PROMESSA e ela rejeita quando o navegador acha que já não está em tela
+   * cheia. Um `try/catch` sozinho pega o lançamento síncrono e deixa a
+   * rejeição virar promessa não tratada, registrada no console de quem está
+   * assistindo. Os dois são necessários, e é por isso que o teste cobra os
+   * dois. */
+  assert.match(corpo[1], /try\s*\{/, 'o exitFullscreen também lança de forma síncrona');
+  assert.match(corpo[1], /pedido\.catch\(/,
+    'a promessa do exitFullscreen rejeita — sem o catch vira promessa não tratada');
+});
+
+/* Quem redesenha é o app.js, e tem que ser `renderFicha` do MESMO id — não um
+ * `location.hash`. Já estamos nessa rota: trocar o hash para ele não dispara
+ * `hashchange`, e o gesto não faria nada. */
+test('o app.js fecha o player redesenhando a ficha, não trocando o hash', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const gancho = app.match(/aoFechar: function \(\) \{([^}]*)\}/);
+  assert.ok(gancho, 'não achei o aoFechar no app.js');
+  assert.match(gancho[1], /renderFicha\(item\.id\)/);
+  assert.doesNotMatch(gancho[1], /location\.hash/,
+    'o hash já é este: trocá-lo não dispara hashchange e o gesto morreria em silêncio');
+});
+
+/* REGRA 1 cobrada mais uma vez, no gesto novo: fechar o player e deitar a
+ * imagem não podem tocar nada. O `renderFicha` remonta a ficha com a capa, e
+ * é ali que um `play()` distraído poria o vídeo tocando sem ninguém pedir. */
+test('nem o deitar nem o fechar chamam play()', () => {
+  for (const nome of ['deitarImagem', 'fecharPlayer', 'aplicarDeslize']) {
+    const corpo = PLAYER_CODIGO.match(
+      new RegExp('function ' + nome + '\\(a?\\)\\s*\\{([\\s\\S]*?)\\n    \\}'));
+    assert.ok(corpo, 'não achei ' + nome + ' em player.js');
+    assert.doesNotMatch(corpo[1], /\bplay\(\)/, nome + ' não pode tocar nada');
+  }
 });
 
 /* A altura toda percorre 100 pontos de volume, não os 200 do reforço: quem
