@@ -296,11 +296,14 @@ main { padding: 24px 0 64px; }
   -webkit-user-select: none; user-select: none;
 }
 
-/* Brilho da IMAGEM (item 10a) — não o da tela, que navegador nenhum alcança.
-   A classe só entra quando alguém mexeu: `filter` obriga o navegador a compor
-   o vídeo numa camada própria, e quem nunca deslizou à esquerda não paga por
-   isso. Mesma disciplina do grafo de som da fase 4. */
-.pl-brilho .pl-video { filter: brightness(var(--pl-brilho, 1)); }
+/* O BRILHO (item 10a) SAIU em 09/09/2026, e havia aqui uma regra
+   `.pl-brilho .pl-video { filter: brightness(...) }`.
+
+   Ele nunca foi o brilho da TELA — navegador nenhum alcança isso, e não é
+   questão de permissão. Era um filtro sobre a imagem, que é muito menos do que
+   o nome prometia, e ocupava a zona esquerda do arrasto vertical em tela
+   cheia: a única superfície livre do player no celular. Ela fica reservada
+   para os dois gestos da fase 7. */
 
 /* Zoom da IMAGEM (item 7, fase 8), e ele SÓ existe em tela cheia. Fora dela a
    pinça continua sendo do navegador, que a usa para ampliar a página — esse
@@ -319,7 +322,7 @@ main { padding: 24px 0 64px; }
    player-core parte dele: a ampliação cresce em volta do CENTRO do quadro, e é
    o deslocamento que leva o ponto de interesse para lá.
 
-   A classe só entra quando alguém ampliou de verdade, como a do brilho:
+   A classe só entra quando alguém ampliou de verdade:
    `transform` obriga o navegador a compor o vídeo numa camada própria. */
 .pl-zoom { overflow: hidden; }
 .pl-zoom .pl-video {

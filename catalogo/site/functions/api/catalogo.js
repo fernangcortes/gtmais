@@ -22,6 +22,13 @@ function paraPublico(item) {
     episodio: item.episodio ?? null,
     duracao: item.duracao || '',
     duracao_seg: item.duracao_seg ?? null,
+    /* A taxa de quadros, para o passo a passo da fase 9 (`,` e `.`): o <video>
+     * não tem passo de quadro, então o player faz `currentTime += 1/framerate`
+     * e precisa do número por TÍTULO — o acervo é misto (23,976 · 29,97 · 30 ·
+     * 24 · 25) e um passo fixo erraria na maioria. Vem do Bunny por
+     * `scripts/framerate.mjs`; `null` enquanto o script não rodar, e o player
+     * trata a ausência desligando o atalho em vez de chutar 30. */
+    framerate: item.framerate ?? null,
     ano: item.ano || '',
     data_publicacao_original: item.data_publicacao_original || '',
     sinopse: item.sinopse || '',

@@ -181,10 +181,10 @@
 
   /* ------------------------------------------------- ajustes do player
    *
-   * Um número só, por enquanto: o teto do arrasto acelerado. Ele mora no
-   * PRÓPRIO catálogo (campo `ajustes`), e não em `config` — `config` vem do
-   * ambiente e o PUT o descarta, então um ajuste guardado ali se apagaria na
-   * gravação seguinte.
+   * Dois números: o teto do arrasto acelerado (§14.4 do plano) e o tempo até
+   * os controles sumirem (§15.4). Os dois moram no PRÓPRIO catálogo (campo
+   * `ajustes`), e não em `config` — `config` vem do ambiente e o PUT o
+   * descarta, então um ajuste guardado ali se apagaria na gravação seguinte.
    *
    * A conta dos exemplos é a definição do número, não uma aproximação: o teto
    * É a fração da duração que um arranco de ponta a ponta atravessa. Por isso

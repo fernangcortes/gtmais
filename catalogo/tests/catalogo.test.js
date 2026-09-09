@@ -124,8 +124,8 @@ test('o trecho animado do hover vem do preview.webp da pull zone', () => {
   assert.equal(GTM.urlPreview({ fonte: { videoId: null } }, { pullzone: 'x.b-cdn.net' }), null);
 });
 
-/* O preview.webp tem ~450 KB. Pedir os 33 junto com a grade são ~15 MB e a tela
- * inicial morre no celular — por isso o <img> só pode nascer no mouseenter e
+/* O preview.webp varia de 779 KB a 2,1 MB. Pedir os 66 junto com a grade são
+ * dezenas de MB e a tela inicial morre no celular — por isso o <img> só pode nascer no mouseenter e
  * tem que morrer no mouseleave. */
 test('o preview do hover não é carregado junto com a grade', () => {
   const app = fs.readFileSync(path.join(SITE, 'app.js'), 'utf8');
@@ -435,7 +435,7 @@ test('a ficha sobrevive a capítulo torto vindo do catálogo', () => {
   ] });
   assert.deepEqual(caps, [{ inicio: 0, titulo: 'Abertura' }, { inicio: 109, titulo: 'O que é futebol' }]);
 
-  /* 22 dos 33 no ar não têm capítulo nenhum: [] é o caminho normal, não erro. */
+  /* 27 dos 66 no ar não têm capítulo nenhum: [] é o caminho normal, não erro. */
   assert.deepEqual(GTM.capitulos({}), []);
   assert.deepEqual(GTM.capitulos(null), []);
   assert.deepEqual(GTM.capitulos({ capitulos: 'nada disso' }), []);
@@ -527,6 +527,68 @@ test('a projeção pública leva os capítulos — sem eles a lista some da fich
   const proj = fn.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
   assert.ok(proj, 'não achei paraPublico em functions/api/catalogo.js');
   assert.match(proj[1], /capitulos/, 'paraPublico precisa incluir capitulos');
+});
+
+/* Terceira vez que este mesmo bug é guardado — capa, capítulos e agora o
+ * framerate. O passo de quadro da fase 9 faz `currentTime += 1/framerate`, e o
+ * acervo é MISTO (23,976 ×39 · 29,97 ×19 · 30 ×17 · 24 ×4 · 25 ×3, medido
+ * contra a library em 09/09/2026): um passo fixo de 1/30 erraria em 65 dos 82.
+ * Sem esta linha o número chega ao KV por `scripts/framerate.mjs` e nunca
+ * chega ao navegador — e o sintoma seria o atalho simplesmente não existir. */
+test('a projeção pública leva o framerate — sem ele o passo de quadro não tem régua', () => {
+  const fn = fs.readFileSync(path.join(SITE, 'functions', 'api', 'catalogo.js'), 'utf8');
+  const proj = fn.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(proj, 'não achei paraPublico em functions/api/catalogo.js');
+  assert.match(proj[1], /framerate/, 'paraPublico precisa incluir framerate');
+});
+
+/* O script que colhe o número tem que sair do KV e voltar para o KV. O seed
+ * está com `publicar: false` em tudo desde 20/08 e não sabe da curadoria feita
+ * pela tela de admin — é a mesma disciplina do capas-menores, e é o que impede
+ * a próxima passada de acervo de reverter 18 títulos como o semear reverteria.
+ *
+ * O teste cobra o CAMINHO (ler por `?completo=1`, gravar por PUT), e não a
+ * ausência da palavra "semear": ela aparece no arquivo de propósito, num
+ * comentário que explica justamente por que não se usa aquele script aqui. Um
+ * teste que reprovasse a palavra puniria a explicação. */
+test('o framerate.mjs lê o KV e grava no KV — nunca no seed como fonte', () => {
+  const src = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'framerate.mjs'), 'utf8');
+  assert.match(src, /completo=1/, 'framerate.mjs precisa ler o KV por ?completo=1');
+  assert.match(src, /method:\s*'PUT'/, 'framerate.mjs precisa gravar o KV por PUT');
+  assert.doesNotMatch(src, /^\s*import[^\n]*semear/m,
+    'framerate.mjs não pode importar o semear: ele reverteria a curadoria da tela de admin');
+});
+
+/* CUSTOU CARO EM 09/09/2026, e no site no ar. A primeira versão do
+ * `framerate.mjs` fazia `delete kv.ajustes` antes do PUT, com um comentário
+ * afirmando que `config` e `ajustes` eram os dois "campo derivado".
+ *
+ * **Só o `config` é.** Ele vem do ambiente e o PUT o descarta sozinho. O
+ * `ajustes` MORA no documento do catálogo, e foi posto lá exatamente porque
+ * `config` se apaga a cada gravação — está escrito na §6 do PROXIMA-SESSAO.md
+ * desde 03/09. Apagá-lo num PUT não dá erro: o GET seguinte devolve `null` nos
+ * dois campos e o player cai nos padrões do código. O teto do arrasto ajustado
+ * para 60% pela tela virou os 40% do código, no ar, até a gravação seguinte.
+ *
+ * A regra, para qualquer script que grave o catálogo: **o que veio no GET
+ * volta no PUT, menos o `config`.** Este teste varre TODOS os scripts que
+ * fazem PUT — não só os dois de hoje —, porque o próximo a ser escrito vai ser
+ * copiado de um destes. */
+test('nenhum script que grava o catálogo apaga os `ajustes` antes do PUT', () => {
+  const pasta = path.join(__dirname, '..', 'scripts');
+  const gravam = fs.readdirSync(pasta)
+    .filter(n => n.endsWith('.mjs'))
+    .map(n => ({ nome: n, src: fs.readFileSync(path.join(pasta, n), 'utf8') }))
+    .filter(a => /method:\s*'PUT'/.test(a.src));
+
+  assert.ok(gravam.length >= 2,
+    'esperava pelo menos capas-menores.mjs e framerate.mjs gravando o KV por PUT');
+
+  for (const { nome, src } of gravam) {
+    assert.doesNotMatch(src, /^\s*delete\s+\w+\.ajustes\s*;/m,
+      nome + ' apaga os `ajustes` antes do PUT — isso zera o teto do arrasto e o ' +
+      'tempo dos controles no KV, em silêncio. Só o `config` pode sair.');
+  }
 });
 
 /* O corte NÃO é por duração: é decisão de conteúdo, vídeo a vídeo. A Campanha
@@ -1698,7 +1760,7 @@ test('a legenda só é buscada quando a legenda está ligada', () => {
 });
 
 /* 404 em captions/pt.vtt é caso REAL e esperado, não erro: o institucional
- * não tem legenda nenhuma (o áudio é só trilha), e ele está entre os 33 no ar. */
+ * não tem legenda nenhuma (o áudio é só trilha), e ele está entre os 66 no ar. */
 test('título sem legenda desliga o botão em vez de quebrar', () => {
   const corpo = PLAYER_JS.match(/function ligarLegendaBaixando\(calada\)\s*\{([\s\S]*?)\n    \}/);
   assert.ok(corpo, 'não achei ligarLegendaBaixando em player.js');
@@ -1749,7 +1811,7 @@ const capsTeste = [
   { inicio: 250, titulo: 'A torcida' }
 ];
 
-/* A barra é sempre feita de segmentos. Um título sem capítulos — 22 dos 33 no
+/* A barra é sempre feita de segmentos. Um título sem capítulos — 27 dos 66 no
  * ar — tem que continuar com a barra de antes da fase 3, e a forma de garantir
  * isso é o segmento único cobrindo 100%. */
 test('sem capítulos, a barra é um segmento só — a mesma barra de sempre', () => {
@@ -2560,23 +2622,55 @@ test('fora da tela cheia não existe arrasto vertical — a página rola', () =>
   assert.equal(g.estado().eixo, 'morto');
 });
 
-test('em tela cheia: à esquerda o brilho, à direita o volume', () => {
+/* O BRILHO SAIU em 09/09/2026, e este teste é o que sobrou daquele — ele
+ * cobrava "à esquerda o brilho, à direita o volume" e agora cobra que a
+ * esquerda esteja MORTA.
+ *
+ * A razão da saída não foi espaço, foi honestidade: `filter: brightness()`
+ * mexe na IMAGEM, e o controle se anunciava como brilho de tela — que
+ * navegador nenhum alcança. Um controle que promete o que não entrega é pior
+ * do que não ter.
+ *
+ * A zona esquerda fica RESERVADA, não livre: é onde entram os dois gestos da
+ * fase 7 (arrastar ↑ e ↓). Enquanto eles não existirem, `morto` é a resposta
+ * certa — um arrasto que não faz nada é melhor do que um que faz a coisa
+ * errada, e é assim que o centro sempre se comportou. */
+test('em tela cheia: à esquerda nada, à direita o volume', () => {
   const esq = gestosDe(QUADRO_CHEIO);
   esq.permitirVertical(true);
   esq.descer(dedo(1, 60, 300, 0));
-  assert.deepEqual(esq.mover(dedo(1, 60, 280, 40)),
-    { acao: 'arrastar', alvo: 'brilho', fase: 'inicio', valor: 0 });
-  /* Metade da altura (187,5 de 375) × a faixa de 1,5 do brilho = 0,75. */
-  assert.deepEqual(esq.mover(dedo(1, 60, 92.5, 200)),
-    { acao: 'arrastar', alvo: 'brilho', fase: 'mover', valor: 0.75 });
+  assert.equal(esq.mover(dedo(1, 60, 280, 40)), null,
+    'a zona do brilho não pode ter herdado outra função ao ficar vaga');
+  assert.equal(esq.estado().eixo, 'morto');
 
   const dir = gestosDe(QUADRO_CHEIO);
   dir.permitirVertical(true);
   dir.descer(dedo(1, 750, 300, 0));
-  dir.mover(dedo(1, 750, 280, 40));
+  assert.deepEqual(dir.mover(dedo(1, 750, 280, 40)),
+    { acao: 'arrastar', alvo: 'volume', fase: 'inicio', valor: 0 });
   /* Metade da altura × a faixa de 1 do volume = 0,5, ou 50 pontos. */
   assert.deepEqual(dir.mover(dedo(1, 750, 92.5, 200)),
     { acao: 'arrastar', alvo: 'volume', fase: 'mover', valor: 0.5 });
+});
+
+/* O `filter: brightness()` era a única coisa que obrigava o navegador a compor
+ * o vídeo numa camada própria fora do zoom. Ele tem que ter sumido do CSS
+ * junto com o gesto — regra órfã não dá erro, só fica lá esperando alguém
+ * reintroduzir a classe e achar que funciona de novo. */
+test('o filtro de brilho saiu do CSS junto com o gesto', () => {
+  /* Os comentários TÊM que sair antes da busca, e não é zelo: o comentário
+   * que registra a remoção cita a regra removida por extenso, para quem vier
+   * depois saber o que existia. Procurar no arquivo cru acharia a citação e
+   * daria o teste por reprovado — que é a mesma armadilha do `semear` no
+   * teste do framerate.mjs: um teste que reprova a EXPLICAÇÃO da remoção. */
+  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  assert.doesNotMatch(css, /\.pl-brilho\s+\.pl-video/,
+    'a regra do brilho continua no CSS — o gesto saiu e ela ficou órfã');
+  assert.doesNotMatch(PLAYER_CODIGO, /classList\.toggle\(\s*'pl-brilho'/,
+    'o player.js ainda liga a classe do brilho');
+  assert.equal(GTMP.proximoBrilho, undefined,
+    'o player-core ainda exporta proximoBrilho — o item 10a não existe mais');
 });
 
 test('para cima é MAIS: o eixo da tela cresce para baixo, o volume não', () => {
@@ -2605,18 +2699,9 @@ test('o deslizar não alcança o reforço sozinho', () => {
   assert.equal(GTMP.ARRASTO_VOLUME, 1);
 });
 
-test('o brilho tem teto, piso e é da IMAGEM — a tela não é nossa', () => {
-  assert.equal(GTMP.BRILHO_MIN, 0.25);
-  assert.equal(GTMP.BRILHO_MAX, 1.75);
-  assert.equal(GTMP.ARRASTO_BRILHO, GTMP.BRILHO_MAX - GTMP.BRILHO_MIN,
-    'a altura toda percorre a faixa toda, e nada além dela');
-  assert.equal(GTMP.proximoBrilho(1, 0.75), 1.75);
-  assert.equal(GTMP.proximoBrilho(1, 9), 1.75, 'não passa do teto');
-  assert.equal(GTMP.proximoBrilho(1, -9), 0.25, 'não passa do piso');
-  assert.equal(GTMP.proximoBrilho(NaN, 0), 1, 'brilho torto volta ao normal');
-  /* Sem o arredondamento o selo mostraria "Brilho 74.99999999999999%". */
-  assert.equal(GTMP.proximoBrilho(1, -0.255), 0.75);
-});
+/* O teto e o piso do brilho (0,25 e 1,75) e o `proximoBrilho` foram testados
+ * aqui de 03/09 a 09/09. Saíram com o gesto — o que restou é a asserção de
+ * ausência, no teste do CSS acima. */
 
 /* --------------------------------------------- item 2 — dois dedos */
 
@@ -3109,14 +3194,11 @@ test('quem liga o arrasto vertical é a tela cheia, e só ela', () => {
   assert.match(css, /\.pl-cheia \{ touch-action: none; \}/);
 });
 
-/* `filter` obriga o navegador a compor o vídeo numa camada própria. Quem
- * nunca deslizou à esquerda não pode pagar por isso — a mesma disciplina do
- * grafo de som da fase 4, que só é montado para quem precisa dele. */
-test('o filtro de brilho só entra quando alguém mexeu no brilho', () => {
-  assert.match(PLAYER_CODIGO, /classList\.toggle\('pl-brilho', brilho !== 1\)/);
-  const css = fs.readFileSync(path.join(SITE, 'style.css'), 'utf8');
-  assert.match(css, /\.pl-brilho \.pl-video \{ filter: brightness\(var\(--pl-brilho/);
-});
+/* Aqui havia o teste de que o `filter` do brilho só entrava para quem tinha
+ * mexido nele — a mesma disciplina do grafo de som da fase 4. O gesto saiu em
+ * 09/09 e o teste foi com ele. O que guarda a AUSÊNCIA agora é "o filtro de
+ * brilho saiu do CSS junto com o gesto", ao lado do teste das zonas de
+ * arrasto vertical, que é onde o buraco que ele deixou está descrito. */
 
 /* A lição de largura da fase 3, cobrada de novo: em 375 px os quatro botões e
  * o relógio comem 317 dos 349 px da linha. Um quinto botão a quebraria em

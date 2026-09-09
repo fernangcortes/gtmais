@@ -539,7 +539,7 @@
     var seloEspera = 0;
 
     /* `fixo` é da fase 5: o selo de um ARRASTO tem que ficar na tela enquanto
-     * o dedo estiver andando. Sem ele, o volume e o brilho sumiriam do olho
+     * o dedo estiver andando. Sem ele, o volume sumiria do olho
      * 900 ms depois de o gesto começar, bem no meio do ajuste. */
     function mostrarSelo(texto, fixo) {
       selo.textContent = texto;
@@ -912,9 +912,20 @@
       }
       var pedir = caixa.requestFullscreen || caixa.webkitRequestFullscreen;
       if (pedir) { pedir.call(caixa); return; }
-      /* iPhone: `requestFullscreen` não existe. A tela cheia de mentira que
-       * mantém os nossos controles é a fase 7; por enquanto, o player nativo
-       * da Apple, que é melhor do que um botão que não faz nada. */
+      /* iPhone: `requestFullscreen` não existe — só `webkitEnterFullscreen`,
+       * que entrega a tela ao player nativo da Apple e leva junto os nossos
+       * capítulos, a nossa legenda e a barra inteira. Confirmado em aparelho
+       * (iPhone 15, 02/09), não suposto.
+       *
+       * A alternativa era a "tela cheia de mentira" — um `position: fixed`
+       * ocupando a viewport, que manteria tudo nosso. **Ela foi DECIDIDA COMO
+       * NÃO em 03/09**, e a razão está na §15.3 do plano: ela deixaria a barra
+       * de endereço do Android na tela o tempo todo para tirar um aviso cinza
+       * que some em segundos. Não é trabalho pendente — é uma porta fechada,
+       * e reabri-la exige desfazer aquela decisão primeiro.
+       *
+       * Então aqui fica o player da Apple, que é melhor do que um botão que
+       * não faz nada. */
       if (video.webkitEnterFullscreen) video.webkitEnterFullscreen();
     }
 
@@ -1577,28 +1588,12 @@
       return !(ev.target && controles.contains && controles.contains(ev.target));
     }
 
-    /* Brilho da IMAGEM (item 10a). Nasce em 1 e NÃO é guardado: a lista do que
-     * pode ir para o navegador tem dois itens, legenda e som, e há teste
-     * varrendo este arquivo atrás de uma terceira chave. Brilho é ajuste de
-     * momento — a luz da sala muda, a preferência não. */
-    var brilho = 1;
-
-    function definirBrilho(v) {
-      brilho = GTMP.proximoBrilho(v, 0);
-      /* A classe só entra quando alguém mexeu de verdade. `filter` obriga o
-       * navegador a compor o vídeo numa camada própria, e quem nunca tocou no
-       * brilho não paga por isso — a mesma disciplina do grafo de som da
-       * fase 4, que também só é montado para quem precisa dele. */
-      caixa.classList.toggle('pl-brilho', brilho !== 1);
-      caixa.style.setProperty('--pl-brilho', String(brilho));
-    }
-
     /* Zoom da IMAGEM (item 7, fase 8) — e é da imagem no sentido mais literal:
      * `transform` no <video>, sem qualidade nova nenhuma para revelar. Ampliar
      * 4× um quadro de 240p mostra o 240p ampliado, e mesmo assim é o que serve
      * a um acervo cheio de slide com letra pequena.
      *
-     * Como o brilho, nasce em 1 e NÃO é guardado: a lista do que pode ir para o
+     * Nasce em 1 e NÃO é guardado: a lista do que pode ir para o
      * navegador tem dois itens, legenda e som, e há teste varrendo este arquivo
      * atrás de uma terceira chave. Ampliar é ajuste de momento — serve para ler
      * o que está escrito naquele slide e acaba quando o slide acaba.
@@ -1608,7 +1603,7 @@
      * quer a legenda maior tem o `+` do item 24. */
     function definirZoom(escala, x, y) {
       var e = GTMP.limitarZoom(escala);
-      /* A mesma disciplina do brilho e do grafo de som: a classe — e com ela o
+      /* A mesma disciplina do grafo de som: a classe — e com ela o
        * `transform`, que obriga o navegador a compor o vídeo numa camada
        * própria — só entra quando alguém ampliou de verdade. */
       caixa.classList.toggle('pl-zoom', e !== GTMP.ZOOM_MIN);
@@ -1809,7 +1804,7 @@
      * (itens 10a e 10b) pode existir. Fora dela, no telefone, o quadro ocupa
      * 211 px de uma tela de 812 e a ficha inteira mora embaixo: roubar o
      * arrasto vertical ali é entregar uma página que não rola quando o polegar
-     * cai no vídeo. Trocar a rolagem da página pelo brilho da imagem seria um
+     * cai no vídeo. Trocar a rolagem da página pelo volume seria um
      * péssimo negócio, e o CSS acompanha esta decisão com `touch-action`.
      *
      * No iPhone isto ainda não acontece: `requestFullscreen` não existe lá e
@@ -1850,8 +1845,7 @@
         arrastoBase = {
           alvo: a.alvo,
           tempo: video.currentTime || 0,
-          volume: som.volume,
-          brilho: brilho
+          volume: som.volume
         };
       }
       if (!arrastoBase || arrastoBase.alvo !== a.alvo) return;
@@ -1882,10 +1876,12 @@
         var teto = (som.ativo || som.possivel) ? GTMP.VOLUME_MAX_GANHO : 1;
         var via = definirVolume(GTMP.proximoVolume(arrastoBase.volume, a.valor, teto));
         mostrarSelo(GTMP.rotuloVolume({ via: via, volume: som.volume }), a.fase !== 'fim');
-      } else {
-        definirBrilho(arrastoBase.brilho + a.valor);
-        mostrarSelo('Brilho ' + Math.round(brilho * 100) + '%', a.fase !== 'fim');
       }
+      /* NÃO há terceiro ramo. Havia um, o brilho, e ele saiu em 09/09: era
+       * `filter: brightness()` na imagem vendido como brilho de tela. Os
+       * dois alvos que restam são os dois que o `player-core` sabe abrir, e
+       * um `else` solto aqui aplicaria o valor de um terceiro que não
+       * existe. */
 
       if (a.fase === 'fim') arrastoBase = null;
     }

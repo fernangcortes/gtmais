@@ -957,8 +957,8 @@
    *   item 2    dois dedos lateral      capítulo
    *   item 3    pressionar e segurar    2× enquanto o dedo estiver na tela
    *   item 9    bloqueio de tela
-   *   item 10a  deslizar ↕ à esquerda   brilho da IMAGEM (não o da tela)
    *   item 10b  deslizar ↕ à direita    volume, pela canalização da fase 4
+   *   (o item 10a — brilho à esquerda — SAIU em 09/09; ver o bloco abaixo)
    *   item 11   deslizar ↔              linha do tempo
    *
    * A máquina lá embaixo recebe pontos — `{id, x, y, t, tipo}`, em px a partir
@@ -1042,9 +1042,13 @@
 
   /* O desempate de dois dedos × pinça (itens 2 e 7), da §4.6 do plano. Dois
    * dedos que encostam e saem em menos de 250 ms SEM que a distância entre
-   * eles mude mais de 10 px é toque; qualquer outra coisa é pinça — que é da
-   * fase 8 e, por enquanto, não faz nada. O desempate precisa existir agora
-   * mesmo assim: sem ele, uma pinça começando viraria pulo de capítulo. */
+   * eles mude mais de 10 px é toque; qualquer outra coisa é pinça.
+   *
+   * Este desempate nasceu na fase 5, quando a pinça ainda não fazia nada, e
+   * mesmo assim precisava existir: sem ele uma pinça começando virava pulo de
+   * capítulo. **Desde a fase 8 (04/09) a pinça amplia de verdade**, em tela
+   * cheia — §19 do plano —, e aí o desempate deixou de ser precaução e virou a
+   * fronteira entre dois gestos que fazem coisas opostas. */
   var DOIS_DEDOS_MS = 250;
   var DOIS_DEDOS_PX = 10;
 
@@ -1250,29 +1254,24 @@
    * apara é `proximoVolume`. */
   var ARRASTO_VOLUME = 1;
 
-  /* Brilho da IMAGEM (item 10a), e é bom que o nome não engane: nenhum
-   * navegador mexe no brilho do aparelho, e não é questão de permissão — não
-   * existe API. O que dá é `filter: brightness()` sobre o vídeo, que é o que
-   * todo player web faz. Resolve bem o vídeo estourado à noite; não resolve
-   * enxergar o celular num pátio de sol. */
-  var BRILHO_MIN = 0.25;
-  var BRILHO_MAX = 1.75;
-  var ARRASTO_BRILHO = BRILHO_MAX - BRILHO_MIN;
-
-  function proximoBrilho(atual, delta) {
-    var v = Number(atual);
-    if (!isFinite(v)) v = 1;
-    v += Number(delta) || 0;
-    if (v < BRILHO_MIN) v = BRILHO_MIN;
-    if (v > BRILHO_MAX) v = BRILHO_MAX;
-    /* Pelo mesmo motivo de `proximoVolume`: sem o arredondamento o selo
-     * mostraria "Brilho 74.99999999999999%". */
-    return Math.round(v * 100) / 100;
-  }
+  /* O BRILHO SAIU em 09/09/2026 — o item 10a não existe mais.
+   *
+   * Ele nunca foi o brilho da tela: nenhum navegador mexe nisso, não há API, e
+   * o que existia aqui era `filter: brightness()` sobre o vídeo. Escurecia e
+   * clareava a IMAGEM, que é coisa diferente e resolve muito menos — o vídeo
+   * estourado à noite, sim; enxergar o celular num pátio de sol, não.
+   *
+   * Decisão de quem usa o site: **um controle que promete o brilho e entrega
+   * um filtro é pior do que não ter.** E ele custava caro no lugar errado — a
+   * zona ESQUERDA do arrasto vertical em tela cheia, que é a única superfície
+   * livre do player no celular. Ela fica reservada para os dois gestos da fase
+   * 7 (arrastar ↑ e ↓), que fazem coisas reais.
+   *
+   * O volume continua na zona direita, e é agora o único arrasto vertical. */
 
   /* ------------------------------------------------- a pinça (item 7, fase 8)
    *
-   * O zoom é da IMAGEM, como o brilho é da imagem: `transform` no <video> e mais
+   * O zoom é da IMAGEM: `transform` no <video> e mais
    * nada. Não existe qualidade nova para revelar — ampliar 4× um quadro de
    * 240p mostra o 240p ampliado —, e mesmo assim é o que serve ao acervo, que
    * é cheio de slide com letra pequena.
@@ -1288,7 +1287,7 @@
     if (!isFinite(e)) return ZOOM_MIN;
     if (e < ZOOM_MIN) e = ZOOM_MIN;
     if (e > ZOOM_MAX) e = ZOOM_MAX;
-    /* Duas casas, pelo mesmo motivo do volume e do brilho: sem isto o selo
+    /* Duas casas, pelo mesmo motivo do volume: sem isto o selo
      * mostraria "Zoom 2,4000000000000004×". */
     return Math.round(e * 100) / 100;
   }
@@ -1375,7 +1374,7 @@
    *
    * `arrastar` tem três fases. `inicio` é quando o eixo ficou decidido; daí em
    * diante `valor` é o DELTA acumulado desde ali — segundos para o tempo,
-   * pontos de volume, pontos de brilho. Quem soma isso ao valor de partida é o
+   * pontos de volume. Quem soma isso ao valor de partida é o
    * player.js, que é quem sabe onde o vídeo estava. O delta conta a partir do
    * ponto em que o limiar foi vencido, e não de onde o dedo desceu: são os
    * 10 px de zona morta que impedem o vídeo de saltar no primeiro pixel.
@@ -1393,7 +1392,7 @@
      * cheia. Fora dela, no telefone, o quadro ocupa 211 px de uma tela de 812
      * e a ficha continua embaixo: roubar o arrasto vertical ali significa uma
      * página que não rola quando o polegar cai no vídeo, e trocar a rolagem da
-     * página pelo brilho da imagem é péssimo negócio. O player.js liga isto ao
+     * página pelo volume é péssimo negócio. O player.js liga isto ao
      * entrar em tela cheia e desliga ao sair; o CSS acompanha com
      * `touch-action`. */
     var verticalPermitido = false;
@@ -1517,7 +1516,7 @@
     /* Consome UM ponto novo do arrasto e devolve o total desde o começo dele.
      *
      * O tempo é acumulado pedaço a pedaço, com o ganho da velocidade de cada
-     * pedaço; o volume e o brilho continuam absolutos — ali a régua fixa é a
+     * pedaço; o volume continua absoluto — ali a régua fixa é a
      * qualidade, não o defeito: a altura toda percorre a faixa toda, sempre,
      * e um volume que dependesse da pressa da mão seria uma armadilha. */
     function valorDoArrasto(d) {
@@ -1537,8 +1536,11 @@
       var A = Number(medidas.altura) || 1;
       /* Para cima é mais: o eixo y da tela cresce para baixo, o volume não. */
       var f = -(d.y - arrasto.y) / A;
-      var faixa = arrasto.alvo === 'volume' ? ARRASTO_VOLUME : ARRASTO_BRILHO;
-      return Math.round(f * faixa * 1000) / 1000;
+      /* Desde 09/09 o volume é o ÚNICO arrasto vertical — o brilho saiu. A
+       * escolha de faixa que existia aqui virou uma constante, e o `alvo`
+       * continua no objeto porque o player.js o usa para saber o que desenhar
+       * no selo. */
+      return Math.round(f * ARRASTO_VOLUME * 1000) / 1000;
     }
 
     /* Desmancha o que UM dedo estava fazendo e devolve o fim do gesto, para o
@@ -1757,7 +1759,7 @@
       }
 
       /* Com a imagem AMPLIADA, o dedo arrasta a IMAGEM — não a linha do tempo,
-       * não o brilho, não o volume. É a regra de todo visualizador que amplia,
+       * não o volume. É a regra de todo visualizador que amplia,
        * e ela se explica sozinha: só há o que arrastar quando há mais imagem do
        * que quadro. Quem quiser procurar no vídeo ampliado tem a barra, que é
        * nossa e sabe arrastar desde a fase 0.
@@ -1813,13 +1815,18 @@
         };
       } else {
         if (!verticalPermitido) { eixo = 'morto'; return null; }
-        var zona = zonaDoToque(d.x0, medidas.largura);
-        if (zona === 'centro') { eixo = 'morto'; return null; }
+        /* Só a zona DIREITA tem arrasto vertical desde 09/09. A esquerda era o
+         * brilho, que saiu por ser um filtro na imagem vendido como brilho de
+         * tela; ela fica reservada para os dois gestos da fase 7, que ainda
+         * não existem. Enquanto não existirem, `morto` é a resposta certa: um
+         * arrasto que não faz nada é melhor do que um que faz a coisa errada,
+         * e o centro sempre foi assim. */
+        if (zonaDoToque(d.x0, medidas.largura) !== 'direita') {
+          eixo = 'morto';
+          return null;
+        }
         eixo = 'y';
-        arrasto = {
-          alvo: zona === 'esquerda' ? 'brilho' : 'volume',
-          x: d.x, y: d.y, ultimo: 0
-        };
+        arrasto = { alvo: 'volume', x: d.x, y: d.y, ultimo: 0 };
       }
       d.consumido = true;
       return { acao: 'arrastar', alvo: arrasto.alvo, fase: 'inicio', valor: 0 };
@@ -2059,10 +2066,6 @@
     CANCELAR_MIN_PX: CANCELAR_MIN_PX,
     limiarDeCancelar: limiarDeCancelar,
     ARRASTO_VOLUME: ARRASTO_VOLUME,
-    ARRASTO_BRILHO: ARRASTO_BRILHO,
-    BRILHO_MIN: BRILHO_MIN,
-    BRILHO_MAX: BRILHO_MAX,
-    proximoBrilho: proximoBrilho,
     ZOOM_MIN: ZOOM_MIN,
     ZOOM_MAX: ZOOM_MAX,
     limitarZoom: limitarZoom,
