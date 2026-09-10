@@ -49,3 +49,11 @@ docs/relatorio-acervo-e-plano.md
 # Não é código do catálogo, e o repositório aberto guarda só o código. O espaço
 # no nome é de propósito — é o nome da pasta, e a linha tem que casar com ele.
 briefing visual/
+
+# --- fora daqui desde 10/09, pela mesma razão das linhas acima ---
+# Material de design: o briefing visual, que mudou para dentro desta pasta,
+# e as artes que voltaram dele. O que o site usa já está em catalogo/site/;
+# aqui fica a origem, e ela não é código. A linha "briefing visual/" acima
+# continua pegando o briefing no lugar novo (sem barra no meio, o git casa em
+# qualquer nível), mas as artes não estavam em linha nenhuma.
+design/
