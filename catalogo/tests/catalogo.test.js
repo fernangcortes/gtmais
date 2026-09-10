@@ -4006,13 +4006,67 @@ test('a capa também é o poster do player — quem encolher a capa mexe nos doi
   assert.match(app, /GTM\.urlCapa\(/, 'a grade também tem que passar por urlCapa');
 });
 
+/* ============================ a marca: ícones e compartilhamento ========= */
+
+/* As medidas do briefing visual (B2 e B3), guardadas onde a próxima exportação
+ * esbarra nelas. A primeira entrega do Lucas, em 10/09, trouxe o PNG "64×64"
+ * com 65×64 e a imagem de compartilhamento com 1201×631 — artboard fora da
+ * grade de pixels no Illustrator. Ninguém reclama: o navegador estica. */
+const tamanhoPng = (arquivo) => {
+  /* Leitura BINÁRIA dos 24 primeiros bytes: não é texto, e por isso não passa
+   * pelo lerTexto. */
+  const cabeca = Buffer.alloc(24);
+  const fd = fs.openSync(arquivo, 'r');
+  try { fs.readSync(fd, cabeca, 0, 24, 0); } finally { fs.closeSync(fd); }
+  assert.equal(cabeca.toString('latin1', 1, 4), 'PNG', path.basename(arquivo) + ' não é PNG');
+  return [cabeca.readUInt32BE(16), cabeca.readUInt32BE(20)];
+};
+
+test('todo ícone PNG do index.html tem o tamanho que declara', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const icones = [...html.matchAll(/<link rel="icon" type="image\/png" sizes="(\d+)x(\d+)" href="([^"]+)">/g)];
+  assert.ok(icones.length >= 2, 'o index.html perdeu os ícones PNG');
+  for (const [, largura, altura, href] of icones) {
+    assert.deepEqual(tamanhoPng(path.join(SITE, href)), [Number(largura), Number(altura)],
+      href + ' não tem o tamanho que o <link> declara');
+  }
+});
+
+test('a imagem de compartilhamento tem 1200×630 e até 100 KB', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const og = html.match(/<meta property="og:image" content="[^"]*\/([^"/]+)">/);
+  assert.ok(og, 'o index.html perdeu o og:image');
+  const arquivo = path.join(SITE, og[1]);
+  assert.deepEqual(tamanhoPng(arquivo), [1200, 630]);
+  assert.ok(fs.statSync(arquivo).size <= 100 * 1024, og[1] + ' passou de 100 KB');
+});
+
+/* Texto de SVG vira contorno, e não é capricho do briefing: o "Cabeçalho" da
+ * mesma entrega trazia o "Catálogo Interno" em Calibri VIVA. No Windows fica
+ * perfeito, porque a Calibri está instalada — e é por isso que ninguém vê. No
+ * celular, que é onde o catálogo é aberto, o navegador põe outra fonte no
+ * lugar. */
+test('nenhum SVG do site depende de fonte instalada', () => {
+  const svgs = fs.readdirSync(SITE).filter(n => n.endsWith('.svg'));
+  assert.ok(svgs.includes('favicon.svg'), 'o favicon.svg sumiu');
+  for (const nome of svgs) {
+    assert.ok(!/<text[\s>]|font-family/.test(lerTexto(path.join(SITE, nome))),
+      nome + ' tem texto vivo — converta em contorno antes de pôr no site');
+  }
+});
+
 /* ============================ a curadoria do repositório aberto ========= */
 
 /* Uma das DUAS travas da §3.2. A outra é o `.gitignore` do repositório ABERTO,
  * que não está nesta árvore e por isso nenhum teste daqui alcança — quem
- * confere as duas juntas é o ensaio do espelho-publico.mjs. O que dá para
- * guardar aqui é que a lista não perdeu a linha, e que ela casa com o nome da
- * pasta LETRA POR LETRA: o espaço no meio é a parte que erra sozinha. */
+ * confere as duas juntas é o ensaio do espelho-publico.mjs.
+ *
+ * A lista de pastas NÃO é mais escrita à mão, e a razão aconteceu em 10/09:
+ * ela era briefing visual, inventario e apresentacao, e quando a pasta do
+ * briefing foi para dentro de `design/`, o teste PULOU o nome que não achou no
+ * disco — verde, com a trava furada. Agora é o contrário: toda pasta da raiz é
+ * pública por nome, ou está em PROIBIDOS, letra por letra. Pasta nova reprova
+ * até alguém decidir de que lado ela fica. */
 test('toda pasta interna na raiz está na lista PROIBIDOS do espelho', () => {
   const raiz = path.join(__dirname, '..', '..');
   const espelho = lerTexto(
@@ -4021,13 +4075,17 @@ test('toda pasta interna na raiz está na lista PROIBIDOS do espelho', () => {
   assert.ok(bloco, 'não achei a lista PROIBIDOS em espelho-publico.mjs');
   const proibidos = [...bloco[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
 
-  /* Derivado do disco, não escrito à mão: se a pasta for renomeada, é o nome
-   * novo que a lista passa a dever. */
-  for (const nome of ['briefing visual', 'inventario', 'apresentacao']) {
-    if (!fs.existsSync(path.join(raiz, nome))) continue;
+  /* As pastas de CÓDIGO — as únicas que o repositório aberto recebe. */
+  const PUBLICAS = ['catalogo', 'docs', 'legado-jellyfin'];
+  const pastas = fs.readdirSync(raiz, { withFileTypes: true })
+    .filter(d => d.isDirectory() && !d.name.startsWith('.'))
+    .map(d => d.name);
+  for (const nome of pastas) {
+    if (PUBLICAS.includes(nome)) continue;
     assert.ok(proibidos.includes(nome + '/'),
       'a pasta "' + nome + '" existe na raiz e NÃO está em PROIBIDOS — ' +
-      'ela sairia no snapshot se o .gitignore de lá também esquecesse dela');
+      'ela sairia no snapshot se o .gitignore de lá também esquecesse dela. ' +
+      'Se é código, ponha em PUBLICAS; se não é, em PROIBIDOS');
   }
 });
 

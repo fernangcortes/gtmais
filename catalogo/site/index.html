@@ -26,9 +26,16 @@
 
 <header class="topo">
   <div class="limite topo-linha">
+    <!-- O logo troca com o tema pela mesma media query do style.css. Os dois
+         arquivos são a imagem de compartilhamento do Lucas recortada no logo:
+         o "Cabeçalho" que veio junto tem o texto da pílula em Calibri viva, e
+         celular não tem Calibri. -->
     <a class="marca" href="#/" id="ir-inicio">
-      Goiás Tec <span>+</span>
-      <span class="marca-sub">catálogo interno</span>
+      <picture>
+        <source srcset="logo-fundo-escuro.svg" media="(prefers-color-scheme: dark)">
+        <img class="marca-logo" src="logo-fundo-claro.svg" width="117" height="48"
+             alt="Goiás Tec + — catálogo interno">
+      </picture>
     </a>
     <div class="busca">
       <label class="pular" for="busca">Buscar no catálogo</label>

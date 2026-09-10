@@ -86,6 +86,10 @@ img { max-width: 100%; display: block; }
   display: block; letter-spacing: 0;
 }
 
+/* O logo do index.html (o admin.html continua com a marca em texto). A altura
+ * é a do desenho inteiro, com a pílula do "Catálogo Interno" dentro. */
+.marca-logo { height: 48px; width: auto; }
+
 .busca { flex: 1 1 260px; min-width: 0; position: relative; }
 
 .busca input {

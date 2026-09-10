@@ -45,12 +45,13 @@ import { argumentos, erroFatal } from './lib/catalogo.mjs';
 const PROIBIDOS = [
   'inventario/',
   'apresentacao/',
-  /* O ESPAÇO no nome é literal, e é a parte que erra sozinha: aqui a
-   * comparação é por prefixo de string, então `briefing visual/` casa; no
-   * `.gitignore` do repositório aberto a linha é a mesma, sem espaço sobrando
-   * no fim — lá um espaço no fim da linha é ignorado pelo git e a trava não
-   * pegaria nada. As duas foram conferidas em 08/09 pelo ensaio do script. */
-  'briefing visual/',
+  /* Material de design: o briefing visual e as artes que voltam dele. Até
+   * 10/09 a entrada era `briefing visual/`, a pasta na raiz; quando ela foi
+   * para dentro de `design/`, a entrada — que compara por PREFIXO — parou de
+   * casar, e nada acusou. A linha irmã no `.gitignore` do aberto é `design/`:
+   * a antiga, `briefing visual/`, ainda pega o briefing lá (sem barra no
+   * meio, o git casa em qualquer nível), mas não as artes. */
+  'design/',
   'catalogo.seed.json',
   'catalogo.kv.json',
   'assemblyai-jobs.json',
