@@ -56,7 +56,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test                  # 264 testes, sem rede nem credenciais
+node --test                  # 283 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **tela de administração** (`/admin.html`), não por
