@@ -8,7 +8,7 @@
  *
  * Rota inteira exige admin: o middleware barra antes de chegar aqui.
  */
-import { json } from './_middleware.js';
+import { json, pode, semPermissao } from './_middleware.js';
 
 const LIMITE_CAPA = 8 * 1024 * 1024;
 const LIMITE_LEGENDA = 4 * 1024 * 1024;
@@ -50,6 +50,11 @@ export async function onRequestGet({ request, data }) {
 }
 
 export async function onRequestPost({ request, data }) {
+  /* Capa e legenda são conteúdo do título; quem envia vídeo também as manda,
+   * no mesmo caminho do envio (M2). Consultar o status do vídeo (GET) não
+   * pede permissão nenhuma além de estar na mesa. */
+  if (!pode(data.conta, 'conteudo') && !pode(data.conta, 'enviar')) return semPermissao('conteudo');
+
   const url = new URL(request.url);
   const videoId = exigeVideoId(request);
   const tipo = url.searchParams.get('tipo');

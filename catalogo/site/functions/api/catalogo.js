@@ -6,9 +6,10 @@
  * trivial e cabe folgado no plano gratuito.
  */
 import { json } from './_middleware.js';
+import { registrarPublicacao } from './historico.js';
+import GTM from '../../catalogo-core.js';
 
 const CHAVE = 'catalogo';
-const CHAVE_BACKUP = 'catalogo_anterior';
 
 /* Campos que NÃO saem para o público: caminhos em F:\, links de origem no
  * Drive, nome de arquivo e o próprio `publicar`. Filtrar no servidor é o que
@@ -41,6 +42,14 @@ function paraPublico(item) {
      * o /admin as lê por `?completo=1`, que devolve o item cru do KV. */
     pendencia: item.pendencia || null,
     publicar: true,
+    /* O título escolhido para o DESTAQUE da chegada (D4). Mesma armadilha dos
+     * capítulos, e por isso a mesma linha: campo que não sai por `paraPublico`
+     * não existe para o navegador. Sem esta linha o destaque cai no padrão e
+     * a escolha feita no /admin não tem efeito nenhum — sem erro, sem aviso.
+     *
+     * Só `true` viaja: `destaque: false` e a ausência do campo são a mesma
+     * coisa para quem lê, e mandar 66 `false` é peso à toa. */
+    destaque: item.destaque === true ? true : null,
     /* Sem estes dois a grade nunca vê a capa nova: o Bunny renomeia o arquivo
      * com um hash ao receber uma capa enviada, e mantém o thumbnail.jpg antigo. */
     capa_arquivo: item.capa_arquivo || null,
@@ -77,8 +86,16 @@ function config(env) {
  * garante que o que sai é número, para o cliente não receber uma string. */
 function ajustes(guardado) {
   const a = (guardado && guardado.ajustes) || {};
-  const teto = Number(a.arrastoTeto);
-  const espera = Number(a.controlesEspera);
+  /* AUSENTE NÃO É ZERO, e a diferença aqui custou um defeito achado pelo
+   * histórico no primeiro ensaio dele (M5): `Number(null)` é `0`, e `0` é uma
+   * escolha VÁLIDA neste campo — quer dizer "os controles nunca somem". Com a
+   * conversão crua, um `controlesEspera: null` guardado voltava como `0` no
+   * GET, a tela devolvia esse `0` no PUT seguinte, e o padrão do player virava
+   * "nunca some" — sem ninguém pedir, e sem nada na tela. A leitura passa a
+   * distinguir o nada do número antes de converter. */
+  const numero = (v) => (v == null || v === '' ? NaN : Number(v));
+  const teto = numero(a.arrastoTeto);
+  const espera = numero(a.controlesEspera);
   return {
     arrastoTeto: Number.isFinite(teto) && teto > 0 ? teto : null,
     /* `0` é uma escolha válida — "os controles nunca somem" —, então a
@@ -86,6 +103,21 @@ function ajustes(guardado) {
      * transformaria "nunca some" em "some no padrão", em silêncio. */
     controlesEspera: Number.isFinite(espera) && espera >= 0 ? espera : null
   };
+}
+
+/* A estrutura da chegada (M4): o nome, a ordem e o "escondida" das
+ * prateleiras, a classe de cada série, o destaque e os textos fixos.
+ *
+ * Sai pelo GET público porque é o site quem desenha com ela, e sai SANEADA
+ * pela mesma razão do `ajustes()` logo acima: o que chega ao navegador tem
+ * forma conferida, e um dado torto no KV não vira erro na tela de quem só
+ * queria assistir. O padrão de tudo isso continua no `catalogo-core.js`, e por
+ * isso o campo ausente é `{}` e não uma cópia do padrão.
+ *
+ * O `?completo=1` NÃO passa por aqui: a mesa precisa ver o documento como ele
+ * está no KV, porque é contra esse valor que o Publicar confere o "antes". */
+function site(guardado) {
+  return GTM.siteSaneado(guardado && guardado.site);
 }
 
 async function lerCatalogo(env) {
@@ -103,7 +135,7 @@ export async function onRequestGet({ env, request, data }) {
   if (!guardado) {
     return json(200, {
       versao: 1, rev: 0, itens: [], vazio: true, config: config(env),
-      ajustes: ajustes(null),
+      ajustes: ajustes(null), site: site(null),
       observacao: 'catálogo ainda não importado — rode scripts/semear.mjs'
     });
   }
@@ -127,6 +159,7 @@ export async function onRequestGet({ env, request, data }) {
     total: itens.length,
     config: config(env),
     ajustes: ajustes(guardado),
+    site: site(guardado),
     itens
   });
 }
@@ -180,12 +213,58 @@ export async function onRequestPut({ request, env, data }) {
   });
   delete novo.config;   /* config vem do ambiente, não é dado do catálogo */
 
-  /* Uma cópia do estado anterior: recuperar de um PUT errado sem backup
-   * custaria os 50 títulos de metadados. */
-  if (atual) {
-    await env.CATALOGO.put(CHAVE_BACKUP, JSON.stringify(atual));
-  }
-  await env.CATALOGO.put(CHAVE, JSON.stringify(novo));
+  /* A ESTRUTURA é guardada saneada, ou não é guardada. Saneada porque o que
+   * vai para o KV tem de ter forma conferida e ordem de chaves estável — é
+   * contra esse valor que o Publicar confere o "antes" na próxima vez. E
+   * nenhuma quando está vazia: o GET projeta `site` mesmo sem dado, a tela
+   * devolve essa projeção no PUT, e sem esta linha toda primeira publicação
+   * inventava o campo e uma linha no histórico que ninguém pediu. */
+  if (GTM.siteVazio(novo.site)) delete novo.site;
+  else novo.site = GTM.siteSaneado(novo.site);
 
-  return json(200, { ok: true, rev: novo.rev, total: novo.total, atualizado_em: novo.atualizado_em });
+  /* O QUE MUDOU, campo a campo, entre o que está gravado e o que VAI ser
+   * gravado. Serve para duas coisas, e é por isso que a comparação roda para
+   * TODA gravação desde a M5 — inclusive a do superadmin e a dos scripts:
+   *
+   *   - a conferência de permissão (M2): quem recusa é o servidor, e a mesa
+   *     esconder o botão é conveniência;
+   *   - o registro do histórico (M5). Como a comparação é aqui, gravação de
+   *     script também entra: a rev 85, que apagou os ajustes do player em
+   *     silêncio, teria aparecido como "arrastoTeto: 0,6 → vazio" na hora.
+   *
+   * Compara o documento FINAL, e não o corpo cru: o histórico tem de descrever
+   * o que ficou guardado, não o que chegou. */
+  const difs = GTM.diferencasDoCatalogo(atual || { itens: [] }, novo);
+
+  if (!data.conta.super) {
+    const barradas = GTM.proibidas(data.conta, difs);
+    if (barradas.length) {
+      return json(403, {
+        erro: 'esta conta não pode mudar ' + (barradas.length === 1 ? 'este campo' : 'estes ' + barradas.length + ' campos'),
+        barradas: barradas.slice(0, 20).map(d => ({ alvo: d.alvo, campo: d.campo, permissao: d.permissao }))
+      });
+    }
+  }
+
+  const gravado = JSON.stringify(novo);
+  await env.CATALOGO.put(CHAVE, gravado);
+
+  /* O RASTRO (M5). Vem depois da gravação, e o erro dele não derruba a
+   * publicação: histórico é memória, e memória que impede de trabalhar é pior
+   * do que memória com um buraco. A resposta diz se ficou o buraco.
+   *
+   * O `catalogo_anterior` aposentou aqui: ele guardava UM estado anterior, e
+   * agora são as 30 últimas cópias, cada uma com a rev no nome. A chave velha
+   * fica onde está — apagar dado de recuperação não é trabalho de um deploy. */
+  let historico = true;
+  try {
+    await registrarPublicacao(env, {
+      anterior: atual, novo, corpoGravado: gravado, difs,
+      quem: (data.conta && data.conta.usuario) || 'superadmin'
+    });
+  } catch (e) {
+    historico = false;
+  }
+
+  return json(200, { ok: true, rev: novo.rev, total: novo.total, atualizado_em: novo.atualizado_em, mudancas: difs.length, historico });
 }

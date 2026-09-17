@@ -55,7 +55,8 @@ test('nenhum dos quatro parâmetros pode faltar na URL do player', () => {
 });
 
 test('a interface não reage ao fim do vídeo — nada de avanço automático', () => {
-  for (const arquivo of ['app.js', 'admin.js', 'player.js', 'player-core.js']) {
+  for (const arquivo of ['app.js', 'player.js', 'player-core.js',
+    'mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
     const fonteJs = lerTexto(path.join(SITE, arquivo));
     assert.ok(!/['"]ended['"]/.test(fonteJs), arquivo + ' escuta o fim do vídeo');
     assert.ok(!/autoplay\s*[:=]\s*['"]?true/.test(fonteJs), arquivo + ' liga autoplay');
@@ -68,11 +69,15 @@ test('a interface não reage ao fim do vídeo — nada de avanço automático', 
  * do Bunny, que é protegida justamente por Allowed Referrers. Resultado: 403 em
  * todas as capas, no próprio site. */
 test('a página não usa no-referrer — quebraria as capas servidas pelo Bunny', () => {
-  const html = lerTexto(path.join(SITE, 'index.html'));
-  const m = html.match(/<meta\s+name="referrer"\s+content="([^"]*)"/);
-  assert.ok(m, 'index.html precisa declarar uma política de referrer');
-  assert.notEqual(m[1], 'no-referrer', 'no-referrer faz a pull zone do Bunny responder 403');
-  assert.notEqual(m[1], 'same-origin', 'same-origin também não manda Referer para o Bunny');
+  /* A mesa (admin.html) também: as capas do inspetor e o MP4 do seletor de
+   * capa vêm da mesma pull zone. */
+  for (const pagina of ['index.html', 'admin.html']) {
+    const html = lerTexto(path.join(SITE, pagina));
+    const m = html.match(/<meta\s+name="referrer"\s+content="([^"]*)"/);
+    assert.ok(m, pagina + ' precisa declarar uma política de referrer');
+    assert.notEqual(m[1], 'no-referrer', pagina + ': no-referrer faz a pull zone do Bunny responder 403');
+    assert.notEqual(m[1], 'same-origin', pagina + ': same-origin também não manda Referer para o Bunny');
+  }
 });
 
 /* Bug real, achado no piloto: voltar para a grade pelo botão do navegador
@@ -141,9 +146,11 @@ test('o trecho animado do hover vem do preview.webp da pull zone', () => {
   assert.equal(GTM.urlPreview({ fonte: { videoId: null } }, { pullzone: 'x.b-cdn.net' }), null);
 });
 
-/* O preview.webp varia de 779 KB a 2,1 MB. Pedir os 66 junto com a grade são
- * dezenas de MB e a tela inicial morre no celular — por isso o <img> só pode nascer no mouseenter e
- * tem que morrer no mouseleave. */
+/* O preview.webp vai de 454 KB a 3,1 MB, com 1,13 MB de mediana, e os 66 somam
+ * 82,2 MB — medidos na pull zone em 14/09. (O "de 779 KB a 2,1 MB" que estava
+ * aqui é de outro lote de arquivos e nunca foi reconferido.) Pedir os 66 junto
+ * com a chegada mata a tela no celular — por isso o <img> só pode nascer no
+ * mouseenter e tem que morrer no mouseleave. */
 test('o preview do hover não é carregado junto com a grade', () => {
   const app = lerTexto(path.join(SITE, 'app.js'));
 
@@ -159,7 +166,7 @@ test('o preview do hover não é carregado junto com a grade', () => {
   assert.match(hover[1], /addEventListener\('mouseleave'/,
     'o preview precisa ser descartado no mouseleave');
   assert.match(hover[1], /removeChild/,
-    'sair do cartão tem que remover o <img>; escondê-lo mantém os 450 KB vivos');
+    'sair do cartão tem que remover o <img>; escondê-lo mantém o megabyte vivo');
 });
 
 /* Em tela de toque não existe hover, e quem pediu menos movimento não quer um
@@ -317,6 +324,43 @@ test('sinopse automática nasce marcada como não revisada', () => {
   assert.equal(GTM.precisaRevisao({ sinopse_origem: '' }), false);
 });
 
+test('as três filas da M3 pegam só quem precisa, na mesma ordem de sempre', () => {
+  const itens = [
+    { id: 'b', serie: 'B', titulo: 'B', publicar: true, sinopse: 'x', sinopse_origem: 'auto' },
+    { id: 'a', serie: 'A', titulo: 'A', publicar: true, sinopse: '', sinopse_origem: '' },
+    { id: 'c', serie: 'C', titulo: 'C', publicar: true, sinopse: 'ok', sinopse_origem: 'revisada' },
+    { id: 'd', serie: 'D', titulo: 'D', publicar: false, sinopse: '', sinopse_origem: '' },
+    { id: 'e', serie: 'E', titulo: 'E', publicar: true, sinopse: 'ok', sinopse_origem: 'auto', pendencia: 'audio_sem_trilha' }
+  ];
+
+  assert.deepEqual(GTM.filaSinopses(itens).map(i => i.id), ['b', 'e'], 'só sinopse_origem === auto, sinopse vazia não conta aqui');
+  assert.deepEqual(GTM.filaSemSinopse(itens).map(i => i.id), ['a'], 'só título NO AR com a ficha de sinopse vazia');
+  assert.deepEqual(GTM.filaPendencias(itens).map(i => i.id), ['e'], 'pendência independe de estar no ar');
+
+  /* A ordem é sempre a de `ordenar` (por série), nunca a do array de entrada —
+   * senão "3 de 56" mudaria de sentido a cada redesenho da mesa. */
+  assert.deepEqual(GTM.filaSinopses(itens.slice().reverse()).map(i => i.id), ['b', 'e']);
+});
+
+test('a "outra versão" de uma duplicata é achada pelo sufixo do id, não por um vínculo gravado', () => {
+  assert.equal(GTM.baseIdSemVersao('curta-kalunga-2024-v1'), 'curta-kalunga-2024');
+  assert.equal(GTM.baseIdSemVersao('curta-kalunga-2024-master'), 'curta-kalunga-2024');
+  assert.equal(GTM.baseIdSemVersao('curta-kalunga-2024'), 'curta-kalunga-2024', 'sem sufixo de versão, o id não muda');
+
+  const itens = [
+    { id: 'curta-kalunga-2024-v1', duracao_seg: 141 },
+    { id: 'curta-kalunga-2024-master', duracao_seg: 103, pendencia: 'versao_duplicada' },
+    { id: 'outra-coisa', duracao_seg: 10 }
+  ];
+  const par = GTM.outraVersaoDuplicada(itens, itens[1]);
+  assert.equal(par && par.id, 'curta-kalunga-2024-v1');
+
+  /* Sem par no catálogo — como é o caso real de hoje (16/09): a outra versão
+   * já foi apagada, e a fila tem de continuar funcionando sem comparação. */
+  const sozinho = { id: 'dof-ep02-2024-master', pendencia: 'versao_duplicada' };
+  assert.equal(GTM.outraVersaoDuplicada([sozinho], sozinho), null);
+});
+
 test('item novo nasce não publicado e no esquema do seed', () => {
   const item = GTM.itemNovo({ titulo: 'Teste', videoId: 'abc', libraryId: '1' });
   assert.equal(item.publicar, false);
@@ -327,6 +371,239 @@ test('item novo nasce não publicado e no esquema do seed', () => {
     'publicar', 'sinopse_origem', 'fonte']) {
     assert.ok(campo in item, 'faltou o campo ' + campo);
   }
+});
+
+/* ---------------------- o rascunho da mesa (15/09) ---------------------- */
+
+/* O rascunho da mesa é uma lista de mudanças campo a campo (PLANO-MESA §3.2).
+ * Cada regra abaixo é um jeito de o Publicar gravar o que ninguém pediu:
+ *   1. mudar o mesmo campo duas vezes guarda o `antes` da PRIMEIRA — é contra
+ *      ele que o Publicar confere se outra tela mexeu no meio;
+ *   2. voltar ao valor original tira a mudança da lista — senão o Publicar
+ *      grava um campo igual, e o histórico registra um nada;
+ *   3. aplicar não altera o catálogo recebido: a mesa guarda o original para
+ *      mostrar o "antes" e o site no ar. */
+test('o rascunho guarda o antes da primeira mudança e esquece a que voltou atrás', () => {
+  let r = [];
+  r = GTM.registrarMudanca(r, { alvo: 'a', campo: 'titulo', antes: 'Velho', depois: 'Novo' });
+  r = GTM.registrarMudanca(r, { alvo: 'a', campo: 'titulo', antes: 'Novo', depois: 'Novíssimo' });
+  assert.equal(r.length, 1);
+  assert.equal(r[0].antes, 'Velho', 'a segunda mudança apagou o antes da primeira');
+  assert.equal(r[0].depois, 'Novíssimo');
+
+  r = GTM.registrarMudanca(r, { alvo: 'a', campo: 'titulo', antes: 'Novíssimo', depois: 'Velho' });
+  assert.equal(r.length, 0, 'voltar ao original tem de tirar a mudança do rascunho');
+
+  /* `tags` é lista: igual é por valor, não por referência. */
+  assert.equal(GTM.registrarMudanca([], { alvo: 'a', campo: 'tags', antes: ['x'], depois: ['x'] }).length, 0);
+});
+
+test('aplicar o rascunho não mexe no catálogo recebido, nem no rev', () => {
+  const cat = { rev: 3, ajustes: { arrastoTeto: 0.6 }, itens: [{ id: 'a', titulo: 'Velho', tags: [] }] };
+  const novo = GTM.aplicarRascunho(cat, [
+    { alvo: 'a', campo: 'titulo', antes: 'Velho', depois: 'Novo' },
+    { alvo: 'ajustes', campo: 'arrastoTeto', antes: 0.6, depois: 0.5 }
+  ]);
+  assert.equal(novo.itens[0].titulo, 'Novo');
+  assert.equal(novo.ajustes.arrastoTeto, 0.5);
+  assert.equal(cat.itens[0].titulo, 'Velho', 'aplicar alterou o catálogo original');
+  assert.equal(cat.ajustes.arrastoTeto, 0.6, 'aplicar alterou os ajustes originais');
+  assert.equal(novo.rev, 3, 'o rev é do servidor: aplicar não mexe nele');
+});
+
+/* A mesa edita o que uma pessoa edita. `id`, `fonte` e `rev` não passam por ela:
+ * um `fonte` trocado aponta a ficha para outro vídeo, e o `rev` é a trava de
+ * concorrência. Esta é a trava do navegador; a do servidor é da M2. */
+test('o rascunho não grava campo fora da lista da mesa', () => {
+  const cat = { rev: 1, ajustes: {}, itens: [{ id: 'a', fonte: { videoId: 'v' } }] };
+  const novo = GTM.aplicarRascunho(cat, [
+    { alvo: 'a', campo: 'id', antes: 'a', depois: 'b' },
+    { alvo: 'a', campo: 'fonte', antes: { videoId: 'v' }, depois: { videoId: 'outro' } },
+    { alvo: 'ajustes', campo: 'qualquer', antes: null, depois: 1 }
+  ]);
+  assert.equal(novo.itens[0].id, 'a');
+  assert.equal(novo.itens[0].fonte.videoId, 'v');
+  assert.ok(!('qualquer' in novo.ajustes), 'um ajuste desconhecido entrou pelo rascunho');
+  for (const campo of ['titulo', 'sinopse', 'sinopse_origem', 'publicar', 'pendencia',
+    'titularidade', 'nivel_evidencia', 'capa_arquivo', 'capa_versao']) {
+    assert.ok(GTM.CAMPOS_ITEM_MESA.includes(campo), campo + ' saiu da lista da mesa');
+  }
+});
+
+/* O conflito que o 409 não sabe explicar: outra tela mudou o MESMO campo entre
+ * o começo do rascunho e o Publicar. Outro campo, ou outro título, é o caso
+ * normal de duas pessoas trabalhando — e a mesma mudança feita pelas duas
+ * também não é conflito: o servidor já está onde o rascunho queria. */
+test('conflito é o mesmo campo mudado por outra tela, e só ele', () => {
+  const agora = {
+    ajustes: {},
+    itens: [
+      { id: 'a', titulo: 'Mudado por outra tela', sinopse: 'S', serie: 'Nova' },
+      { id: 'b', titulo: 'B' }
+    ]
+  };
+  const c = GTM.conflitosRascunho(agora, [
+    { alvo: 'a', campo: 'titulo', antes: 'Velho', depois: 'Meu' },
+    { alvo: 'a', campo: 'sinopse', antes: 'S', depois: 'S2' },
+    { alvo: 'b', campo: 'titulo', antes: 'B', depois: 'B2' },
+    { alvo: 'a', campo: 'serie', antes: 'Antiga', depois: 'Nova' }
+  ]);
+  assert.equal(c.length, 1, JSON.stringify(c));
+  assert.equal(c[0].alvo, 'a');
+  assert.equal(c[0].campo, 'titulo');
+  assert.equal(c[0].noServidor, 'Mudado por outra tela');
+
+  const sumiu = GTM.conflitosRascunho({ ajustes: {}, itens: [] },
+    [{ alvo: 'x', campo: 'titulo', antes: 'T', depois: 'U' }]);
+  assert.equal(sumiu.length, 1);
+  assert.equal(sumiu[0].sumiu, true, 'título que sumiu do catálogo tem de parar o Publicar');
+});
+
+/* O DESTAQUE É UM (D4), e a regra mora no aplicarRascunho — não no rascunho —
+ * porque tem de valer sobre a leitura fresca do Publicar. Se outra tela marcou
+ * um terceiro título no meio, a conferência campo a campo não vê: são campos
+ * de títulos diferentes. */
+test('o rascunho que destaca um título apaga a marca dos outros, até a de outra tela', () => {
+  const agora = {
+    itens: [
+      { id: 'a', publicar: true },
+      { id: 'b', publicar: true, destaque: true },
+      { id: 'c', publicar: true, destaque: true }
+    ]
+  };
+  const novo = GTM.aplicarRascunho(agora, [
+    { alvo: 'c', campo: 'destaque', antes: true, depois: null },
+    { alvo: 'a', campo: 'destaque', antes: null, depois: true }
+  ]);
+  assert.deepEqual(novo.itens.filter(i => i.destaque === true).map(i => i.id), ['a'],
+    'sobrou mais de um destaque — a marca que outra tela pôs em b ficou');
+  assert.ok(!('destaque' in novo.itens[2]), 'desmarcar tem de APAGAR o campo, como o /admin fazia');
+  assert.equal(agora.itens[1].destaque, true, 'aplicar mexeu no catálogo recebido');
+});
+
+/* ------------------- contas e permissões (M2, 16/09) -------------------- */
+
+/* A permissão de cada campo. O que não está em lista nenhuma é do superadmin
+ * de propósito: `fonte` aponta a ficha para outro vídeo, `capitulos` e
+ * `framerate` vêm de script, e um título removido não existe pela mesa. */
+test('cada campo tem a sua permissão, e o resto é só do superadmin', () => {
+  assert.deepEqual(GTM.PERMISSOES, ['conteudo', 'no-ar', 'enviar', 'estrutura', 'player', 'historico']);
+  assert.equal(GTM.permissaoDoCampo('x', 'titulo'), 'conteudo');
+  assert.equal(GTM.permissaoDoCampo('x', 'sinopse_origem'), 'conteudo');
+  assert.equal(GTM.permissaoDoCampo('x', 'capa_arquivo'), 'conteudo');
+  assert.equal(GTM.permissaoDoCampo('x', 'publicar'), 'no-ar');
+  assert.equal(GTM.permissaoDoCampo('x', 'destaque'), 'estrutura');
+  assert.equal(GTM.permissaoDoCampo('ajustes', 'arrastoTeto'), 'player');
+  assert.equal(GTM.permissaoDoCampo('x', 'fonte'), null);
+  assert.equal(GTM.permissaoDoCampo('x', 'capitulos'), null);
+  assert.equal(GTM.permissaoDoCampo('x', 'framerate'), null);
+  for (const p of GTM.PERMISSOES) {
+    assert.ok(GTM.ROTULO_PERMISSAO[p], 'falta o rótulo de ' + p);
+    assert.ok(GTM.AJUDA_PERMISSAO[p], 'falta a explicação de ' + p);
+  }
+});
+
+test('a comparação de dois catálogos diz o que mudou e o que cada mudança exige', () => {
+  const antes = {
+    rev: 5, total: 2, atualizado_em: 'ontem', ajustes: { arrastoTeto: 0.6, controlesEspera: 3 },
+    itens: [
+      { id: 'a', titulo: 'A', publicar: true, framerate: 30 },
+      { id: 'b', titulo: 'B', publicar: false }
+    ]
+  };
+  const depois = JSON.parse(JSON.stringify(antes));
+  depois.rev = 6;
+  depois.total = 3;
+  depois.atualizado_em = 'hoje';
+  depois.itens[0].titulo = 'A!';
+  depois.itens[0].destaque = true;
+  depois.itens[1].publicar = true;
+  depois.itens[1].framerate = 24;
+  depois.ajustes.arrastoTeto = 0.5;
+  depois.itens.push({ id: 'c', titulo: 'C', publicar: true });
+
+  const difs = GTM.diferencasDoCatalogo(antes, depois);
+  const chave = (d) => d.alvo + '.' + d.campo + ':' + d.permissao;
+  const vistas = difs.map(chave).sort();
+  assert.deepEqual(vistas, [
+    'a.destaque:estrutura', 'a.titulo:conteudo', 'ajustes.arrastoTeto:player',
+    'b.framerate:null', 'b.publicar:no-ar', 'c.*:enviar', 'c.publicar:no-ar'
+  ].sort(), JSON.stringify(vistas));
+
+  /* rev, total e atualizado_em são do servidor: mudam em toda gravação e não
+   * são mudança de ninguém. */
+  assert.ok(!difs.some(d => ['rev', 'total', 'atualizado_em'].includes(d.campo)));
+
+  const semNada = GTM.diferencasDoCatalogo(antes, JSON.parse(JSON.stringify(antes)));
+  assert.deepEqual(semNada, [], 'catálogo igual não pode ter diferença');
+
+  /* Campo ausente e campo nulo são o mesmo nada. */
+  const comNulo = JSON.parse(JSON.stringify(antes));
+  comNulo.itens[0].tema = null;
+  assert.deepEqual(GTM.diferencasDoCatalogo(antes, comNulo), []);
+
+  /* Tirar um título do catálogo não é da mesa: fica sem permissão, e só o
+   * superadmin passa. */
+  const semB = JSON.parse(JSON.stringify(antes));
+  semB.itens.pop();
+  const removido = GTM.diferencasDoCatalogo(antes, semB);
+  assert.equal(removido.length, 1);
+  assert.equal(removido[0].tipo, 'removido');
+  assert.equal(removido[0].permissao, null);
+});
+
+test('o que cada conta não pode gravar', () => {
+  const difs = [
+    { alvo: 'a', campo: 'titulo', permissao: 'conteudo' },
+    { alvo: 'a', campo: 'publicar', permissao: 'no-ar' },
+    { alvo: 'ajustes', campo: 'arrastoTeto', permissao: 'player' },
+    { alvo: 'b', campo: 'fonte', permissao: null }
+  ];
+  const so = (conta) => GTM.proibidas(conta, difs).map(d => d.campo);
+
+  assert.deepEqual(GTM.proibidas({ super: true }, difs), [], 'o superadmin não é barrado');
+  assert.deepEqual(so({ usuario: 'maria', permissoes: ['conteudo'] }), ['publicar', 'arrastoTeto', 'fonte']);
+  assert.deepEqual(so({ usuario: 'joao', permissoes: ['conteudo', 'no-ar', 'player'] }), ['fonte'],
+    'campo sem permissão é do superadmin, mesmo com todas as permissões da mesa');
+  assert.deepEqual(so({ usuario: 'lia', permissoes: [] }), ['titulo', 'publicar', 'arrastoTeto', 'fonte']);
+  assert.deepEqual(so(null), ['titulo', 'publicar', 'arrastoTeto', 'fonte'], 'sem conta, nada passa');
+  assert.equal(GTM.contaPode({ permissoes: ['conteudo'] }, 'conteudo'), true);
+  assert.equal(GTM.contaPode({ permissoes: ['conteudo'] }, 'no-ar'), false);
+});
+
+test('usuário e senha têm forma, e `superadmin` é reservado', () => {
+  assert.equal(GTM.usuarioValido('maria'), true);
+  assert.equal(GTM.usuarioValido('maria_silva-2'), true);
+  assert.equal(GTM.usuarioValido('Maria'), false, 'maiúscula muda o token');
+  assert.equal(GTM.usuarioValido('ma'), false);
+  assert.equal(GTM.usuarioValido('maria.silva'), false, 'o ponto é o separador do token');
+  assert.equal(GTM.usuarioValido('superadmin'), false);
+  assert.equal(GTM.usuarioValido('admin'), false);
+  assert.equal(GTM.senhaValida('12345678901'), false);
+  assert.equal(GTM.senhaValida('123456789012'), true);
+  assert.equal(GTM.permissoesValidas(['conteudo', 'no-ar']), true);
+  assert.equal(GTM.permissoesValidas(['tudo']), false);
+  assert.equal(GTM.permissoesValidas([]), true, 'conta só de leitura é válida');
+});
+
+test('limite de envio: null é "sem limite", e os números não podem ser negativos ou fracionados', () => {
+  assert.equal(GTM.limiteEnvioValido(null), true, 'conta nova, sem nenhum limite');
+  assert.equal(GTM.limiteEnvioValido({}), true, 'campos ausentes valem null');
+  assert.equal(GTM.limiteEnvioValido({ maxVideos: 5, maxDuracaoSeg: 1800, autorizacaoManual: true }), true);
+  assert.equal(GTM.limiteEnvioValido({ maxVideos: 0 }), true, 'zero é um limite válido, ainda que bloqueie tudo');
+  assert.equal(GTM.limiteEnvioValido({ maxVideos: -1 }), false);
+  assert.equal(GTM.limiteEnvioValido({ maxVideos: 1.5 }), false);
+  assert.equal(GTM.limiteEnvioValido({ maxDuracaoSeg: 'muito' }), false);
+  assert.equal(GTM.limiteEnvioValido({ autorizacaoManual: 'sim' }), false, 'não é booleano');
+  assert.equal(GTM.limiteEnvioValido('sem limite'), false, 'não é objeto');
+});
+
+test('título fora do ar não recebe o destaque, e o destaque de hoje fica', () => {
+  const novo = GTM.aplicarRascunho(
+    { itens: [{ id: 'a', publicar: false }, { id: 'b', publicar: true, destaque: true }] },
+    [{ alvo: 'a', campo: 'destaque', antes: null, depois: true }]);
+  assert.ok(!novo.itens[0].destaque, 'o rascunho destacou um título fora do ar');
+  assert.equal(novo.itens[1].destaque, true, 'um pedido que não vale tirou o destaque da chegada');
 });
 
 test('duração legível', () => {
@@ -686,7 +963,34 @@ const PLAYER_JS = lerTexto(path.join(SITE, 'player.js'));
  * "o único lugar que chama video.play()". Contar ocorrências no texto cru
  * confundiria a menção com o uso. Mesma distinção que o teste da AccessKey faz
  * lá embaixo: citar é permitido, usar não. */
-const semComentarios = (js) => js.replace(/\/\*[\s\S]*?\*\//g, '');
+/* ARMADILHA PAGA EM 16/09. Isto era `js.replace(/\/\*[\s\S]*?\*\//g, '')`, e
+ * um `/*` DENTRO DE UM TEXTO abre um comentário que nunca começou: o
+ * `accept: 'video/*'` do seletor de arquivo da mesa engolia o código daí até o
+ * próximo `*​/` de verdade — 20 linhas, incluindo a definição de uma função.
+ * Quem varre o arquivo atrás de um `play()`, de um ouvinte de scroll ou de uma
+ * regra qualquer estava lendo menos código do que pensava, e passando por
+ * isso. Este tira comentário de bloco sem entrar em texto entre aspas. */
+const semComentarios = (js) => {
+  let fora = '';
+  let modo = 'codigo';
+  let aspas = '';
+  for (let i = 0; i < js.length; i++) {
+    const c = js[i];
+    const d = js[i + 1];
+    if (modo === 'codigo') {
+      if (c === '/' && d === '*') { modo = 'bloco'; i++; continue; }
+      if (c === '"' || c === "'" || c === '`') { modo = 'texto'; aspas = c; }
+      fora += c;
+    } else if (modo === 'bloco') {
+      if (c === '*' && d === '/') { modo = 'codigo'; i++; }
+    } else {
+      if (c === '\\') { fora += js.slice(i, i + 2); i++; continue; }
+      if (c === aspas) modo = 'codigo';
+      fora += c;
+    }
+  }
+  return fora;
+};
 const PLAYER_CODIGO = semComentarios(PLAYER_JS);
 
 test('REGRA 1 — o player nosso não toca sozinho', () => {
@@ -3778,22 +4082,42 @@ test('o ajuste do player mora no catálogo, não no config do ambiente', () => {
   assert.match(medir[1], /fracaoTeto: fracaoTeto/);
 });
 
-test('o /admin tem onde ajustar o teto, e só grava o que está na faixa', () => {
-  const html = lerTexto(path.join(SITE, 'admin.html'));
-  assert.match(html, /id="aba-ajustes"/);
-  assert.match(html, /id="a-teto"/);
+/* Desde a mesa (15/09) o ajuste passa pelo rascunho, como qualquer mudança. A
+ * regra da fração e da faixa é a mesma; o caminho até o KV é o Publicar, que
+ * relê o catálogo, confere e grava com o `rev` — o teste logo abaixo. */
+test('a mesa tem onde ajustar o teto, e só grava o que está na faixa', () => {
+  const painel = lerTexto(path.join(SITE, 'mesa-painel.js'));
+  assert.match(painel, /id: 'a-teto'/);
+  assert.match(painel, /id: 'a-sumico'/);
 
-  const admin = lerTexto(path.join(SITE, 'admin.js'));
+  const mesa = lerTexto(path.join(SITE, 'mesa.js'));
   /* Grava a FRAÇÃO, não a porcentagem: a tela fala em % porque é o que se lê,
    * e o player-core trabalha em fração. Trocar isso silenciosamente faria o
    * teto valer 40 vezes o vídeo. */
-  assert.match(admin, /arrastoTeto: Math\.round\(pct\) \/ 100/);
-  assert.match(admin, /pct < 5 \|\| pct > 100/);
-  /* E passa pelo mesmo salvarCatalogo de todo o resto — ler, alterar, gravar,
-   * com o `rev` do servidor. Duas telas abertas não se sobrescrevem. */
-  const salvar = admin.match(/\$\('a-salvar'\)\.addEventListener[\s\S]*?\n  \}\);/);
-  assert.ok(salvar, 'não achei o botão de salvar dos ajustes');
-  assert.match(salvar[0], /salvarCatalogo\(/);
+  assert.match(mesa, /'arrastoTeto', Math\.round\(pct\) \/ 100/);
+  assert.match(mesa, /pct < 5 \|\| pct > 100/);
+  /* E vai para o rascunho: nenhum campo do catálogo grava por fora do Publicar.
+   * O mesa.js FAZ PUT desde a M2 — em `/api/contas` e `/api/conta`, que são
+   * as contas da equipe e não o catálogo. O que não pode é ele tocar o
+   * catálogo: isso é do Publicar, em mesa-base.js. */
+  assert.match(mesa, /M\.mudar\('ajustes', 'arrastoTeto'/);
+  assert.ok(!/\/api\/catalogo/.test(mesa), 'mesa.js grava o catálogo por fora do Publicar');
+});
+
+/* O Publicar é o caminho da mesa até o KV para tudo o que já está no catálogo
+ * — o título novo, que nasce fora do ar, é a exceção escrita em mesa-telas.js.
+ * Ele relê, confere campo a campo e, do que veio no GET, só tira o `config`:
+ * a regra que a rev 85 ensinou aos scripts vale para a tela também. */
+test('o Publicar da mesa relê, confere o conflito e só tira o config', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const publicar = base.match(/M\.publicar = function \(\) \{([\s\S]*?)\n  \};/);
+  assert.ok(publicar, 'não achei M.publicar em mesa-base.js');
+  assert.match(publicar[1], /\/api\/catalogo\?completo=1/);
+  assert.match(publicar[1], /GTM\.conflitosRascunho\(atual, M\.st\.rascunho\)/);
+  assert.match(publicar[1], /GTM\.aplicarRascunho\(atual, M\.st\.rascunho\)/);
+  assert.match(publicar[1], /delete novo\.config;/);
+  assert.ok(!/delete novo\.ajustes/.test(publicar[1]), 'o Publicar apaga os ajustes — a rev 85 de novo');
+  assert.match(publicar[1], /method: 'PUT'/);
 });
 
 /* ------------------- o sumiço dos controles (03/09) --------------------- */
@@ -3964,19 +4288,55 @@ test('titularidade e evidência só existem no /admin', () => {
   assert.ok(!/titularidade|nivel_evidencia/.test(publico[1]),
     'os dois campos voltaram para a resposta pública');
 
-  /* E o /admin não perdeu nada: o formulário continua lá, e ele lê o catálogo
-   * inteiro, não a projeção. */
-  const admin = lerTexto(path.join(SITE, 'admin.html'));
-  assert.match(admin, /id="m-titularidade"/);
-  assert.match(admin, /id="m-evidencia"/);
-  assert.match(lerTexto(path.join(SITE, 'admin.js')), /\/api\/catalogo\?completo=1/);
+  /* E o /admin não perdeu nada: desde 15/09 os dois campos moram no inspetor
+   * da mesa, que lê o catálogo inteiro, não a projeção. */
+  const painel = lerTexto(path.join(SITE, 'mesa-painel.js'));
+  assert.match(painel, /id: 'm-titularidade'/);
+  assert.match(painel, /id: 'm-evidencia'/);
+  assert.match(lerTexto(path.join(SITE, 'mesa-base.js')), /\/api\/catalogo\?completo=1/);
 });
 
 /* ============================ segredos ================================== */
 
+/* O DIRETÓRIO INTEIRO DE `site/` VAI PARA O AR: `wrangler pages deploy .` sobe
+ * todo arquivo que estiver lá, e é por isso que `scripts/` e `tests/` moram
+ * fora. Em 16/09 um `wrangler pages dev` deixou dentro de `site/` a pasta
+ * `.wrangler/`, com o KV local — catálogo e hash de senha — e ela chegou a
+ * entrar num commit. Este teste é a rede: arquivo estranho aqui reprova antes
+ * de virar ativo público. */
+test('em site/ só mora o que pode ir para o ar', () => {
+  const pastas = ['functions', 'vendor'];
+  const extensoes = ['.html', '.js', '.css', '.svg', '.png', '.ico', '.txt', '.webmanifest'];
+  const estranhos = fs.readdirSync(SITE).filter((nome) => {
+    if (nome.startsWith('.') || nome === 'node_modules') return true;
+    if (fs.statSync(path.join(SITE, nome)).isDirectory()) return !pastas.includes(nome);
+    return !extensoes.includes(path.extname(nome).toLowerCase());
+  });
+  assert.deepEqual(estranhos, [],
+    'isto iria para o ar no próximo deploy: ' + estranhos.join(', '));
+
+  /* E nada de estado local escondido mais fundo. */
+  const fundo = [];
+  const varrer = (dir) => {
+    for (const nome of fs.readdirSync(dir)) {
+      const cheio = path.join(dir, nome);
+      if (!fs.statSync(cheio).isDirectory()) continue;
+      if (nome === '.wrangler' || nome === 'node_modules') fundo.push(path.relative(SITE, cheio));
+      else varrer(cheio);
+    }
+  };
+  varrer(SITE);
+  assert.deepEqual(fundo, [], 'estado local dentro de site/: ' + fundo.join(', '));
+});
+
 test('a AccessKey do Bunny não aparece em nenhum arquivo servido ao navegador', () => {
-  const servidos = ['app.js', 'admin.js', 'catalogo-core.js', 'player.js', 'player-core.js',
-    'index.html', 'admin.html'];
+  /* A lista sai da PASTA, não de uma lista escrita à mão: a mesa trouxe quatro
+   * arquivos novos de uma vez, e o próximo servido nasce coberto. */
+  const servidos = fs.readdirSync(SITE).filter(n => /\.(js|html)$/.test(n));
+  for (const esperado of ['app.js', 'catalogo-core.js', 'player.js', 'player-core.js', 'mesa-base.js',
+    'mesa-painel.js', 'mesa-telas.js', 'mesa.js', 'index.html', 'admin.html']) {
+    assert.ok(servidos.includes(esperado), 'a varredura perdeu ' + esperado);
+  }
   const guid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i;
   for (const arquivo of servidos) {
     const conteudo = lerTexto(path.join(SITE, arquivo));
@@ -4004,6 +4364,1409 @@ test('a capa também é o poster do player — quem encolher a capa mexe nos doi
 
   const app = lerTexto(path.join(SITE, 'app.js'));
   assert.match(app, /GTM\.urlCapa\(/, 'a grade também tem que passar por urlCapa');
+});
+
+/* ============================ prateleiras e título curto (D2) =========== */
+
+/* Um catálogo de MENTIRA com as armadilhas do de verdade. Não dá para usar o
+ * `catalogo.seed.json`: ele tem 86 itens e ZERO publicados, porque o estado de
+ * publicação mora no KV, não no seed. E os testes rodam sem rede.
+ *
+ * O que este fixture reproduz, item por item:
+ *   - uma série grande (3+), que vira linha própria;
+ *   - duas séries pequenas, que caem em "Mais séries";
+ *   - três curtas de séries diferentes, que viram a prateleira "Curtas";
+ *   - institucionais CURTOS, que não podem entrar em "Até 5 minutos";
+ *   - os prefixos e sufixos que o `tituloCurto` tem que podar — e os dois que
+ *     ele tem que deixar em paz. */
+const catalogoPrateleiras = [
+  { id: 'dof-1', titulo: 'De Olho no Futuro: Bombeiro militar', serie: 'De Olho no Futuro', episodio: 1, duracao_seg: 420, publicar: true },
+  { id: 'dof-2', titulo: 'De Olho no Futuro: Dentista', serie: 'De Olho no Futuro', episodio: 2, duracao_seg: 430, publicar: true },
+  { id: 'dof-3', titulo: 'De Olho no Futuro: Advogada', serie: 'De Olho no Futuro', episodio: 3, duracao_seg: 440, publicar: true },
+
+  { id: 'enq-1', titulo: 'Enquete: Português (Episódio 1)', serie: 'Enquete', episodio: 1, duracao_seg: 200, publicar: true },
+  { id: 'enq-2', titulo: 'Enquete: Português (Episódio 2)', serie: 'Enquete', episodio: 2, duracao_seg: 210, publicar: true },
+  { id: 'enq-3', titulo: 'Enquete: Português (Episódio 3)', serie: 'Enquete', episodio: 3, duracao_seg: 220, publicar: true },
+
+  { id: 'mat-2', titulo: 'Matematicidades: Art déco (Episódio 2)', serie: 'Matematicidades', episodio: 2, duracao_seg: 700, publicar: true },
+  { id: 'mat-3', titulo: 'Matematicidades: Estádio (Episódio 3)', serie: 'Matematicidades', episodio: 3, duracao_seg: 710, publicar: true },
+  { id: 'par-1', titulo: 'PCAs na Natureza: Paraquedismo (Episódio 1)', serie: 'Paraquedismo', episodio: 1, duracao_seg: 600, publicar: true },
+
+  { id: 'cur-k', titulo: 'Curta Kalunga 2024', serie: 'Curtas — Kalunga', duracao_seg: 120, publicar: true },
+  { id: 'cur-l', titulo: 'Curta Leitura 2024', serie: 'Curtas — Leitura', duracao_seg: 120, publicar: true },
+  { id: 'cur-t', titulo: 'Curta Tapuia', serie: 'Curtas — Tapunga', duracao_seg: 120, publicar: true },
+
+  { id: 'cam-1', titulo: 'Boas Férias GoiásTec', serie: 'Campanhas', duracao_seg: 60, publicar: true },
+  { id: 'cam-2', titulo: 'Matrículas Goiás Tec', serie: 'Campanhas', duracao_seg: 70, publicar: true },
+  { id: 'cam-3', titulo: 'Boas-vindas GoiásTec', serie: 'Campanhas', duracao_seg: 80, publicar: true },
+  { id: 'jor-1', titulo: 'Jornada Goiás Tec: Ensino Mediado', serie: 'A classificar', duracao_seg: 3000, publicar: true },
+
+  /* Não publicado: nenhuma prateleira pode mostrá-lo. */
+  { id: 'oculto', titulo: 'De Olho no Futuro: Piloto', serie: 'De Olho no Futuro', episodio: 9, duracao_seg: 400, publicar: false }
+];
+
+/* A regra central, e a primeira que a §5.4 do plano pede para conferir: a
+ * chegada nova não pode ENGOLIR título. Uma prateleira esquecida não aparece
+ * na tela como erro — aparece como um vídeo que ninguém acha mais. */
+test('toda peça publicada entra em pelo menos uma prateleira', () => {
+  const ps = GTM.prateleiras(catalogoPrateleiras);
+  const vistos = new Set();
+  for (const p of ps) for (const i of p.itens) vistos.add(i.id);
+
+  const publicados = GTM.publicaveis(catalogoPrateleiras).map(i => i.id);
+  for (const id of publicados) {
+    assert.ok(vistos.has(id), id + ' publicado e fora de todas as prateleiras');
+  }
+  assert.ok(!vistos.has('oculto'), 'uma prateleira mostrou um título não publicado');
+  assert.equal(vistos.size, publicados.length);
+});
+
+/* Herda a decisão do teste "a aba Todas é uma grade única": nada de linha com
+ * um cartão só e a tela vazia à direita. Rolar de lado resolve a SOBRA das
+ * séries grandes; não salva uma linha de uma capa só. */
+test('nenhuma prateleira de série fica abaixo do mínimo de 3', () => {
+  const ps = GTM.prateleiras(catalogoPrateleiras);
+  const series = ps.filter(p => p.id.indexOf('serie:') === 0);
+  assert.ok(series.length, 'nenhuma prateleira de série foi montada');
+  for (const p of series) {
+    assert.ok(p.itens.length >= GTM.MINIMO_PRATELEIRA,
+      p.id + ' tem ' + p.itens.length + ' título(s) — abaixo do mínimo, devia ter caído em "Mais séries"');
+  }
+  /* E a série pequena tem que estar em "Mais séries", não sumida. */
+  const mais = ps.find(p => p.id === 'mais-series');
+  assert.ok(mais, 'sem "Mais séries" as séries de 1 e 2 títulos não têm onde cair');
+  assert.deepEqual(mais.itens.map(i => i.id).sort(), ['mat-2', 'mat-3', 'par-1']);
+});
+
+/* Os agrupamentos são a rede que segura o resto: se um deles encolher abaixo
+ * do mínimo, ele continua na tela. Sumir com ele para respeitar o mínimo
+ * esconderia título — e esconder é pior do que uma linha curta. Quem decide o
+ * que fazer nesse dia é uma pessoa, avisada por este teste. */
+test('um agrupamento pequeno continua na tela em vez de engolir os títulos', () => {
+  const magro = [
+    { id: 'a', titulo: 'A', serie: 'Matematicidades', duracao_seg: 900, publicar: true },
+    { id: 'b', titulo: 'B', serie: 'Campanhas', duracao_seg: 900, publicar: true }
+  ];
+  const ps = GTM.prateleiras(magro);
+  const vistos = new Set();
+  for (const p of ps) for (const i of p.itens) vistos.add(i.id);
+  assert.deepEqual([...vistos].sort(), ['a', 'b'],
+    'com pouco material as prateleiras sumiram e levaram os títulos junto');
+});
+
+/* "Até 5 minutos, para a aula" é para QUEM DÁ AULA: uma campanha de 60
+ * segundos cabe no tempo, mas não é o que alguém vai passar para a turma. */
+test('a prateleira de até 5 minutos não recolhe institucional curto', () => {
+  const curtos = GTM.prateleiras(catalogoPrateleiras).find(p => p.id === 'curtos');
+  assert.ok(curtos, 'a prateleira de duração sumiu');
+  for (const i of curtos.itens) {
+    assert.ok(GTM.SERIES_INSTITUCIONAIS.indexOf(i.serie) < 0,
+      i.id + ' é institucional e entrou na prateleira da aula');
+    assert.ok(i.duracao_seg <= 300, i.id + ' passa de 5 minutos');
+  }
+  assert.deepEqual(curtos.itens.map(i => i.id).sort(),
+    ['cur-k', 'cur-l', 'cur-t', 'enq-1', 'enq-2', 'enq-3']);
+});
+
+/* A TRAVA da §5.4: "pedagógico" e "institucional" não existem como dado, e uma
+ * lista escrita à mão esquece série nova. Em produção a desconhecida é tratada
+ * como pedagógica e aparece em "Mais séries" — o site não esconde título por
+ * lista desatualizada. Quem avisa é este teste, e é ele que faz a lista valer.
+ *
+ * É a mesma forma da trava da raiz do espelho: toda pasta é pública por nome
+ * ou está em PROIBIDOS; pasta nova reprova até alguém decidir de que lado fica. */
+test('toda série está em exatamente uma das três listas', () => {
+  const listas = {
+    institucionais: GTM.SERIES_INSTITUCIONAIS,
+    curtas: GTM.SERIES_CURTAS,
+    pedagogicas: GTM.SERIES_PEDAGOGICAS
+  };
+  const conta = Object.create(null);
+  for (const nome of Object.keys(listas)) {
+    for (const serie of listas[nome]) conta[serie] = (conta[serie] || 0) + 1;
+  }
+  for (const serie of Object.keys(conta)) {
+    assert.equal(conta[serie], 1, '"' + serie + '" está em mais de uma lista de séries');
+  }
+
+  /* As 23 séries que o catálogo tinha em 14/09 (rev 86). Uma série nova no ar
+   * NÃO reprova aqui — reprova quando alguém a acrescentar a este rol sem
+   * escolher um lado, que é o momento em que a decisão tem que ser tomada. */
+  const doCatalogo = [
+    'De Olho no Futuro', 'Campanhas', 'Festas Típicas de Goiás', 'Blá Blá Blá com o Ivair',
+    'Papo de Palavra', 'Institucional', 'Eventos', 'Projeto Leitura', 'Enquete',
+    'A classificar', 'Datas comemorativas', 'Matematicidades', 'Paraquedismo',
+    'Série Kalunga', 'Curtas — Kalunga', 'Curtas — Leitura', 'Curtas — Matematicidades',
+    'Curtas — Paraquedismo', 'Curtas — Tapunga', 'Esportes de Invasão',
+    'PequiPod / Ciranda da Arte', 'Aulas', 'Depoimentos'
+  ];
+  assert.equal(doCatalogo.length, 23);
+  for (const serie of doCatalogo) {
+    assert.equal(conta[serie], 1,
+      '"' + serie + '" não está em lista nenhuma — decida se é pedagógica, curta ou institucional');
+  }
+  assert.equal(Object.keys(conta).length, 23,
+    'há série nas listas que não existe no catálogo, ou falta série aqui');
+});
+
+/* O "Ver tudo" tem que cair na MESMA regra que desenhou a linha, e não numa
+ * cópia dela do lado do app.js. Uma regra escrita duas vezes vira duas regras
+ * no dia em que alguém mexer numa delas. */
+test('o "Ver tudo" acha a prateleira pelo mesmo id que a chegada desenhou', () => {
+  for (const p of GTM.prateleiras(catalogoPrateleiras)) {
+    const achada = GTM.prateleiraPorId(catalogoPrateleiras, p.id);
+    assert.ok(achada, 'prateleiraPorId não achou ' + p.id);
+    assert.deepEqual(achada.itens.map(i => i.id), p.itens.map(i => i.id));
+    assert.equal(achada.titulo, p.titulo);
+  }
+  assert.equal(GTM.prateleiraPorId(catalogoPrateleiras, 'serie:Não Existe'), null);
+});
+
+/* Os casos vieram dos dados de 10/09, e cada linha aqui é uma armadilha que
+ * uma regra ingênua cairia. */
+test('o prefixo do título só sai quando bate com a série', () => {
+  const curto = (titulo, serie) => GTM.tituloCurto({ titulo, serie });
+
+  /* o prefixo É a série */
+  assert.equal(curto('De Olho no Futuro: Bombeiro militar', 'De Olho no Futuro'), 'Bombeiro militar');
+  /* o prefixo COMEÇA a série */
+  assert.equal(curto('Blá Blá Blá: Literatura e cidadania', 'Blá Blá Blá com o Ivair'), 'Literatura e cidadania');
+  /* singular e plural: "Aula" começa "Aulas" */
+  assert.equal(curto('Aula: Radioatividade e o césio-137', 'Aulas'), 'Radioatividade e o césio-137');
+
+  /* NÃO bate: o prefixo é outro assunto, e cortá-lo apagaria informação que a
+   * linha da prateleira não mostra. */
+  assert.equal(curto('PCAs na Natureza: Paraquedismo', 'Paraquedismo'), 'PCAs na Natureza: Paraquedismo');
+  assert.equal(curto('Jornada Goiás Tec: Ensino Mediado', 'A classificar'), 'Jornada Goiás Tec: Ensino Mediado');
+
+  /* sem dois-pontos não há o que podar */
+  assert.equal(curto('Curta Tapuia', 'Curtas — Tapunga'), 'Curta Tapuia');
+  /* poda que comeria o título inteiro devolve o original */
+  assert.equal(curto('Enquete:', 'Enquete'), 'Enquete:');
+  assert.equal(curto('', 'Enquete'), '');
+});
+
+/* Tirar o sufixo CRIA COLISÃO, e isso foi aceito de olhos abertos: sobram
+ * cinco "Literatura e cidadania" e três "Português". O que desfaz a colisão é
+ * a linha de baixo do cartão — e ela tem que dizer a mesma palavra que o vídeo
+ * diz. O Blá Blá Blá é numerado em "Parte"; mostrar "E3" ali troca o nome das
+ * coisas para quem procura o episódio certo. */
+test('o número do episódio sai do nome e reaparece na linha de baixo', () => {
+  const it = { titulo: 'Blá Blá Blá: Literatura e cidadania (Parte 3)', serie: 'Blá Blá Blá com o Ivair', episodio: 3 };
+  assert.equal(GTM.tituloCurto(it), 'Literatura e cidadania');
+  assert.equal(GTM.rotuloNumero(it), 'Parte 3');
+
+  const ep = { titulo: 'Enquete: Português (Episódio 2)', serie: 'Enquete', episodio: 2 };
+  assert.equal(GTM.tituloCurto(ep), 'Português');
+  assert.equal(GTM.rotuloNumero(ep), 'Episódio 2');
+
+  /* sem sufixo no nome, o número vem do campo */
+  assert.equal(GTM.rotuloNumero({ titulo: 'Dentista', serie: 'De Olho no Futuro', episodio: 2 }), 'Episódio 2');
+  /* sem campo e sem sufixo, não inventa número */
+  assert.equal(GTM.rotuloNumero({ titulo: 'PequiPod', serie: 'PequiPod / Ciranda da Arte' }), '');
+
+  /* A colisão é real, e o teste a fixa: se um dia ela for resolvida por outro
+   * caminho, é aqui que a decisão aparece. */
+  const partes = [1, 2, 3, 4, 5].map(n => GTM.tituloCurto({
+    titulo: 'Blá Blá Blá: Literatura e cidadania (Parte ' + n + ')',
+    serie: 'Blá Blá Blá com o Ivair'
+  }));
+  assert.equal(new Set(partes).size, 1, 'os cinco deviam colidir — quem os separa é rotuloNumero');
+});
+
+/* ---------------------------- a chegada desenhada ----------------------- */
+
+/* A grade NÃO morreu: ela é a resposta da busca, do chip de série e do "Ver
+ * tudo". O que mudou foi a chegada. Se este desvio sumir, o site volta a abrir
+ * numa grade de 66 cartões e a fase D2 desaparece sem ninguém notar — a tela
+ * continua funcionando, só deixa de ser a que foi decidida. */
+test('a chegada é prateleira, e a grade é a resposta a uma pergunta', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function renderGrade\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei renderGrade em app.js');
+  assert.match(corpo[1], /renderChegada\(\)/,
+    'renderGrade não desvia mais para as prateleiras — a chegada virou grade de novo');
+  assert.match(corpo[1], /estado\.termo[\s\S]*estado\.serie[\s\S]*estado\.prateleira/,
+    'o desvio para a chegada tem que olhar termo, série E prateleira');
+  assert.match(app, /function renderChegada\(\)/, 'renderChegada sumiu');
+  /* A regra é a mesma; o nome da função mudou na M4, quando a prateleira
+   * escondida passou a existir: a chegada desenha as VISÍVEIS, e a lista
+   * inteira continua saindo de `prateleiras()` para o "Ver tudo" e a mesa. */
+  assert.match(app, /GTM\.prateleirasVisiveis\(/, 'a chegada não monta mais as prateleiras pelo core');
+});
+
+/* O leitor de tela precisa ouvir "Até 5 minutos, para a aula — lista, 17
+ * itens", e não dezessete links soltos no meio da página. */
+test('cada prateleira é uma seção rotulada, com os cartões numa lista', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function prateleira\(p\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei a função prateleira em app.js');
+  assert.match(corpo[1], /criar\('section'/, 'a prateleira deixou de ser uma <section>');
+  assert.match(corpo[1], /aria-labelledby/, 'a <section> perdeu o rótulo — o leitor não sabe que linha é essa');
+  assert.match(corpo[1], /criar\('ul'/, 'os cartões saíram da <ul> — o leitor deixa de anunciar quantos são');
+});
+
+/* As setas repetem um caminho que o Tab já oferece. Deixá-las tabuláveis põe
+ * duas paradas a mais entre cada prateleira e a seguinte — dez prateleiras
+ * viram vinte paradas inúteis para quem atravessa a página pelo teclado. */
+test('as setas da prateleira ficam fora do caminho do teclado', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/var faz = function \(dir, rotulo\) \{([\s\S]*?)\n    \};/);
+  assert.ok(corpo, 'não achei a fábrica de setas em app.js');
+  assert.match(corpo[1], /tabIndex = -1/, 'a seta entrou na ordem do Tab');
+  assert.match(corpo[1], /aria-hidden['"]?,\s*['"]true/, 'a seta não está escondida do leitor de tela');
+});
+
+/* Quem tem dedo arrasta — e o pedaço do próximo cartão é o convite. A seta é
+ * para quem tem ponteiro fino, e é o CSS que decide, pela mesma pergunta que
+ * `podePreview()` faz no app.js. */
+test('as setas da prateleira só aparecem onde há ponteiro fino', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\.prateleira-seta\s*\{\s*display:\s*none/,
+    'a seta não nasce escondida — em toque ela ocuparia a linha sem servir para nada');
+  /* TODAS as consultas de ponteiro fino, e não a primeira: na D4 a reserva de
+   * altura dos chips ganhou uma consulta igual, mais acima no arquivo, e o
+   * teste passou a ler a errada e reprovar com as setas no lugar. */
+  const consultas = [...css.matchAll(/@media \(hover: hover\) and \(pointer: fine\) \{([\s\S]*?)\n\}/g)]
+    .map(m => m[1]).join('\n');
+  assert.ok(consultas, 'sumiu a consulta de ponteiro fino que liga as setas');
+  assert.match(consultas, /\.prateleira-seta/, 'as setas saíram da consulta de ponteiro fino');
+});
+
+/* A mesma regra das três: nada desliza, nada cresce, nada anima para quem
+ * pediu menos movimento. A prévia já está barrada no app.js. */
+test('a prateleira não desliza nem cresce com movimento reduzido', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const blocos = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
+    .map(m => m[1]).join('\n');
+  assert.ok(blocos, 'sumiu o bloco de movimento reduzido');
+  assert.match(blocos, /\.prateleira-pista[^}]*scroll-behavior:\s*auto/,
+    'a rolagem suave continua ligada para quem pediu menos movimento');
+  assert.match(blocos, /\.pcard[^{]*\{[^}]*transform:\s*none|\.pcard:hover[^{]*\{[^}]*transform:\s*none/,
+    'o cartão da prateleira continua crescendo com movimento reduzido');
+});
+
+/* A caixa da capa guardada DOS DOIS LADOS: o `aspect-ratio` na folha, e o
+ * `width`/`height` no <img>, que vale mesmo antes de a folha aplicar.
+ *
+ * Este comentário dizia, na D2, que a capa era a dona do CLS de 0,0985 e que a
+ * chegada nova tinha medido 0. As duas coisas estavam erradas, e foram
+ * desfeitas na D4: o dono era o rodapé (ver o teste logo abaixo), e o "0" era
+ * uma medida que não enxergava o salto. O teste fica, pela razão verdadeira. */
+test('a capa do cartão da prateleira reserva a caixa antes de chegar', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function cartaoPrateleira\(item, mostrarSerie\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei cartaoPrateleira em app.js');
+  assert.match(corpo[1], /img\.width = 640/, 'a capa perdeu a largura declarada');
+  assert.match(corpo[1], /img\.height = 360/, 'a capa perdeu a altura declarada');
+  assert.match(corpo[1], /loading = ['"]lazy/, 'a capa da prateleira deixou de ser preguiçosa');
+
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\.pcard-capa\s*\{[^}]*aspect-ratio:\s*16\s*\/\s*9/,
+    'a caixa da capa perdeu a proporção 16/9');
+});
+
+/* O CLS DA CHEGADA, com o dono certo. Medido em 14/09 em 375×812, com a API
+ * atrasada e os dois quadros forçados a desenhar — e com CONTRAPROVA: tirando
+ * as três regras abaixo, o mesmo método volta a dar 0,0985, dono o rodapé.
+ *
+ *   1. o RODAPÉ: com o <main> vazio ele ficava em y=108, dentro da tela, e ia
+ *      para y=2850 quando o catálogo chegava. `min-height: 100vh` o faz nascer
+ *      abaixo da dobra;
+ *   2. os CHIPS: a linha nascia vazia e empurrava a página ao ganhar os chips
+ *      (0,0395 depois do conserto 1). Reserva medida: 41 px, e 51 com a barra
+ *      de rolagem clássica. SAIU NA D5, junto com os chips, que foram para a
+ *      grade e são desenhados no mesmo quadro que os cartões. Quem guarda a
+ *      porta agora é "o cabeçalho tem o logo, dois links e a busca": nenhuma
+ *      caixa vazia no <header>;
+ *   3. a MARGEM do primeiro filho colapsava através do <main> e o deslocava
+ *      8 px (0,0082 depois dos consertos 1 e 2). O destaque usa padding, e o
+ *      `flow-root` fecha a porta para os filhos que vierem.
+ *
+ * Nenhuma dessas três quebraria teste nenhum ao sair — a página continua
+ * idêntica depois de carregada. É por isso que existe este. */
+test('a chegada não salta quando o catálogo chega', () => {
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+
+  const main = css.match(/#conteudo\s*\{([^}]*)\}/);
+  assert.ok(main, 'sumiu a regra de #conteudo — o rodapé volta a saltar');
+  assert.match(main[1], /min-height:\s*100vh/, 'o <main> perdeu a altura mínima — o rodapé nasce dentro da tela');
+  assert.match(main[1], /display:\s*flow-root/, 'o <main> voltou a deixar a margem do primeiro filho colapsar');
+
+  /* Uma reserva de altura sobrando, sem os chips no cabeçalho, seria só um
+   * buraco de 41 px na grade. */
+  const chips = css.match(/\n\.chips\s*\{([^}]*)\}/);
+  assert.ok(!chips || !/min-height/.test(chips[1]),
+    'sobrou a reserva de altura da linha de chips, que saiu do cabeçalho na D5');
+
+  /* Todas as regras de `.destaque` — a base e a do celular. Nenhuma pode pôr
+   * margem em cima: nem `margin-top`, nem um `margin:` cujo primeiro valor
+   * (o de cima) não seja 0. */
+  const regrasDestaque = [...css.matchAll(/(?:^|\n)\s*\.destaque\s*\{([^}]*)\}/g)].map(m => m[1]);
+  assert.ok(regrasDestaque.length >= 2, 'esperava a regra base de .destaque e a do celular');
+  for (const corpo of regrasDestaque) {
+    assert.ok(!/margin-top\s*:/.test(corpo),
+      'o destaque voltou a ter margin-top — ela colapsa através do <main>: ' + corpo.trim());
+    const atalho = corpo.match(/(?:^|;)\s*margin\s*:\s*([^;]+)/);
+    if (atalho) {
+      assert.equal(atalho[1].trim().split(/\s+/)[0], '0',
+        'o `margin` do destaque tem valor em cima — ele colapsa através do <main>');
+    }
+  }
+  assert.ok(regrasDestaque.some(c => /padding-top/.test(c)), 'o destaque perdeu o respiro de cima');
+});
+
+/* Na linha da série, o nome dela já está escrito acima em letra grande. Foi o
+ * que a conferência de 14/09 em 375 px mostrou: o cartão dizia "Advogada" e,
+ * logo abaixo, "De Olho no Futuro" — a repetição que o `tituloCurto` tinha
+ * acabado de tirar do título. */
+test('o cartão só repete a série quando a prateleira mistura séries', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function cartaoPrateleira\(item, mostrarSerie\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei cartaoPrateleira em app.js');
+  assert.match(corpo[1], /if \(mostrarSerie && item\.serie\)/,
+    'o cartão voltou a imprimir a série sem perguntar em que prateleira está');
+
+  const linha = app.match(/var misturaSeries = ([^;]+);/);
+  assert.ok(linha, 'sumiu a decisão de quando mostrar a série');
+  assert.match(linha[1], /serie:/, 'a decisão deixou de olhar o id da prateleira de série');
+
+  /* E a sinopse não entra no cartão da prateleira: ela fica no destaque, na
+   * ficha e na grade da busca, onde alguém está escolhendo entre parecidos. */
+  assert.ok(!/resumoSinopse/.test(corpo[1]),
+    'a sinopse voltou ao cartão da prateleira — ali a capa é quem fala');
+});
+
+/* ============================ o destaque (D4) =========================== */
+
+/* QUARTA vez que este bug é guardado — capa, capítulos, framerate e agora o
+ * destaque. Sem esta linha a escolha feita no /admin chega ao KV e nunca chega
+ * ao navegador, e o sintoma é o pior possível: nenhum. A chegada mostra o
+ * destaque PADRÃO, que é um título de verdade, e ninguém desconfia que o
+ * botão do /admin não faz nada. */
+test('a projeção pública leva o destaque — sem ele a escolha do /admin some', () => {
+  const fn = lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js'));
+  const proj = fn.match(/function paraPublico\(item\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(proj, 'não achei paraPublico em functions/api/catalogo.js');
+  assert.match(proj[1], /destaque:\s*item\.destaque === true/,
+    'paraPublico precisa incluir destaque, e só como true');
+});
+
+const catalogoDestaque = () => catalogoPrateleiras.map(i => Object.assign({}, i));
+
+test('sem marca, o destaque é o primeiro título da maior série pedagógica', () => {
+  const d = GTM.destaque(catalogoDestaque());
+  /* A maior série do fixture é De Olho no Futuro (3) — Enquete também tem 3,
+   * e o desempate por nome põe De Olho na frente. O primeiro dela pela ordem
+   * de `ordenar()` é o episódio 1. */
+  assert.equal(d.id, 'dof-1');
+  /* E sai da MESMA prateleira que a chegada desenha: a regra não é escrita
+   * duas vezes. */
+  const primeiraDeSerie = GTM.prateleiras(catalogoDestaque()).find(p => p.id.indexOf('serie:') === 0);
+  assert.equal(d.id, primeiraDeSerie.itens[0].id);
+});
+
+test('o título marcado no /admin vence o padrão', () => {
+  const itens = catalogoDestaque();
+  itens.find(i => i.id === 'cam-2').destaque = true;
+  assert.equal(GTM.destaque(itens).id, 'cam-2');
+});
+
+/* O destaque é a primeira coisa que a chegada mostra. Destacar um título
+ * despublicado seria VAZÁ-LO — e o KV é escrito por script além da tela, então
+ * a marca pode sobrar num item que foi despublicado depois. */
+test('marca num título não publicado não vale', () => {
+  const itens = catalogoDestaque();
+  itens.find(i => i.id === 'oculto').destaque = true;
+  const d = GTM.destaque(itens);
+  assert.notEqual(d.id, 'oculto', 'o destaque mostrou um título não publicado');
+  assert.equal(d.id, 'dof-1', 'com a única marca inválida, o padrão tinha que valer');
+});
+
+/* Dois marcados não é estado que a tela produz — ela desmarca os outros na
+ * mesma gravação —, mas o KV não tem só a tela escrevendo nele. O que não
+ * pode acontecer é o destaque depender da ORDEM dos itens no KV: aí ele
+ * mudaria sozinho na próxima gravação de qualquer outro título. */
+test('dois títulos marcados não quebram, e o escolhido não depende da ordem do KV', () => {
+  const itens = catalogoDestaque();
+  itens.find(i => i.id === 'enq-3').destaque = true;
+  itens.find(i => i.id === 'dof-2').destaque = true;
+  const umaOrdem = GTM.destaque(itens).id;
+  const outraOrdem = GTM.destaque(itens.slice().reverse()).id;
+  assert.equal(umaOrdem, outraOrdem, 'o destaque mudou só porque a lista veio em outra ordem');
+  assert.equal(umaOrdem, 'dof-2', 'entre dois marcados fica o primeiro pela ordem de ordenar()');
+});
+
+test('catálogo vazio não tem destaque, e não lança', () => {
+  assert.equal(GTM.destaque([]), null);
+  assert.equal(GTM.destaque(null), null);
+  assert.equal(GTM.destaque([{ id: 'x', titulo: 'X', serie: 'Enquete', publicar: false }]), null);
+});
+
+/* A imagem do destaque é o LCP da chegada, e as duas escolhas abaixo são o
+ * que a põe na frente: prioridade alta, e NUNCA preguiçosa — uma imagem
+ * `lazy` no topo espera o layout para começar a baixar. E nenhuma prévia:
+ * um preview.webp é 1,13 MB na mediana, mais do que as 66 capas juntas. */
+test('a capa do destaque é o LCP: prioridade alta, sem lazy, sem prévia', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function destaqueHtml\(item\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei destaqueHtml em app.js');
+  const codigo = semComentarios(corpo[1]);
+  assert.match(codigo, /setAttribute\('fetchpriority', 'high'\)/,
+    'a imagem do destaque perdeu a prioridade alta');
+  assert.ok(!/loading\s*=/.test(codigo), 'a imagem do destaque ficou preguiçosa — o LCP espera o layout');
+  assert.ok(!/ligarPreview\(/.test(codigo), 'o destaque ganhou prévia animada');
+  assert.ok(!/urlPreview\(/.test(codigo), 'o destaque pede o preview.webp');
+  assert.match(codigo, /img\.width = 640/, 'a capa do destaque perdeu o tamanho reservado');
+});
+
+/* O ACHADO DA D4. A D5 decidiu que "Assistir" dá o play, e a D4 tentou ligar
+ * isso daqui — e não dá: a REGRA 1 do player admite UMA chamada de play(), em
+ * `alternarPlay`, que é também quem libera o download (`hls.startLoad()`). Um
+ * `.play()` neste arquivo abriria um segundo lugar de onde o vídeo começa, e
+ * nem tocaria. O caminho é o player oferecer uma entrada que passe por
+ * `alternarPlay` — trabalho da D6. Este teste é o que impede o atalho. */
+test('o app.js não chama play() — quem começa o vídeo é o player', () => {
+  const codigo = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  assert.ok(!/\.play\s*\(/.test(codigo),
+    'app.js chama play() — isso é um segundo lugar de onde o vídeo começa, fora de alternarPlay');
+});
+
+/* O destaque é UM. Escolher um título tem que apagar a marca dos outros NA
+ * MESMA gravação: em duas — desmarca, depois marca — uma falha de rede no meio
+ * deixaria a chegada sem marca nenhuma, e duas telas abertas deixariam duas.
+ *
+ * Desde a mesa (15/09) a troca é um rascunho, e o Publicar grava tudo num PUT
+ * só. Desde a M4 o que se grava é o ID em `site.destaque`, e a marca antiga
+ * nos títulos é apagada junto: enquanto uma sobrar no KV, ela é quem vale para
+ * quem não escolheu nada, e duas fontes para a mesma coisa envelhecem
+ * separadas. A regra mora em dois lugares, e os dois são cobrados aqui e no
+ * bloco do rascunho, no core. */
+test('destacar na mesa grava o id e apaga as marcas antigas, num rascunho só', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const corpo = base.match(/M\.destacar = function \(id, ligar\) \{([\s\S]*?)\n  \};/);
+  assert.ok(corpo, 'não achei M.destacar em mesa-base.js');
+  assert.match(corpo[1], /i\.destaque === true\) registrar\(i\.id, 'destaque', null\)/,
+    'destacar deixou de apagar a marca antiga dos títulos');
+  assert.match(corpo[1], /registrar\('site', 'destaque', ligar \? id : null\)/,
+    'a escolha do destaque saiu do rascunho, ou deixou de ser o id em site.destaque');
+  assert.equal((corpo[1].match(/aoMudar\(/g) || []).length, 1,
+    'a troca de destaque virou mais de uma mudança — deixou de ser uma coisa só');
+
+  /* E o botão só existe para título no ar: destacar um fora do ar o vazaria. */
+  const painel = semComentarios(lerTexto(path.join(SITE, 'mesa-painel.js')));
+  assert.match(painel, /if \(it\.publicar === true\) \{[\s\S]{0,900}'f-destaque'/,
+    'o botão de destacar aparece para título fora do ar');
+});
+
+/* ============================ o tema: um só, e escuro (D1) ============== */
+
+/* D1 do PLANO-DESIGN, aceita em 14/09: escuro para TODO MUNDO, e não o tema do
+ * aparelho. O motivo é de produto — quem usa o tema claro no celular via o
+ * catálogo claro, e streaming é escuro para todo mundo —, mas o motivo de
+ * haver um TESTE é outro: um `@media (prefers-color-scheme: light)` acrescentado
+ * sem querer volta a criar um segundo tema, e um segundo tema é um segundo
+ * conjunto de contrastes para medir, desenhar e conferir. Ninguém percebe pela
+ * tela, porque quem desenvolve costuma estar no escuro. */
+test('o site tem um tema só, e ele é escuro', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const html = lerTexto(path.join(SITE, 'index.html'));
+
+  assert.match(css, /--fundo:\s*#101315/, 'o :root perdeu o fundo escuro');
+  assert.match(css, /color-scheme:\s*dark/,
+    'sem `color-scheme: dark` o navegador pinta de branco a barra de rolagem e os controles nativos');
+
+  /* Procura o USO, não a palavra: os comentários do `:root` e do cabeçalho
+   * explicam por que o `prefers-color-scheme` saiu, e um teste que casasse com
+   * a menção reprovaria a própria explicação. O que não pode voltar é a
+   * media query em CSS e o atributo `media` de um <source>. */
+  assert.ok(!/@media[^{]*prefers-color-scheme/.test(css),
+    'style.css voltou a ter dois temas — a D1 decidiu que é um só');
+  assert.ok(!/media\s*=\s*"[^"]*prefers-color-scheme/.test(html),
+    'index.html voltou a escolher recurso por tema (era o <picture> do logo)');
+});
+
+/* O CONTRASTE É RECALCULADO AQUI, dos valores que estão no arquivo — não
+ * conferido contra uma tabela escrita à mão. É a diferença entre um teste que
+ * envelhece e um que não envelhece: trocar um token roda a conta de novo.
+ *
+ * A régua é a WCAG 2.x: 4,5:1 para texto, 3:1 para o que desenha um controle.
+ *
+ * O `--contorno` é o token que só existe por causa desta conta. `--fundo` e
+ * `--superficie` estão a 1,10:1 um do outro, então o preenchimento de um campo
+ * não o distingue do que está atrás: a LINHA é o único sinal de que ali há um
+ * controle, e por isso ela deve os 3:1 da 1.4.11. O `--borda`, que é divisória
+ * decorativa, não deve nada a ninguém — e não passaria (1,44:1). */
+const canalWcag = (v) => { v /= 255; return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4); };
+const luminancia = (hex) => {
+  const h = hex.replace('#', '');
+  const n = parseInt(h.length === 3 ? h.split('').map(c => c + c).join('') : h, 16);
+  return 0.2126 * canalWcag((n >> 16) & 255) + 0.7152 * canalWcag((n >> 8) & 255) + 0.0722 * canalWcag(n & 255);
+};
+const contraste = (a, b) => {
+  const [x, y] = [luminancia(a), luminancia(b)].sort((p, q) => q - p);
+  return (x + 0.05) / (y + 0.05);
+};
+
+test('todo token de cor passa o contraste da WCAG sobre o fundo em que é usado', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const raiz = css.slice(css.indexOf(':root'), css.indexOf('}', css.indexOf(':root')));
+  const cor = (nome) => {
+    const m = raiz.match(new RegExp('--' + nome + ':\\s*(#[0-9a-fA-F]{3,8})'));
+    assert.ok(m, 'o :root perdeu o token --' + nome);
+    return m[1];
+  };
+
+  /* [ o que pinta, sobre o quê, o mínimo, por que esse mínimo ] */
+  const pares = [
+    ['texto', 'fundo', 4.5], ['texto', 'superficie', 4.5],
+    ['texto-fraco', 'fundo', 4.5], ['texto-fraco', 'superficie', 4.5],
+    ['marca', 'fundo', 4.5], ['marca', 'superficie', 4.5],
+    ['marca-verde', 'superficie', 4.5], ['marca-ouro', 'superficie', 4.5],
+    /* A série do destaque é escrita em amarelo direto sobre o fundo da
+     * página, não sobre um cartão (D4). */
+    ['marca-ouro', 'fundo', 4.5],
+    ['alerta', 'alerta-fundo', 4.5], ['erro', 'erro-fundo', 4.5],
+    ['contorno', 'fundo', 3], ['contorno', 'superficie', 3]
+  ];
+
+  for (const [frente, atras, minimo] of pares) {
+    const r = contraste(cor(frente), cor(atras));
+    assert.ok(r >= minimo,
+      '--' + frente + ' (' + cor(frente) + ') sobre --' + atras + ' (' + cor(atras) + ') dá ' +
+      r.toFixed(2) + ':1, abaixo dos ' + minimo + ':1 que a WCAG cobra');
+  }
+
+  /* O chip ligado pinta texto ESCURO sobre o verde: branco ali dá 2,32:1. */
+  assert.ok(contraste('#06120d', cor('marca')) >= 4.5,
+    'o texto do chip ligado não contrasta com o verde da marca');
+});
+
+/* A SEGUNDA METADE DA CONTA, e ela existe porque a primeira deixou passar.
+ *
+ * O teste acima mede pares de TOKENS. O `.botao-primario` pintava `#fff`
+ * escrito direto na regra, sobre `var(--marca)`: 2,32:1 em repouso e 1,90:1 no
+ * hover. No tema claro de antes da D1 isso passava (o verde era #0f6b45); a
+ * D1 fez do escuro o único tema, a falha passou a ser de todo mundo, e o teste
+ * de tokens ficou verde. Achado em 14/09, na D4, porque o "Assistir" do
+ * destaque é esse botão.
+ *
+ * Esta varredura lê TODA regra que tem uma cor de texto fixa e um fundo que dá
+ * para resolver sem navegador — um hex, ou um `var(--token)` do :root — e roda
+ * a conta. Fundo translúcido, degradê ou herdado fica de fora, porque aí a cor
+ * final depende do que está atrás; são os selos do player sobre o vídeo, que é
+ * preto. */
+test('toda cor de texto fixa numa regra contrasta com o fundo da mesma regra', () => {
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const raiz = css.slice(css.indexOf(':root'), css.indexOf('}', css.indexOf(':root')));
+  const tokens = Object.create(null);
+  for (const m of raiz.matchAll(/--([\w-]+):\s*(#[0-9a-fA-F]{3,6})\b/g)) tokens[m[1]] = m[2];
+
+  let medidas = 0;
+  for (const [, seletor, corpo] of css.matchAll(/([^{}]+)\{([^}]*)\}/g)) {
+    const cor = corpo.match(/(?:^|[;\s])color:\s*(#[0-9a-fA-F]{3,6})\b/);
+    const fundo = corpo.match(/background(?:-color)?:\s*([^;]+)/);
+    if (!cor || !fundo) continue;
+
+    const valor = fundo[1].trim();
+    const token = valor.match(/^var\(--([\w-]+)\)$/);
+    const hex = token ? tokens[token[1]] : (/^#[0-9a-fA-F]{3,6}$/.test(valor) ? valor : null);
+    if (!hex) continue;
+
+    const r = contraste(cor[1], hex);
+    assert.ok(r >= 4.5,
+      seletor.trim() + ' pinta ' + cor[1] + ' sobre ' + valor + ' (' + hex + '): ' +
+      r.toFixed(2) + ':1, abaixo dos 4,5:1 de texto');
+    medidas++;
+  }
+
+  /* Uma varredura que não mede nada passa sempre. Hoje ela mede o chip ligado,
+   * o botão primário e o hover dele, e os dois botões brancos do player. */
+  assert.ok(medidas >= 5, 'a varredura mediu só ' + medidas + ' regra(s) — o regex parou de achar as regras');
+});
+
+/* A outra metade da conta acima: o token forte tem que estar LIGADO nos
+ * controles. Medir uma cor que ninguém usa não protege ninguém. */
+test('o contorno dos controles usa --contorno, não a divisória', () => {
+  /* Cada um destes é um controle cujo contorno é o único sinal de que ele
+   * existe. No site: o campo de busca, o chip e o botão. Na mesa (15/09 — até
+   * então os controles do /admin moravam no style.css): os campos, o seletor
+   * segmentado, o botão, o interruptor e o trilho da barra de progresso. */
+  const porArquivo = {
+    'style.css': ['.busca input', '.chip', '.botao'],
+    'mesa.css': ['.campo input[type="text"]', '.seg', '.botao', '.trilho', '.progresso']
+  };
+  /* Acha a REGRA de um seletor, e não a primeira vez que o texto aparece.
+   * `.chip` casaria dentro de `.chips`, que é o contêiner rolante e não tem
+   * borda nenhuma — o teste reprovava apontando para a regra errada. O que
+   * fecha um seletor é `{` (regra de um só) ou `,` (lista); daí anda até a
+   * abertura da regra e devolve o corpo dela. */
+  const regraDe = (css, seletor) => {
+    for (let i = css.indexOf(seletor); i >= 0; i = css.indexOf(seletor, i + 1)) {
+      const depois = css[i + seletor.length];
+      if (!/[ ,{\n]/.test(depois || '')) continue;
+      /* E tem que COMEÇAR a linha. Na D4 o destaque trouxe
+       * `.destaque-botoes .botao`, que aparece antes da regra base e não tem
+       * borda nenhuma: um seletor descendente não é a regra do controle, e o
+       * teste reprovava apontando para ela. As regras base dos cinco
+       * controles começam na coluna zero. */
+      if (i > 0 && css[i - 1] !== '\n') continue;
+      const abre = css.indexOf('{', i);
+      if (abre < 0) continue;
+      /* Um `{` longe demais quer dizer que o casamento foi dentro de outra
+       * coisa, não num seletor. */
+      if (css.slice(i, abre).includes('}')) continue;
+      return css.slice(abre, css.indexOf('}', abre));
+    }
+    return null;
+  };
+
+  for (const [arquivo, controles] of Object.entries(porArquivo)) {
+    const css = lerTexto(path.join(SITE, arquivo));
+    for (const seletor of controles) {
+      const regra = regraDe(css, seletor);
+      assert.ok(regra, 'não achei a regra de ' + seletor + ' em ' + arquivo);
+      assert.match(regra, /border[^;]*var\(--contorno\)/,
+        seletor + ' em ' + arquivo + ' desenha o contorno com --borda; a divisória não passa os 3:1 da WCAG');
+    }
+  }
+});
+
+/* ================= contas e permissões, no servidor (M2) ================ */
+
+/* Estes testes EXECUTAM as funções do Pages — o middleware, o login e as
+ * rotas —, com um KV de mentira na memória. É a diferença entre cobrar que o
+ * código diz "403" e cobrar que ele RESPONDE 403. Rodam no Node sem rede:
+ * `crypto.subtle` é o mesmo dos dois lados. */
+const kvDeMentira = (inicial) => {
+  const dados = Object.assign({}, inicial);
+  /* Os metadados da chave são um lugar à parte no KV de verdade, e o histórico
+   * (M5) depende disso: é deles que a linha do tempo sai, sem abrir registro. */
+  const metas = Object.create(null);
+  return {
+    dados,
+    metas,
+    get: async (chave, tipo) => (dados[chave] == null ? null : (tipo === 'json' ? JSON.parse(dados[chave]) : dados[chave])),
+    put: async (chave, valor, opcoes) => {
+      dados[chave] = String(valor);
+      if (opcoes && opcoes.metadata) metas[chave] = JSON.parse(JSON.stringify(opcoes.metadata));
+    },
+    delete: async (chave) => { delete dados[chave]; delete metas[chave]; },
+    /* A listagem do KV é ASCENDENTE por chave e paginada — nunca ao contrário.
+     * A imitação aqui é fiel nisso de propósito: é o que obriga a chave do
+     * histórico a guardar a rev invertida. */
+    list: async ({ prefix = '', limit = 1000, cursor = '' } = {}) => {
+      const todas = Object.keys(dados).filter(k => k.startsWith(prefix)).sort();
+      const inicio = cursor ? todas.indexOf(cursor) + 1 : 0;
+      const fatia = todas.slice(inicio, inicio + limit);
+      const completa = inicio + fatia.length >= todas.length;
+      return {
+        keys: fatia.map(name => ({ name, metadata: metas[name] })),
+        list_complete: completa,
+        cursor: completa ? undefined : fatia[fatia.length - 1]
+      };
+    }
+  };
+};
+const ambiente = (kv) => ({ ADMIN_PASSWORD: 'senha-do-super', CATALOGO: kv, BUNNY_LIBRARY_ID: '1', BUNNY_API_KEY: 'x' });
+
+/* Troca o fetch global por um que responde à criação de vídeo sem rede — só os
+ * testes de limite de envio chegam a este ponto; o resto do arquivo nunca cria
+ * vídeo de verdade, então nunca precisou disto. Devolve a função que desfaz. */
+function bunnyDeMentira() {
+  const original = globalThis.fetch;
+  let n = 0;
+  globalThis.fetch = async (url, init) => {
+    if (String(url).endsWith('/videos') && init && init.method === 'POST') {
+      n++;
+      return new Response(JSON.stringify({ guid: 'video-de-mentira-' + n }), { status: 200 });
+    }
+    return original(url, init);
+  };
+  return () => { globalThis.fetch = original; };
+}
+
+/* Sobe o pedido pela mesma porta do Pages: middleware primeiro, rota depois. */
+async function pedir(env, { metodo = 'GET', caminho, corpo, token }) {
+  const mid = await import('../site/functions/api/_middleware.js');
+  const rota = caminho.split('?')[0];
+  const modulos = {
+    '/api/login': '../site/functions/api/login.js',
+    '/api/conta': '../site/functions/api/conta.js',
+    '/api/contas': '../site/functions/api/contas.js',
+    '/api/catalogo': '../site/functions/api/catalogo.js',
+    '/api/upload-token': '../site/functions/api/upload-token.js',
+    '/api/autorizacoes': '../site/functions/api/autorizacoes.js',
+    '/api/historico': '../site/functions/api/historico.js'
+  };
+  const request = new Request('https://exemplo.test' + caminho, {
+    method: metodo,
+    headers: Object.assign({ 'content-type': 'application/json' }, token ? { authorization: 'Bearer ' + token } : {}),
+    body: corpo === undefined ? undefined : JSON.stringify(corpo)
+  });
+  const data = {};
+  const resposta = await mid.onRequest({
+    request, env, data,
+    next: async () => {
+      const modulo = await import(modulos[rota]);
+      const fn = modulo['onRequest' + metodo[0] + metodo.slice(1).toLowerCase()];
+      return fn ? fn({ request, env, data }) : new Response('sem rota', { status: 405 });
+    }
+  });
+  let corpoResposta = null;
+  try { corpoResposta = JSON.parse(await resposta.clone().text()); } catch (e) { /* resposta sem JSON */ }
+  return { status: resposta.status, corpo: corpoResposta, data };
+}
+
+const entrar = async (env, usuario, senha) =>
+  (await pedir(env, { metodo: 'POST', caminho: '/api/login', corpo: { usuario, senha } })).corpo;
+
+test('o superadmin entra com a senha do ambiente, e o token de antes continua valendo', async () => {
+  const env = ambiente(kvDeMentira());
+  const entrada = await entrar(env, '', 'senha-do-super');
+  assert.equal(entrada.super, true);
+  assert.deepEqual(entrada.permissoes, GTM.PERMISSOES, 'o superadmin tem todas as permissões');
+
+  const errada = await pedir(env, { metodo: 'POST', caminho: '/api/login', corpo: { senha: 'chutando' } });
+  assert.equal(errada.status, 401);
+
+  /* O TOKEN DO FORMATO ANTIGO — o que os scripts de carga e as sessões abertas
+   * têm no dia da virada — continua entrando, como superadmin. Sem isto, os
+   * scripts de publicação parariam no primeiro deploy das contas. */
+  const enc = new TextEncoder();
+  const expira = Math.floor(Date.now() / 1000) + 600;
+  const chave = await crypto.subtle.importKey('raw', enc.encode('senha-do-super'), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  const assinatura = [...new Uint8Array(await crypto.subtle.sign('HMAC', chave, enc.encode('gtm-admin:' + expira)))]
+    .map(b => b.toString(16).padStart(2, '0')).join('');
+  const antigo = await pedir(env, { caminho: '/api/conta', token: expira + '.' + assinatura });
+  assert.equal(antigo.status, 200);
+  assert.equal(antigo.corpo.super, true);
+});
+
+test('só o superadmin cria conta, e a senha nunca sai na listagem', async () => {
+  const env = ambiente(kvDeMentira());
+  const super1 = await entrar(env, '', 'senha-do-super');
+
+  const curta = await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', senha: 'curta', permissoes: ['conteudo'] } });
+  assert.equal(curta.status, 400);
+
+  const reservado = await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'superadmin', senha: 'senha-bem-comprida', permissoes: [] } });
+  assert.equal(reservado.status, 400);
+
+  const criada = await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', nome: 'Maria', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  assert.equal(criada.status, 200);
+  assert.deepEqual(criada.corpo.conta.permissoes, ['conteudo']);
+  assert.ok(!('senha' in criada.corpo.conta), 'a senha voltou na resposta');
+
+  const lista = await pedir(env, { caminho: '/api/contas', token: super1.token });
+  assert.equal(lista.corpo.contas.length, 1);
+  assert.ok(!JSON.stringify(lista.corpo).includes('hash'), 'o hash da senha saiu na listagem');
+
+  /* E a conta comum não gerencia contas — nem a dela. */
+  const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+  assert.equal(maria.super, false);
+  const tentativa = await pedir(env, { caminho: '/api/contas', token: maria.token });
+  assert.equal(tentativa.status, 403);
+});
+
+test('usuário que não existe e senha errada dão a mesma resposta', async () => {
+  const env = ambiente(kvDeMentira());
+  const super1 = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: [] } });
+
+  const semConta = await pedir(env, { metodo: 'POST', caminho: '/api/login', corpo: { usuario: 'joao', senha: 'senha-bem-comprida' } });
+  const senhaErrada = await pedir(env, { metodo: 'POST', caminho: '/api/login', corpo: { usuario: 'maria', senha: 'outra-senha-longa' } });
+  assert.equal(semConta.status, 401);
+  assert.equal(senhaErrada.status, 401);
+  assert.equal(semConta.corpo.erro, senhaErrada.corpo.erro,
+    'a mensagem diz qual dos dois errou — isso entrega quais usuários existem');
+});
+
+test('o PUT do catálogo recusa campo por campo o que a conta não pode mudar', async () => {
+  const kv = kvDeMentira({
+    catalogo: JSON.stringify({ rev: 1, itens: [{ id: 'a', titulo: 'A', publicar: false, fonte: { videoId: 'v' } }], ajustes: {} })
+  });
+  const env = ambiente(kv);
+  const super1 = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+
+  const doc = (mudar) => {
+    const base = JSON.parse(kv.dados.catalogo);
+    mudar(base);
+    return base;
+  };
+
+  const titulo = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: maria.token,
+    corpo: doc(c => { c.itens[0].titulo = 'A com outro nome'; }) });
+  assert.equal(titulo.status, 200, JSON.stringify(titulo.corpo));
+
+  const noAr = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: maria.token,
+    corpo: doc(c => { c.itens[0].publicar = true; }) });
+  assert.equal(noAr.status, 403);
+  assert.equal(noAr.corpo.barradas[0].campo, 'publicar');
+  assert.equal(noAr.corpo.barradas[0].permissao, 'no-ar');
+
+  const fonte = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: maria.token,
+    corpo: doc(c => { c.itens[0].fonte = { videoId: 'outro' }; }) });
+  assert.equal(fonte.status, 403, 'trocar a fonte do vídeo não é da mesa');
+
+  /* O superadmin passa por tudo — é dele que vêm as gravações dos scripts. */
+  const peloSuper = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: super1.token,
+    corpo: doc(c => { c.itens[0].fonte = { videoId: 'outro' }; c.itens[0].publicar = true; }) });
+  assert.equal(peloSuper.status, 200);
+});
+
+test('tirar uma permissão derruba a sessão aberta no pedido seguinte', async () => {
+  const env = ambiente(kvDeMentira());
+  const super1 = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['conteudo', 'enviar'] } });
+  const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+  assert.equal((await pedir(env, { caminho: '/api/conta', token: maria.token })).status, 200);
+
+  const mudanca = await pedir(env, { metodo: 'PUT', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', permissoes: ['conteudo'] } });
+  assert.equal(mudanca.corpo.sessoesDerrubadas, true);
+  assert.equal((await pedir(env, { caminho: '/api/conta', token: maria.token })).status, 401,
+    'o token de antes continuou valendo depois de a permissão sair');
+
+  /* Desativar também derruba, e o login para de funcionar. */
+  const maria2 = await entrar(env, 'maria', 'senha-bem-comprida');
+  await pedir(env, { metodo: 'PUT', caminho: '/api/contas', token: super1.token, corpo: { usuario: 'maria', ativa: false } });
+  assert.equal((await pedir(env, { caminho: '/api/conta', token: maria2.token })).status, 401);
+  const barrada = await pedir(env, { metodo: 'POST', caminho: '/api/login', corpo: { usuario: 'maria', senha: 'senha-bem-comprida' } });
+  assert.equal(barrada.status, 401);
+});
+
+test('enviar vídeo é permissão à parte — é o que ocupa armazenamento pago', async () => {
+  const env = ambiente(kvDeMentira());
+  const super1 = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+  const r = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token, corpo: { titulo: 'Novo' } });
+  assert.equal(r.status, 403);
+  assert.equal(r.corpo.permissao, 'enviar');
+});
+
+/* =============== limite de envio por conta, no servidor (M2+) ============ */
+
+test('o limite de vídeos é do superadmin, e recusa quando a conta já atingiu o limite', async () => {
+  const desfazerBunny = bunnyDeMentira();
+  try {
+    const env = ambiente(kvDeMentira());
+    const super1 = await entrar(env, '', 'senha-do-super');
+    await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+      corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['enviar'], limiteEnvio: { maxVideos: 1 } } });
+
+    /* Conta comum não gerencia o próprio limite — só o superadmin. */
+    const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+    const tentativa = await pedir(env, { metodo: 'PUT', caminho: '/api/contas', token: maria.token,
+      corpo: { usuario: 'maria', limiteEnvio: { maxVideos: 999 } } });
+    assert.equal(tentativa.status, 403);
+
+    const primeiro = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token, corpo: { titulo: 'Um' } });
+    assert.equal(primeiro.status, 200, JSON.stringify(primeiro.corpo));
+
+    const segundo = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token, corpo: { titulo: 'Dois' } });
+    assert.equal(segundo.status, 403);
+    assert.equal(segundo.corpo.motivo, 'limite-videos');
+
+    /* Retomar o envio do primeiro vídeo não é vídeo novo — não esbarra no limite. */
+    const retomada = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token,
+      corpo: { videoId: primeiro.corpo.videoId } });
+    assert.equal(retomada.status, 200);
+  } finally { desfazerBunny(); }
+});
+
+test('o limite de duração recusa pela estimativa do navegador, antes de gastar no Bunny', async () => {
+  const desfazerBunny = bunnyDeMentira();
+  try {
+    const env = ambiente(kvDeMentira());
+    const super1 = await entrar(env, '', 'senha-do-super');
+    await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+      corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['enviar'], limiteEnvio: { maxDuracaoSeg: 600 } } });
+    const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+
+    const longo = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token,
+      corpo: { titulo: 'Filmão', duracaoEstimadaSeg: 900 } });
+    assert.equal(longo.status, 403);
+    assert.equal(longo.corpo.motivo, 'limite-duracao');
+
+    const curto = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token,
+      corpo: { titulo: 'Curta', duracaoEstimadaSeg: 300 } });
+    assert.equal(curto.status, 200);
+  } finally { desfazerBunny(); }
+});
+
+test('autorização manual: o vídeo só nasce no Bunny depois que o superadmin aprova o pedido', async () => {
+  const desfazerBunny = bunnyDeMentira();
+  try {
+    const env = ambiente(kvDeMentira());
+    const super1 = await entrar(env, '', 'senha-do-super');
+    await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+      corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['enviar'], limiteEnvio: { autorizacaoManual: true } } });
+    const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+
+    const pedido = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token, corpo: { titulo: 'Aguardando' } });
+    assert.equal(pedido.status, 202);
+    assert.equal(pedido.corpo.aguardando, true);
+    assert.ok(pedido.corpo.pedidoId);
+
+    /* Uma conta comum não vê a lista inteira, só o próprio pedido. */
+    const listaBarrada = await pedir(env, { caminho: '/api/autorizacoes', token: maria.token });
+    assert.equal(listaBarrada.status, 403);
+    const proprio = await pedir(env, { caminho: '/api/autorizacoes?id=' + pedido.corpo.pedidoId, token: maria.token });
+    assert.equal(proprio.corpo.pedido.status, 'aguardando');
+
+    /* Sem aprovação, o pedidoId não libera vídeo nenhum. */
+    const semAprovar = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token,
+      corpo: { pedidoId: pedido.corpo.pedidoId } });
+    assert.equal(semAprovar.status, 403);
+    assert.equal(semAprovar.corpo.motivo, 'pedido-invalido');
+
+    const lista = await pedir(env, { caminho: '/api/autorizacoes', token: super1.token });
+    assert.equal(lista.corpo.pedidos.length, 1);
+    const aprovacao = await pedir(env, { metodo: 'PUT', caminho: '/api/autorizacoes', token: super1.token,
+      corpo: { id: pedido.corpo.pedidoId, aprovado: true } });
+    assert.equal(aprovacao.status, 200);
+
+    const depoisDeAprovado = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token,
+      corpo: { pedidoId: pedido.corpo.pedidoId } });
+    assert.equal(depoisDeAprovado.status, 200, JSON.stringify(depoisDeAprovado.corpo));
+    assert.ok(depoisDeAprovado.corpo.videoId);
+
+    /* O mesmo pedido não dá para usar de novo, uma vez consumido. */
+    const denovo = await pedir(env, { metodo: 'POST', caminho: '/api/upload-token', token: maria.token,
+      corpo: { pedidoId: pedido.corpo.pedidoId } });
+    assert.equal(denovo.status, 403);
+  } finally { desfazerBunny(); }
+});
+
+test('cada conta troca a própria senha; a do superadmin é a do ambiente', async () => {
+  const env = ambiente(kvDeMentira());
+  const super1 = await entrar(env, '', 'senha-do-super');
+  assert.equal((await pedir(env, { metodo: 'PUT', caminho: '/api/conta', token: super1.token,
+    corpo: { senhaAtual: 'senha-do-super', senhaNova: 'outra-senha-longa' } })).status, 400);
+
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: super1.token,
+    corpo: { usuario: 'maria', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  const maria = await entrar(env, 'maria', 'senha-bem-comprida');
+
+  const erradaAtual = await pedir(env, { metodo: 'PUT', caminho: '/api/conta', token: maria.token,
+    corpo: { senhaAtual: 'chutando-aqui', senhaNova: 'senha-nova-longa' } });
+  assert.equal(erradaAtual.status, 401);
+
+  const trocou = await pedir(env, { metodo: 'PUT', caminho: '/api/conta', token: maria.token,
+    corpo: { senhaAtual: 'senha-bem-comprida', senhaNova: 'senha-nova-longa' } });
+  assert.equal(trocou.status, 200);
+  assert.ok(trocou.corpo.token, 'a troca de senha tem de devolver um token novo, senão derruba quem trocou');
+  assert.equal((await pedir(env, { caminho: '/api/conta', token: trocou.corpo.token })).status, 200);
+  assert.equal((await pedir(env, { caminho: '/api/conta', token: maria.token })).status, 401, 'o token velho sobreviveu à troca de senha');
+  assert.equal((await entrar(env, 'maria', 'senha-nova-longa')).super, false);
+});
+
+/* A mesa (15/09) usa os MESMOS tokens do site e acrescenta só as superfícies
+ * dela, mais escuras. A conta é a mesma do site, recalculada dos valores do
+ * arquivo, sobre as superfícies onde a mesa pinta cada cor. */
+test('os tokens da mesa passam o contraste, e não divergem dos do site', () => {
+  const css = lerTexto(path.join(SITE, 'mesa.css'));
+  assert.match(css, /color-scheme:\s*dark/);
+  assert.ok(!/@media[^{]*prefers-color-scheme/.test(css), 'a mesa ganhou um segundo tema');
+
+  const raizDe = (texto) => texto.slice(texto.indexOf(':root'), texto.indexOf('}', texto.indexOf(':root')));
+  const corEm = (raiz, nome, arquivo) => {
+    const m = raiz.match(new RegExp('--' + nome + ':\\s*(#[0-9a-fA-F]{3,8})'));
+    assert.ok(m, 'o :root de ' + arquivo + ' perdeu o token --' + nome);
+    return m[1].toLowerCase();
+  };
+  const mesa = raizDe(css);
+  const cor = (nome) => corEm(mesa, nome, 'mesa.css');
+
+  const pares = [
+    ['texto', 'painel', 4.5], ['texto', 'painel-alto', 4.5],
+    ['texto-fraco', 'painel', 4.5], ['texto-fraco', 'painel-alto', 4.5], ['texto-fraco', 'mesa-fundo', 4.5],
+    ['marca', 'painel', 4.5], ['marca', 'marca-fraca', 4.5], ['marca-ouro', 'painel', 4.5],
+    ['alerta', 'alerta-fundo', 4.5], ['erro', 'erro-fundo', 4.5],
+    ['contorno', 'painel', 3], ['contorno', 'painel-alto', 3]
+  ];
+  for (const [frente, atras, minimo] of pares) {
+    const r = contraste(cor(frente), cor(atras));
+    assert.ok(r >= minimo, '--' + frente + ' sobre --' + atras + ' na mesa dá ' + r.toFixed(2) + ':1, abaixo de ' + minimo + ':1');
+  }
+
+  /* Um token com o mesmo nome e outro valor seriam dois sistemas de cor
+   * fingindo ser um. */
+  const site = raizDe(lerTexto(path.join(SITE, 'style.css')));
+  for (const nome of ['texto', 'texto-fraco', 'borda', 'contorno', 'marca', 'marca-fraca', 'marca-ouro', 'alerta', 'erro']) {
+    assert.equal(cor(nome), corEm(site, nome, 'style.css'), '--' + nome + ' da mesa divergiu do site');
+  }
+});
+
+/* O seletor de capa da mesa tem um <video> com os controles do navegador, e é
+ * quem aperta o play que toca. Nenhum arquivo da mesa chama play(). */
+test('a mesa não dá play em nada, nem no seletor de capa', () => {
+  for (const arquivo of ['mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
+    const js = semComentarios(lerTexto(path.join(SITE, arquivo)));
+    assert.ok(!/\.play\s*\(/.test(js), arquivo + ' chama play()');
+  }
+});
+
+/* ============================ o cabeçalho de streaming (D5) ============= */
+
+/* O CABEÇALHO FLUTUANTE: sem fundo com a página no alto, sólido assim que
+ * alguma coisa passa por baixo dele. A regra da fase é "sem ouvinte de scroll",
+ * e ela vale para o site inteiro: um ouvinte de rolagem roda dezenas de vezes
+ * por segundo, na mesma linha de execução que desenha a página, e num celular
+ * de escola é o que faz a rolagem engasgar. Quem avisa é o navegador, uma vez
+ * por travessia.
+ *
+ * O alvo é uma SENTINELA de 1 px no alto do documento, e não o destaque, como a
+ * §5.2 do plano sugeria. Medido em 15/09: no celular deitado, 812×375, o
+ * destaque tem 602 px de altura para 302 livres abaixo do cabeçalho novo (251
+ * com o de antes) — um limiar de 100% nele nunca dispara. E ele não existe na
+ * ficha, na grade nem na página Séries. */
+test('o cabeçalho não ouve scroll — quem pinta o fundo é um IntersectionObserver', () => {
+  for (const arquivo of ['app.js', 'catalogo-core.js', 'player.js', 'player-core.js',
+    'mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
+    const codigo = semComentarios(lerTexto(path.join(SITE, arquivo)));
+    assert.ok(!/addEventListener\(\s*['"]scroll['"]/.test(codigo),
+      arquivo + ' ouve o evento scroll — a troca de fundo do cabeçalho é do IntersectionObserver');
+    assert.ok(!/\.onscroll\s*=/.test(codigo), arquivo + ' pendura um onscroll');
+  }
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const ligar = app.match(/function ligarTopo\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(ligar, 'não achei ligarTopo em app.js');
+  assert.match(ligar[1], /new IntersectionObserver\(/,
+    'o cabeçalho deixou de ser avisado pelo IntersectionObserver');
+  assert.match(ligar[1], /classList\.toggle\('topo-solido'/,
+    'o observador não liga mais a classe do fundo sólido');
+  assert.match(ligar[1], /observe\(el\.sentinela\)/,
+    'o observador não olha mais a sentinela do alto da página');
+  /* Sem IntersectionObserver o cabeçalho fica SÓLIDO: é o estado que nunca
+   * deixa conteúdo passar por baixo de um cabeçalho sem fundo. */
+  assert.match(ligar[1], /IntersectionObserver === 'undefined'[\s\S]*add\('topo-solido'\)/,
+    'sem IntersectionObserver o cabeçalho tem que ficar sólido');
+
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.match(html, /<div class="topo-sentinela" id="topo-sentinela" aria-hidden="true"><\/div>/,
+    'sumiu a sentinela do alto da página');
+  assert.match(html, /<header class="topo topo-flutuante" id="topo">/,
+    'o cabeçalho do catálogo perdeu a classe que o deixa sem fundo no alto');
+});
+
+/* O fundo liga e desliga, e a ALTURA não se mexe: um cabeçalho sticky que
+ * ganhasse 1 px de borda ao ficar sólido empurraria a página inteira a cada
+ * travessia. Por isso a borda existe nos dois estados — transparente num,
+ * visível no outro. E o `.topo` puro continua sólido: o /admin usa a mesma
+ * classe, sem sentinela e sem observador. */
+test('o cabeçalho sólido só troca cor, e não esmaece para quem pediu menos movimento', () => {
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const base = css.match(/\n\.topo\s*\{([^}]*)\}/);
+  assert.ok(base, 'não achei a regra base de .topo');
+  assert.match(base[1], /background:\s*var\(--superficie\)/, 'o .topo do /admin perdeu o fundo');
+  assert.match(base[1], /border-bottom:\s*1px solid/, 'o cabeçalho perdeu a borda de baixo');
+  assert.match(base[1], /position:\s*sticky/, 'o cabeçalho deixou de ser sticky');
+
+  const flutuante = css.match(/\n\.topo-flutuante\s*\{([^}]*)\}/);
+  assert.ok(flutuante, 'não achei a regra de .topo-flutuante');
+  assert.match(flutuante[1], /background-color:\s*transparent/);
+  assert.match(flutuante[1], /border-bottom-color:\s*transparent/,
+    'a borda tem que continuar existindo, transparente — tirá-la muda a altura');
+
+  const solido = css.match(/\n\.topo-flutuante\.topo-solido\s*\{([^}]*)\}/);
+  assert.ok(solido, 'não achei a regra do cabeçalho sólido');
+  assert.match(solido[1], /background-color:\s*var\(--superficie\)/);
+  assert.match(solido[1], /border-bottom-color:\s*var\(--borda\)/);
+  assert.ok(!/(?:^|;)\s*(?:padding|margin|height|min-height|border|border-bottom|border-bottom-width)\s*:/.test(solido[1]),
+    'o cabeçalho sólido mexe em medida, e desloca a página a cada travessia: ' + solido[1].trim());
+  /* Sólido NA HORA. A transição é a do estado de chegada: com ela aqui, o
+   * fundo esmaecia por 0,2 s enquanto o destaque já passava por baixo do logo
+   * (15/09, na primeira versão). A volta ao transparente pode esmaecer — no
+   * alto da página não há nada embaixo. */
+  assert.match(solido[1], /transition:\s*none/,
+    'o cabeçalho esmaece ao ficar sólido — e o conteúdo aparece por baixo do logo enquanto isso');
+  assert.match(flutuante[1], /transition:\s*background-color/,
+    'a volta ao cabeçalho sem fundo deixou de esmaecer');
+
+  const reduzido = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)]
+    .map(m => m[1]).join('\n');
+  assert.match(reduzido, /\.topo-flutuante\s*\{[^}]*transition:\s*none/,
+    'o fundo do cabeçalho continua esmaecendo para quem pediu menos movimento');
+});
+
+/* O cabeçalho da §5.2: o logo, NO MÁXIMO dois links — Início e Séries — e a
+ * busca. E nada que o catálogo encha depois de chegar: a linha dos chips nascia
+ * vazia dentro dele e empurrava a página inteira ao ganhar os botões (0,0395 de
+ * CLS, 14/09). Caixa vazia no <header> é caixa que o JS vai encher. */
+test('o cabeçalho tem o logo, dois links e a busca — e nenhuma caixa vazia', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const topo = html.match(/<header class="topo topo-flutuante" id="topo">([\s\S]*?)<\/header>/);
+  assert.ok(topo, 'não achei o <header> do catálogo');
+
+  const links = [...topo[1].matchAll(/<a class="topo-link" href="([^"]+)"[^>]*>([^<]+)<\/a>/g)]
+    .map(m => [m[1], m[2].trim()]);
+  assert.deepEqual(links, [['#/', 'Início'], ['#/series', 'Séries']],
+    'o cabeçalho tem que ter exatamente Início e Séries');
+  assert.match(topo[1], /<nav class="topo-nav" aria-label="[^"]+">/, 'os links saíram de um <nav> rotulado');
+  assert.match(topo[1], /<a class="marca" href="#\/" data-inicio>/, 'o logo deixou de levar ao início');
+  assert.match(topo[1], /<label class="pular" for="busca">/, 'a busca perdeu o rótulo do leitor de tela');
+  assert.match(topo[1], /<input id="busca" type="search"/, 'a busca saiu do cabeçalho');
+
+  assert.ok(!/<(div|nav|ul|span|section)\b[^>]*>\s*<\/\1>/.test(topo[1]),
+    'há caixa vazia no cabeçalho — o que o JS encher nela desloca a página quando o catálogo chega');
+  assert.ok(!/id="chips"/.test(html), 'a linha de chips voltou ao index.html — ela mora na grade desde a D5');
+});
+
+/* D8: os chips SAÍRAM DA CHEGADA e viraram o filtro da resposta. Como filtro,
+ * só oferecem o que existe na resposta — os 23 botões de antes, sobre uma
+ * busca de 3 resultados, eram 21 caminhos para "Nada encontrado". */
+test('o filtro por série só oferece série que está na resposta', () => {
+  const itens = [
+    { id: 'e1', titulo: 'Português', serie: 'Enquete', episodio: 1, publicar: true },
+    { id: 'e2', titulo: 'Matemática', serie: 'Enquete', episodio: 2, publicar: true },
+    { id: 'c1', titulo: 'Matrículas', serie: 'Campanhas', publicar: true },
+    { id: 'd1', titulo: 'Dentista', serie: 'De Olho no Futuro', episodio: 2, publicar: true }
+  ];
+  assert.deepEqual(GTM.seriesDoFiltro(itens, ''), ['Campanhas', 'De Olho no Futuro', 'Enquete']);
+  /* Uma série só não pede filtro: não há o que escolher. */
+  assert.deepEqual(GTM.seriesDoFiltro(itens.filter(i => i.serie === 'Enquete'), ''), []);
+  assert.deepEqual(GTM.seriesDoFiltro([], ''), []);
+  /* A série LIGADA fica, mesmo sem resultado: é o botão que desfaz o filtro. */
+  assert.deepEqual(GTM.seriesDoFiltro([], 'Enquete'), ['Enquete']);
+  assert.deepEqual(GTM.seriesDoFiltro(itens.filter(i => i.serie === 'Campanhas'), 'Enquete'),
+    ['Campanhas', 'Enquete']);
+
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const grade = app.match(/function renderGrade\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(grade[1], /GTM\.seriesDoFiltro\(/, 'a grade não desenha mais o filtro pelo core');
+  assert.ok(!/renderChips/.test(app), 'sobrou a linha de chips do cabeçalho em app.js');
+});
+
+/* Apertar um chip redesenha a grade, e o botão apertado é recriado. Sem
+ * devolver o foco, quem usa teclado caía no <body> e voltava ao começo da
+ * página a cada filtro — conferido em 15/09, antes da D5, com a linha ainda no
+ * cabeçalho. */
+test('o chip apertado continua com o foco depois de a grade ser redesenhada', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const filtro = app.match(/function filtroSeries\(opcoes\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(filtro, 'não achei filtroSeries em app.js');
+  assert.match(filtro[1], /renderGrade\(\)[\s\S]*\.focus\(/,
+    'o chip redesenha a grade e não devolve o foco a quem o apertou');
+  /* A linha recriada nascia rolada até o começo: o chip apertado no fim dela
+   * ficava fora da tela, com o foco nele (15 de 78 px, em 375 px). */
+  assert.match(filtro[1], /var rolagem = caixa\.scrollLeft[\s\S]*renderGrade\(\)[\s\S]*scrollLeft = rolagem/,
+    'a linha de chips volta ao começo a cada filtro — o chip apertado some da tela');
+  assert.match(filtro[1], /aria-pressed/, 'o chip deixou de dizer se está ligado');
+  assert.match(filtro[1], /'role', 'group'/, 'a linha de chips deixou de ser um grupo rotulado');
+});
+
+/* A página Séries, que é para onde os chips foram. Os grupos seguem as mesmas
+ * listas da chegada — o que é para a aula de um lado, o que é do Goiás Tec do
+ * outro —, e a regra que vale é a das prateleiras: nenhuma série publicada
+ * some. */
+test('a página Séries agrupa como a chegada, e nenhuma série publicada some', () => {
+  const grupos = GTM.gruposDeSeries(catalogoPrateleiras);
+  assert.deepEqual(grupos.map(g => g.id), ['aula', 'institucional']);
+
+  const vistas = grupos.flatMap(g => g.series.map(s => s.nome));
+  const publicadas = GTM.series(GTM.publicaveis(catalogoPrateleiras));
+  assert.equal(new Set(vistas).size, vistas.length, 'série repetida na página Séries');
+  assert.deepEqual([...vistas].sort(), [...publicadas].sort(),
+    'há série publicada fora da página Séries, ou série que não devia estar lá');
+
+  const inst = grupos.find(g => g.id === 'institucional').series.map(s => s.nome);
+  assert.deepEqual(inst, ['Campanhas', 'A classificar'], 'as institucionais, com a triagem no fim');
+  const aula = grupos.find(g => g.id === 'aula').series.map(s => s.nome);
+  assert.ok(aula.includes('Curtas — Kalunga'), 'as curtas são para a aula');
+
+  const dof = grupos[0].series.find(s => s.nome === 'De Olho no Futuro');
+  assert.equal(dof.itens.length, 3, 'o título não publicado entrou na conta da série');
+  assert.equal(dof.segundos, 420 + 430 + 440);
+  assert.equal(dof.itens[0].id, 'dof-1',
+    'o primeiro da série tem que ser o de ordenar() — é a capa do cartão dela');
+
+  /* Série que não está em lista nenhuma cai do lado da aula, como na chegada:
+   * o site não esconde título por lista desatualizada. */
+  const nova = GTM.gruposDeSeries([{ id: 'x', titulo: 'X', serie: 'Série Nova', publicar: true }]);
+  assert.deepEqual(nova.map(g => g.id), ['aula']);
+  assert.deepEqual(GTM.gruposDeSeries([]), []);
+  assert.deepEqual(GTM.gruposDeSeries(null), []);
+});
+
+/* O tamanho de uma série, dito para gente: "2 h 10 min", e não "130 min" nem
+ * "7800 s". */
+test('os minutos somados de uma série são escritos para gente', () => {
+  assert.equal(GTM.formatarMinutos(7800), '2 h 10 min');
+  assert.equal(GTM.formatarMinutos(3600), '1 h');
+  assert.equal(GTM.formatarMinutos(300), '5 min');
+  assert.equal(GTM.formatarMinutos(89), '1 min');
+  /* Um vídeo de 20 s não é "0 min". */
+  assert.equal(GTM.formatarMinutos(20), '1 min');
+  assert.equal(GTM.formatarMinutos(0), '');
+  assert.equal(GTM.formatarMinutos(null), '');
+  assert.equal(GTM.formatarMinutos('abc'), '');
+});
+
+/* As duas rotas novas. `#/serie/<nome>` nasce como a grade da série e é a MESMA
+ * rota que a D6 vai transformar na página da série (§5.6): o link que alguém
+ * guardar hoje continua valendo depois. O nome passa por encodeURIComponent na
+ * ida e por uma decodificação protegida na volta — "PequiPod / Ciranda da Arte"
+ * tem uma barra, e um endereço torto não pode derrubar o roteador. */
+test('#/series abre o índice, e #/serie/<nome> abre a grade daquela série', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const rotear = app.match(/function rotear\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(rotear, 'não achei rotear em app.js');
+  assert.match(rotear[1], /hash === '#\/series'/, 'o roteador não conhece mais o índice de séries');
+  assert.match(rotear[1], /\^#\\\/serie\\\/\(\.\+\)\$/, 'o roteador não conhece mais a rota de uma série');
+  assert.match(app, /'#\/serie\/' \+ encodeURIComponent\(/, 'o cartão da série monta a rota sem codificar o nome');
+
+  const decodificar = app.match(/function decodificar\(texto\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(decodificar, 'não achei decodificar em app.js');
+  assert.match(decodificar[1], /try[\s\S]*decodeURIComponent[\s\S]*catch/,
+    'a decodificação da rota não se protege de endereço torto');
+  assert.ok(!/decodeURIComponent\(/.test(rotear[1]), 'o roteador voltou a decodificar sem proteção');
+
+  /* O índice é um ramo de renderGrade, DEPOIS da limpeza: é ela que destrói o
+   * player de quem chega da ficha. */
+  const grade = app.match(/function renderGrade\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(grade[1], /limpar\(el\.ficha\)[\s\S]*renderIndiceSeries\(\)/,
+    'o índice de séries não passa pela limpeza que destrói o player');
+
+  /* E o link da seção em que a pessoa está diz isso ao leitor de tela. */
+  assert.match(app, /setAttribute\('aria-current', 'page'\)/, 'o cabeçalho não marca mais onde a pessoa está');
+});
+
+/* "Início" é um link para #/ — e com uma busca digitada o endereço JÁ É #/,
+ * então o clique não dispara hashchange e nada acontecia. Conferido em 15/09 no
+ * logo, que tem o mesmo href: com "português" na busca, o clique deixava a
+ * grade onde estava. Com um "Início" escrito no cabeçalho, seria um botão morto
+ * à vista de todos. */
+test('Início volta para a chegada mesmo quando o endereço já é #/', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const fn = app.match(/function irAoInicio\(ev\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(fn, 'não achei irAoInicio em app.js');
+  assert.match(fn[1], /ctrlKey/, 'Ctrl+clique abre outra aba — não pode apagar a busca desta');
+  assert.match(fn[1], /esquecerBusca\(\)/, 'o Início não esquece mais a busca');
+  assert.match(fn[1], /preventDefault\(\)/, 'no mesmo endereço, o Início precisa desenhar a chegada ele mesmo');
+  assert.match(app, /querySelectorAll\('\[data-inicio\]'\)/, 'o Início não está ligado aos links que levam ao começo');
+
+  /* Esquecer é o termo, o campo E o chip: sobrando o chip, `renderGrade` não
+   * desenharia a chegada. */
+  const esquecer = app.match(/function esquecerBusca\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(esquecer, 'não achei esquecerBusca em app.js');
+  assert.match(esquecer[1], /estado\.termo = ''/, 'esquecer a busca não apaga o termo');
+  assert.match(esquecer[1], /estado\.serie = ''/, 'esquecer a busca deixa o chip ligado — e a chegada não volta');
+  assert.match(esquecer[1], /el\.busca\.value = ''/, 'esquecer a busca apaga o termo e deixa o campo escrito');
+
+  /* E ir para Séries ou para um "Ver tudo" também deixa a busca para trás: um
+   * termo esquecido filtraria a grade da série sem nada na tela dizendo. */
+  const rotear = app.match(/function rotear\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(rotear[1], /if \(indice \|\| serie \|\| tudo\) esquecerBusca\(\)/,
+    'chegar em Séries ou num "Ver tudo" não esquece mais a busca');
+
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.equal((html.match(/href="#\/" data-inicio/g) || []).length, 2,
+    'o logo e o link Início têm que passar os dois por irAoInicio');
+});
+
+/* O ATALHO QUE DESTRUÍA O PLAYER (15/09). "Pular para o conteúdo" era um link
+ * para #conteudo — e #conteudo é um hash, e o roteador escuta hash. Numa ficha,
+ * o atalho trocava o endereço, o roteador lia a chegada, e o vídeo ia embora
+ * com o foco no <body>. O briefing diz que o atalho é uma das quatro coisas que
+ * não podem regredir; ele já tinha regredido, e ninguém tinha apertado. */
+test('o atalho de pular leva o foco ao conteúdo sem passar pelo roteador', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.match(html, /<a class="pular" href="#conteudo" id="pular">/, 'sumiu o atalho de pular');
+  assert.match(html, /<main id="conteudo" class="limite" tabindex="-1">/,
+    'o <main> não aceita foco — o atalho não tem onde pousar');
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const liga = app.match(/el\.pular\.addEventListener\('click', function \(ev\) \{([\s\S]*?)\n    \}\);/);
+  assert.ok(liga, 'o atalho de pular não tem mais o ouvinte próprio');
+  assert.match(liga[1], /ev\.preventDefault\(\)/, 'o atalho volta a trocar o hash — e o roteador leva à chegada');
+  assert.match(liga[1], /el\.conteudo\.focus\(\)/, 'o atalho não leva mais o foco ao conteúdo');
+});
+
+/* 44 px — a primeira das quatro regras do briefing. O campo de busca tinha 37,
+ * medido em 15/09 em 375 e em 1400, e os chips, 29: nenhum dos dois tinha sido
+ * medido quando entrou. */
+test('44 px em todo alvo de toque do cabeçalho, e no chip', () => {
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const regra = (seletor) => {
+    const escapado = seletor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = css.match(new RegExp('\\n' + escapado + '\\s*\\{([^}]*)\\}'));
+    assert.ok(m, 'não achei a regra base de ' + seletor);
+    return m[1];
+  };
+  assert.match(regra('.topo-link'), /min-height:\s*44px/, 'o link do cabeçalho ficou abaixo de 44 px');
+  assert.match(regra('.busca input'), /min-height:\s*44px/, 'o campo de busca ficou abaixo de 44 px');
+  assert.match(regra('.chip'), /min-height:\s*44px/, 'o chip ficou abaixo de 44 px');
+  const botao = regra('.topo-botao');
+  assert.match(botao, /width:\s*44px/, 'o botão da busca ficou mais estreito que 44 px');
+  assert.match(botao, /height:\s*44px/, 'o botão da busca ficou mais baixo que 44 px');
+  assert.match(regra('.marca-logo'), /height:\s*48px/, 'o logo mudou de altura — e ele é o alvo do Início');
+});
+
+/* A segunda regra: foco visível. Cada controle do cabeçalho — e o chip, que
+ * saiu dele — tem o anel na cor da marca, que dá 8,03:1 sobre --fundo. */
+test('foco visível em todo controle do cabeçalho, e no chip', () => {
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const regras = [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].map(m => ({ seletor: m[1], corpo: m[2] }));
+  for (const alvo of ['.marca:focus-visible', '.topo-link:focus-visible', '.topo-botao:focus-visible', '.chip:focus-visible']) {
+    const achada = regras.find(r => r.seletor.split(',').some(s => s.trim() === alvo));
+    assert.ok(achada, 'sem regra de foco para ' + alvo);
+    assert.match(achada.corpo, /outline:\s*2px solid var\(--marca\)/, alvo + ' não desenha o anel de foco');
+  }
+});
+
+/* A busca no celular: um botão que abre o campo no lugar do logo. Com o campo
+ * sempre à mostra, o cabeçalho de 375 px tinha 137 px de altura, preso no alto
+ * da tela — 17% dela, o tempo todo (medido em 15/09). */
+test('a busca do celular abre pelo botão, diz que abriu e fecha com Esc', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.match(html, /<div class="busca" id="busca-caixa">/, 'a caixa da busca perdeu o id que o botão controla');
+  assert.match(html,
+    /<button type="button" class="topo-botao busca-abrir" id="busca-abrir" aria-controls="busca-caixa" aria-expanded="false" aria-label="[^"]+">/,
+    'o botão de abrir a busca perdeu o estado ou o rótulo');
+  assert.match(html, /<button type="button" class="topo-botao busca-fechar" id="busca-fechar" aria-label="[^"]+">/,
+    'o botão de fechar a busca perdeu o rótulo');
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const marcar = app.match(/function marcarBusca\(aberta\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(marcar, 'não achei marcarBusca em app.js');
+  assert.match(marcar[1], /classList\.toggle\('topo-buscando', aberta\)/);
+  assert.match(marcar[1], /setAttribute\('aria-expanded', String\(aberta\)\)/,
+    'o botão não diz mais se a busca está aberta');
+  const abrir = app.match(/function abrirBusca\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(abrir, 'não achei abrirBusca em app.js');
+  assert.match(abrir[1], /el\.busca\.focus\(\)/, 'abrir a busca não põe o foco no campo');
+  assert.match(app, /ev\.key === 'Escape'/, 'Esc não fecha mais a busca');
+
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const celular = [...css.matchAll(/@media \(max-width: 560px\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join('\n');
+  assert.match(celular, /\.topo-flutuante \.busca\s*\{[^}]*display:\s*none/, 'no celular o campo não recolhe mais');
+  assert.match(celular, /\.busca-abrir\s*\{[^}]*display:\s*inline-flex/, 'no celular o botão da busca não aparece');
+  assert.match(celular, /\.topo-flutuante\.topo-buscando \.busca\s*\{[^}]*display:\s*flex/,
+    'aberta, a busca não aparece no celular');
+
+  /* E a linha não muda de altura ao abrir. Quem dá a altura dela é o logo, de
+   * 48 px; com a busca aberta ele some, o mais alto passa a ser o campo, de
+   * 44, e a linha encolhia de 64 para 60 — a página subia 4 px (medido na
+   * primeira versão desta fase, em 15/09). A altura é fixada nos dois tamanhos
+   * de tela. */
+  const base = css.match(/\n\.topo-flutuante \.topo-linha\s*\{([^}]*)\}/);
+  assert.ok(base, 'não achei a regra da linha do cabeçalho');
+  assert.match(base[1], /min-height:\s*72px/, 'a linha do cabeçalho do computador perdeu a altura fixa');
+  assert.match(celular, /\.topo-flutuante \.topo-linha\s*\{[^}]*min-height:\s*64px/,
+    'a linha do cabeçalho do celular perdeu a altura fixa — abrir a busca volta a deslocar a página');
 });
 
 /* ============================ a marca: ícones e compartilhamento ========= */
@@ -4122,4 +5885,1063 @@ test('todo arquivo lido nos testes passa pelo lerTexto — CRLF não pode decidi
   assert.deepEqual(crus, [],
     'leitura crua de arquivo nos testes: use lerTexto(), senão um regex com \\n ' +
     'passa no CI em Linux e reprova em qualquer clone Windows');
+});
+
+/* ============================ a mesa (15/09) ============================= */
+
+/* O /admin novo mostra o site de verdade num <iframe> (PLANO-MESA §3.1). O que
+ * este teste guarda são as duas travas do modo mesa: ele só liga dentro de um
+ * quadro, e só obedece a mensagem que vem da própria origem E da janela de
+ * cima. Sem a segunda, qualquer página que emoldurasse o site poderia pôr
+ * outro catálogo na tela de quem está olhando. */
+test('o modo mesa só liga num quadro, e só ouve a própria origem', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  assert.match(app, /ligada: window\.parent !== window && \/\[\?&\]mesa=1/,
+    'o modo mesa liga fora de um quadro');
+  const ouvinte = app.match(/addEventListener\('message', function \(ev\) \{([\s\S]*?)\n    \}\);/);
+  assert.ok(ouvinte, 'não achei o ouvinte de mensagens do modo mesa');
+  assert.match(ouvinte[1], /ev\.origin !== window\.location\.origin \|\| ev\.source !== window\.parent/,
+    'o ouvinte da mesa aceita mensagem de outra origem ou de outra janela');
+  /* E quem fala com a mesa diz para quem: nunca para qualquer origem. */
+  assert.ok(!/postMessage\([^)]*['"]\*['"]\s*\)/.test(app), 'o app.js manda mensagem para qualquer origem');
+});
+
+/* Redesenhar a ficha passa por destruirPlayer(): o vídeo pararia a cada tecla
+ * digitada na mesa. Com a ficha aberta, o rascunho troca os textos no lugar. */
+test('na mesa, o rascunho não derruba o player da ficha aberta', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const noLugar = app.match(/function atualizarFichaNoLugar\(id\) \{([\s\S]*?)\n  \}/);
+  assert.ok(noLugar, 'não achei atualizarFichaNoLugar em app.js');
+  assert.ok(!/destruirPlayer\(/.test(noLugar[1]), 'atualizar a ficha no lugar destrói o player');
+  const pelaMesa = app.match(/function redesenharPelaMesa\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(pelaMesa, 'não achei redesenharPelaMesa em app.js');
+  assert.match(pelaMesa[1], /if \(ep && !el\.ficha\.hidden\) \{ atualizarFichaNoLugar\(/,
+    'com a ficha aberta, a mesa tem de atualizar no lugar e não redesenhar');
+});
+
+/* ACHADO NA M2 (16/09), e é o mesmo tipo de erro do renderChips: um
+ * `M.painelTela.contas = …` copiado do protótipo, onde esse objeto existia.
+ * No código de verdade ele não existe, e a atribuição LANÇA — o que abortava o
+ * resto do arquivo: a tela "Minha conta" e o seletor de capa inteiro deixavam
+ * de ser definidos, sem nenhum teste reclamar. Este cobra que tudo o que a
+ * mesa chama de si mesma exista em algum arquivo dela. */
+test('a mesa não chama nem escreve em nada que ela não define', () => {
+  const arquivos = ['mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js'];
+  const juntos = arquivos.map(a => semComentarios(lerTexto(path.join(SITE, a)))).join('\n');
+  const definidos = new Set([...juntos.matchAll(/\bM\.([A-Za-z_]\w*)\s*=[^=]/g)].map(m => m[1]));
+  /* O estado e os poucos objetos que a mesa preenche por dentro. */
+  ['st', 'sessao', 'envio', 'contas'].forEach(n => definidos.add(n));
+
+  const usados = new Set([...juntos.matchAll(/\bM\.([A-Za-z_]\w*)/g)].map(m => m[1]));
+  const faltando = [...usados].filter(n => !definidos.has(n));
+  assert.deepEqual(faltando, [], 'a mesa usa M.' + faltando.join(', M.') + ', que nenhum arquivo dela define');
+
+  /* E o que a mesa usa do site tem de existir no core. */
+  const doCore = new Set([...juntos.matchAll(/\bGTM\.([A-Za-z_]\w*)/g)].map(m => m[1]));
+  const core = require('../site/catalogo-core.js');
+  const semCore = [...doCore].filter(n => !(n in core));
+  assert.deepEqual(semCore, [], 'a mesa usa GTM.' + semCore.join(', GTM.') + ', que o catalogo-core.js não exporta');
+});
+
+/* Achado ao juntar a mesa com a D5 (15/09): a D5 tirou os chips e, com eles,
+ * `renderChips` — e o modo mesa ainda a chamava ao redesenhar. Nenhum teste
+ * de texto reclamou; o erro só apareceria no primeiro rascunho, dentro do
+ * quadro. Este teste cobra que toda função chamada pelo modo mesa existe. */
+test('o modo mesa só chama funções que existem no app.js', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const daLinguagem = ['function', 'if', 'for', 'while', 'return', 'switch', 'catch', 'typeof',
+    'String', 'Number', 'Boolean', 'Object', 'Array', 'Promise', 'JSON', 'Math',
+    'setTimeout', 'clearTimeout', 'decodeURIComponent', 'encodeURIComponent'];
+  for (const nome of ['ligarMesa', 'redesenharPelaMesa', 'atualizarFichaNoLugar', 'campoDaFicha',
+    'pintarSelecao', 'rolarAteMesa', 'marcarMesa', 'avisarMesa']) {
+    const corpo = app.match(new RegExp('function ' + nome + '\\([^)]*\\) \\{([\\s\\S]*?)\\n  \\}'));
+    assert.ok(corpo, 'não achei ' + nome + ' em app.js');
+    const chamadas = new Set([...corpo[1].matchAll(/(?<![.\w])([A-Za-z_]\w*)\s*\(/g)].map(m => m[1]));
+    for (const f of chamadas) {
+      if (daLinguagem.includes(f)) continue;
+      if (new RegExp('var ' + f + '\\s*=').test(corpo[1])) continue;
+      assert.match(app, new RegExp('function ' + f + '\\('),
+        nome + ' chama ' + f + '(), que não existe no app.js');
+    }
+  }
+});
+
+/* O cartão da prateleira NÃO vira texto editável: ele mostra o título curto
+ * ("Bombeiro militar"), que não existe no catálogo, e digitar ali editaria
+ * outro texto. Só o título e a sinopse da ficha são editáveis no lugar. */
+test('na mesa, só o título e a sinopse da ficha são editáveis no lugar', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const campo = app.match(/function campoDaFicha\(no, item, campo\) \{([\s\S]*?)\n  \}/);
+  assert.ok(campo, 'não achei campoDaFicha em app.js');
+  assert.match(campo[1], /if \(!mesa\.ligada\) return no;/, 'a ficha do site virou editável fora da mesa');
+  assert.match(campo[1], /campo === 'titulo' \|\| campo === 'sinopse'/);
+  for (const nome of ['cartao\\(item\\)', 'cartaoPrateleira\\(item, mostrarSerie\\)']) {
+    const fn = app.match(new RegExp('function ' + nome + ' \\{([\\s\\S]*?)\\n  \\}'));
+    assert.ok(fn, 'não achei ' + nome);
+    assert.ok(!/contentEditable/.test(fn[1]), nome + ' virou editável');
+  }
+});
+
+/* ============================ a estrutura vira dado (M4) ================= */
+
+/* A M4 do PLANO-MESA §3.3: o que hoje é regra escrita no código — o nome e a
+ * ordem das prateleiras, de que lado cada série cai, o título em destaque e os
+ * textos fixos — passa a caber num campo de topo do catálogo, `site`, editável
+ * pela mesa. O padrão continua NO CÓDIGO: catálogo sem `site` desenha
+ * exatamente a chegada de hoje, e é o primeiro teste desta seção.
+ *
+ * O campo é um só de propósito, e não quatro campos de topo: o PUT já preserva
+ * o documento inteiro, e `permissaoDoCampo('site', …)` já devolve "estrutura"
+ * desde a M2 — a M4 não abre porta nova no servidor. */
+
+test('sem o campo site, a chegada é exatamente a de hoje', () => {
+  const semNada = GTM.prateleiras(catalogoPrateleiras);
+  for (const site of [null, undefined, {}, { prateleiras: {} }]) {
+    const com = GTM.prateleiras(catalogoPrateleiras, site);
+    assert.deepEqual(com.map(p => p.id), semNada.map(p => p.id));
+    assert.deepEqual(com.map(p => p.titulo), semNada.map(p => p.titulo));
+    assert.deepEqual(com.map(p => p.itens.map(i => i.id)), semNada.map(p => p.itens.map(i => i.id)));
+    assert.ok(com.every(p => !p.escondida), 'prateleira nasceu escondida sem ninguém mandar');
+  }
+});
+
+/* O critério de aceite da fase, escrito na §4 do plano: "cada prateleira
+ * renomeada, reordenada e escondida na mesa aparece igual no site". */
+test('a prateleira renomeada, reordenada e escondida vale no site', () => {
+  const site = {
+    prateleiras: {
+      'institucional': { titulo: 'Da rede', ordem: 0 },
+      'curtos': { ordem: 1 },
+      'serie:De Olho no Futuro': { ordem: 2 },
+      'mais-series': { escondida: true }
+    }
+  };
+  const ps = GTM.prateleiras(catalogoPrateleiras, site);
+
+  assert.deepEqual(ps.slice(0, 3).map(p => p.id), ['institucional', 'curtos', 'serie:De Olho no Futuro'],
+    'a ordem escolhida não veio na frente');
+  assert.equal(ps[0].titulo, 'Da rede', 'o nome escolhido não substituiu o do código');
+  assert.equal(GTM.prateleiras(catalogoPrateleiras).find(p => p.id === 'institucional').titulo, 'Do Goiás Tec',
+    'renomear na mesa mudou o padrão do código, que é de onde parte quem não escolheu nada');
+
+  const escondida = ps.find(p => p.id === 'mais-series');
+  assert.equal(escondida.escondida, true);
+  assert.ok(!GTM.prateleirasVisiveis(catalogoPrateleiras, site).some(p => p.id === 'mais-series'),
+    'a prateleira escondida continuou na chegada');
+});
+
+/* Esconder prateleira é ESCONDER, nunca despublicar: o título continua na
+ * busca, na página da série e no link direto. A mesa tem de saber dizer
+ * QUANTOS títulos saem da chegada antes de alguém apertar o botão — "Mais
+ * séries" sozinha leva 18 em produção. */
+test('esconder prateleira tira da chegada, não do catálogo', () => {
+  const site = { prateleiras: { 'mais-series': { escondida: true } } };
+  const todas = GTM.prateleiras(catalogoPrateleiras, site);
+  const escondida = todas.find(p => p.id === 'mais-series');
+
+  assert.ok(escondida.itens.length, 'a prateleira escondida veio vazia — ela é a lista, só não é desenhada');
+  assert.ok(GTM.prateleiraPorId(catalogoPrateleiras, 'mais-series', site),
+    'o "Ver tudo" da prateleira escondida deixou de achar a prateleira');
+
+  const somem = GTM.titulosSoEmEscondidas(catalogoPrateleiras, site).map(i => i.id).sort();
+  assert.deepEqual(somem, ['mat-2', 'mat-3', 'par-1'],
+    'o aviso da mesa não é a lista de quem some da chegada');
+
+  /* Quem está em duas prateleiras não some por causa de uma. */
+  const soCurtos = { prateleiras: { curtos: { escondida: true } } };
+  assert.deepEqual(GTM.titulosSoEmEscondidas(catalogoPrateleiras, soCurtos), [],
+    'títulos que aparecem noutra prateleira foram contados como perdidos');
+});
+
+/* Uma série nova que cruza os 3 títulos vira prateleira do nada, meses depois
+ * de alguém ter arrumado a ordem. Ela entra no FIM — previsível — e não no
+ * meio da ordem escolhida, que é o que aconteceria se a ordem fosse só o
+ * índice do padrão. */
+test('prateleira que não estava na ordem escolhida entra no fim', () => {
+  const site = { prateleiras: { 'mais-series': { ordem: 0 }, 'curtos': { ordem: 1 } } };
+  const ps = GTM.prateleiras(catalogoPrateleiras, site);
+  assert.deepEqual(ps.slice(0, 2).map(p => p.id), ['mais-series', 'curtos']);
+  assert.ok(ps.slice(2).every(p => p.id !== 'mais-series' && p.id !== 'curtos'));
+  /* E o resto mantém a ordem relativa do padrão, sem embaralhar. */
+  const padrao = GTM.prateleiras(catalogoPrateleiras).map(p => p.id)
+    .filter(id => id !== 'mais-series' && id !== 'curtos');
+  assert.deepEqual(ps.slice(2).map(p => p.id), padrao);
+});
+
+test('a classe da série sai do dado; sem dado, das três listas', () => {
+  assert.equal(GTM.classeDaSerie('Campanhas'), 'institucional');
+  assert.equal(GTM.classeDaSerie('Curtas — Kalunga'), 'curta');
+  assert.equal(GTM.classeDaSerie('De Olho no Futuro'), 'pedagogica');
+  /* A série que ninguém classificou continua pedagógica e aparece em "Mais
+   * séries": o site não esconde título por lista desatualizada (§5.4). */
+  assert.equal(GTM.classeDaSerie('Série que ninguém viu'), 'pedagogica');
+
+  const site = { classes: { 'Campanhas': 'pedagogica', 'Série que ninguém viu': 'institucional' } };
+  assert.equal(GTM.classeDaSerie('Campanhas', site), 'pedagogica', 'o dado não venceu a lista do código');
+  assert.equal(GTM.classeDaSerie('Série que ninguém viu', site), 'institucional');
+  assert.equal(GTM.classeDaSerie('Campanhas', { classes: { 'Campanhas': 'inventada' } }), 'institucional',
+    'uma classe que não existe passou por cima da lista');
+});
+
+/* E a classe do dado tem de mover o título de prateleira de verdade — a lista
+ * do código é só o padrão dela. */
+test('reclassificar uma série muda a prateleira em que o título cai', () => {
+  const site = { classes: { 'Campanhas': 'pedagogica' } };
+  const ps = GTM.prateleiras(catalogoPrateleiras, site);
+  const inst = ps.find(p => p.id === 'institucional');
+  assert.ok(!inst || !inst.itens.some(i => i.serie === 'Campanhas'),
+    'Campanhas continuou institucional depois de reclassificada');
+  const serie = ps.find(p => p.id === 'serie:Campanhas');
+  assert.ok(serie && serie.itens.length === 3, 'Campanhas virou pedagógica e não formou a própria prateleira');
+  /* E, pedagógica, os três de menos de 5 min entram em "Até 5 minutos" — que é
+   * justamente o que `ehInstitucional` barrava. */
+  assert.ok(ps.find(p => p.id === 'curtos').itens.some(i => i.serie === 'Campanhas'));
+});
+
+/* O destaque (D4) passa a ser o ID no `site`. O campo `destaque` do título é o
+ * LEGADO: é o que está gravado no KV desde 14/09, e continua valendo enquanto
+ * ninguém escolher pela mesa — a mesa apaga as marcas velhas ao gravar a
+ * escolha nova, e aí sobra uma fonte só. */
+test('o destaque sai do id no site; a marca no título é o legado', () => {
+  const comMarca = catalogoPrateleiras.map(i => i.id === 'enq-1' ? Object.assign({}, i, { destaque: true }) : i);
+
+  assert.equal(GTM.destaque(comMarca).id, 'enq-1', 'a marca velha deixou de valer sem ninguém ter escolhido nada');
+  assert.equal(GTM.destaque(comMarca, { destaque: 'mat-2' }).id, 'mat-2', 'o id do site não venceu a marca velha');
+
+  /* Um id que aponta para título fora do ar não vale — mostrar despublicado na
+   * chegada é vazá-lo, e é a mesma defesa de antes. */
+  assert.equal(GTM.destaque(comMarca, { destaque: 'oculto' }).id, 'enq-1');
+  assert.equal(GTM.destaque(catalogoPrateleiras, { destaque: 'nao-existe' }).id,
+    GTM.destaque(catalogoPrateleiras).id, 'id apagado do catálogo não caiu no padrão');
+
+  /* Sem escolha nenhuma, o padrão de hoje: o primeiro da maior série. */
+  assert.equal(GTM.destaque(catalogoPrateleiras, {}).id, GTM.destaque(catalogoPrateleiras).id);
+  /* E o padrão não vai buscar destaque em prateleira escondida. */
+  const escondendo = { prateleiras: { 'serie:De Olho no Futuro': { escondida: true }, 'curtos': { escondida: true } } };
+  assert.notEqual(GTM.destaque(catalogoPrateleiras, escondendo).serie, 'De Olho no Futuro');
+});
+
+test('os textos do site têm padrão no código, e o dado só troca o que preencheu', () => {
+  assert.equal(GTM.textoDoSite(null, 'semCapa'), 'sem capa');
+  assert.equal(GTM.textoDoSite({ textos: { semCapa: 'sem imagem' } }, 'semCapa'), 'sem imagem');
+  assert.equal(GTM.textoDoSite({ textos: { semCapa: 'sem imagem' } }, 'buscaVazia'), 'Nada encontrado',
+    'trocar um texto apagou o padrão dos outros');
+  /* Texto vazio é o padrão, não o silêncio: um campo limpo sem querer não pode
+   * apagar da tela o aviso que explica o que houve. Quem quiser nada na tela
+   * muda o desenho, não o texto. */
+  assert.equal(GTM.textoDoSite({ textos: { semCapa: '   ' } }, 'semCapa'), 'sem capa');
+  assert.equal(GTM.textoDoSite(null, 'chave-que-nao-existe'), '');
+
+  /* Os seis do plano: o rodapé e os cinco estados do B8 do briefing — dois
+   * deles com título e ajuda, que é o que faz oito chaves. */
+  assert.deepEqual(Object.keys(GTM.TEXTOS_PADRAO).sort(), [
+    'buscaVazia', 'buscaVaziaAjuda', 'erroCatalogo', 'erroCatalogoAjuda',
+    'fichaAusente', 'rodape', 'semCapa', 'videoIndisponivel'
+  ]);
+});
+
+/* O saneador é a mesma ideia do `ajustes()` da API: o que sai daqui é forma
+ * conferida, para o navegador não receber uma string onde espera número nem
+ * uma classe inventada. Roda no servidor (o GET público) e na mesa. */
+test('o site saneado descarta o que não é da forma, e não lança com dado torto', () => {
+  const s = GTM.siteSaneado({
+    destaque: 42,
+    prateleiras: {
+      curtos: { titulo: '  Na correria  ', ordem: 2, escondida: true },
+      'mais-series': { ordem: '3', escondida: 'sim' },
+      vazia: {},
+      torta: 7
+    },
+    classes: { 'Campanhas': 'pedagogica', 'Outra': 'inventada' },
+    textos: { rodape: ' Uso interno ', semCapa: '', naoExiste: 'x' },
+    lixo: { qualquer: 1 }
+  });
+
+  assert.equal(s.destaque, null, 'destaque que não é texto virou id');
+  assert.equal(s.prateleiras.curtos.titulo, 'Na correria', 'o nome não foi aparado');
+  assert.equal(s.prateleiras.curtos.ordem, 2);
+  assert.equal(s.prateleiras.curtos.escondida, true);
+  /* O saneador confere a FORMA, não adivinha a intenção: `'3'` não é número e
+   * `'sim'` não é um sim. Coerção aqui é como um `escondida: 'nao'` sumiria com
+   * uma prateleira — e ninguém saberia de onde veio. */
+  assert.ok(!('mais-series' in s.prateleiras), 'número em texto e sim em texto viraram dado');
+  assert.ok(!('vazia' in s.prateleiras) && !('torta' in s.prateleiras), 'entrada sem nada virou prateleira');
+  assert.deepEqual(s.classes, { 'Campanhas': 'pedagogica' });
+  assert.deepEqual(s.textos, { rodape: 'Uso interno' });
+  assert.ok(!('lixo' in s), 'campo desconhecido atravessou o saneador');
+
+  for (const torto of [null, undefined, 'texto', 7, [], { prateleiras: 'x', classes: 3, textos: null }]) {
+    assert.deepEqual(GTM.siteSaneado(torto), { destaque: null, prateleiras: {}, classes: {}, textos: {} });
+  }
+
+  /* Determinístico: o rascunho compara por JSON.stringify, e mapa com chave em
+   * ordem diferente contaria como mudança que ninguém fez. */
+  const a = GTM.siteSaneado({ classes: { 'B': 'curta', 'A': 'pedagogica' } });
+  const b = GTM.siteSaneado({ classes: { 'A': 'pedagogica', 'B': 'curta' } });
+  assert.equal(JSON.stringify(a), JSON.stringify(b));
+});
+
+/* As escritas puras que a mesa usa. Elas devolvem um `site` NOVO — o rascunho
+ * guarda o valor inteiro do campo, e mexer no objeto que a tela está mostrando
+ * apagaria o "antes" da comparação do Publicar. */
+test('as escritas do site são puras e devolvem o mapa em ordem fixa', () => {
+  const zero = GTM.siteSaneado(null);
+
+  const comNome = GTM.comPrateleira(zero, 'curtos', { titulo: 'Na correria' });
+  assert.equal(comNome.prateleiras.curtos.titulo, 'Na correria');
+  assert.deepEqual(zero.prateleiras, {}, 'a escrita mexeu no objeto que recebeu');
+
+  /* Voltar ao padrão é APAGAR a entrada, não gravar o nome do código: se o
+   * padrão mudar um dia, quem não escolheu nada anda junto. */
+  assert.deepEqual(GTM.comPrateleira(comNome, 'curtos', { titulo: '' }).prateleiras, {});
+
+  const escondida = GTM.comPrateleira(zero, 'mais-series', { escondida: true });
+  assert.equal(escondida.prateleiras['mais-series'].escondida, true);
+  assert.deepEqual(GTM.comPrateleira(escondida, 'mais-series', { escondida: false }).prateleiras, {});
+
+  const ordenado = GTM.comOrdemPrateleiras(zero, ['b', 'a', 'c']);
+  assert.deepEqual(Object.keys(ordenado.prateleiras), ['a', 'b', 'c'], 'o mapa saiu fora da ordem das chaves');
+  assert.deepEqual(['a', 'b', 'c'].map(id => ordenado.prateleiras[id].ordem), [1, 0, 2]);
+
+  const classificado = GTM.comClasse(zero, 'Campanhas', 'pedagogica');
+  assert.deepEqual(classificado.classes, { 'Campanhas': 'pedagogica' });
+  assert.deepEqual(GTM.comClasse(classificado, 'Campanhas', '').classes, {}, 'voltar ao padrão não apagou a entrada');
+
+  const texto = GTM.comTexto(zero, 'rodape', 'Uso interno da rede.');
+  assert.deepEqual(texto.textos, { rodape: 'Uso interno da rede.' });
+  assert.deepEqual(GTM.comTexto(texto, 'rodape', '  ').textos, {});
+  assert.deepEqual(GTM.comTexto(zero, 'naoExiste', 'x').textos, {}, 'texto fora dos seis entrou no dado');
+});
+
+/* O rascunho da mesa (§3.2) ganha um alvo novo. Os quatro campos são objetos
+ * inteiros — e não "a prateleira X", "o texto Y" — porque é assim que o
+ * Publicar confere campo a campo contra a leitura fresca do servidor: duas
+ * pessoas arrumando prateleira ao mesmo tempo têm de brigar, não de gravar uma
+ * por cima da outra em silêncio. */
+test('o rascunho aceita o alvo site, e a permissão dele é estrutura', () => {
+  const cat = { itens: catalogoPrateleiras, site: { destaque: 'enq-1' } };
+
+  assert.equal(GTM.permissaoDoCampo('site', 'prateleiras'), 'estrutura');
+  assert.equal(GTM.permissaoDoCampo('site', 'destaque'), 'estrutura');
+  assert.equal(GTM.permissaoDoCampo('site', 'inventado'), null, 'campo desconhecido do site virou editável');
+
+  /* O Publicar relê o catálogo e confere o "antes" campo a campo. Um catálogo
+   * que nunca teve estrutura escolhida não é um campo que SUMIU: o valor de
+   * antes é a ausência, e escrever por cima dela não é conflito. */
+  const lista = GTM.registrarMudanca([], { alvo: 'site', campo: 'destaque', antes: 'enq-1', depois: 'mat-2' });
+  assert.deepEqual(GTM.conflitosRascunho(cat, lista), []);
+  assert.deepEqual(GTM.conflitosRascunho({ itens: [] },
+    [{ alvo: 'site', campo: 'textos', antes: undefined, depois: { rodape: 'x' } }]), []);
+  assert.deepEqual(GTM.conflitosRascunho({ itens: [], site: { destaque: 'outro' } }, lista),
+    [{ alvo: 'site', campo: 'destaque', antes: 'enq-1', depois: 'mat-2', noServidor: 'outro' }],
+    'outra tela mudou o destaque e o Publicar não viu');
+
+  const aplicado = GTM.aplicarRascunho(cat, lista);
+  assert.equal(aplicado.site.destaque, 'mat-2');
+  assert.equal(cat.site.destaque, 'enq-1', 'o rascunho mexeu no catálogo original');
+  assert.equal(GTM.destaque(aplicado.itens, aplicado.site).id, 'mat-2', 'a prévia da mesa não veria a mudança');
+
+  /* Campo fora dos quatro é ignorado, como já era para o item e os ajustes. */
+  const torto = GTM.aplicarRascunho(cat, [{ alvo: 'site', campo: 'inventado', antes: null, depois: 'x' }]);
+  assert.ok(!('inventado' in (torto.site || {})));
+});
+
+/* A conferência de permissão do PUT (M2) já tratava `site` como estrutura, mas
+ * nunca tinha tido dado de verdade para comparar. Agora tem. */
+test('mudar a estrutura pede a permissão estrutura, no servidor', () => {
+  const antes = { itens: [], site: { destaque: 'a', prateleiras: {} } };
+  const depois = { itens: [], site: { destaque: 'b', prateleiras: {} } };
+  const difs = GTM.diferencasDoCatalogo(antes, depois);
+  /* A diferença da estrutura sai CAMPO A CAMPO desde a M5 — a regra é a mesma
+   * (mexer na chegada pede "estrutura"), mas uma linha só dizendo "o campo
+   * `site` mudou" não conta o que aconteceu nem deixa desfazer uma parte. Os
+   * nomes são os do rascunho, e é isso que faz a mudança contrária caber nele
+   * sem tradução. */
+  const doSite = difs.filter(d => d.alvo === 'site');
+  assert.deepEqual(doSite, [{ alvo: 'site', campo: 'destaque', antes: 'a', depois: 'b', permissao: 'estrutura' }]);
+  assert.ok(!difs.some(d => d.alvo === 'catalogo'), 'a estrutura ainda aparece como um campo de topo cru');
+
+  const conteudista = { usuario: 'ana', permissoes: ['conteudo'] };
+  assert.equal(GTM.proibidas(conteudista, difs).length, 1, 'quem só tem conteúdo conseguiu mexer na chegada');
+  const estruturista = { usuario: 'rui', permissoes: ['estrutura'] };
+  assert.deepEqual(GTM.proibidas(estruturista, difs), []);
+});
+
+/* E o caminho inteiro, no runtime: o que a mesa grava tem de chegar ao
+ * navegador de quem visita o site. A M1 aprendeu isso do jeito caro com o
+ * `paraPublico` — campo que não sai na projeção não existe para o navegador,
+ * e a escolha feita no /admin não tem efeito nenhum, sem erro e sem aviso. */
+test('a estrutura escolhida atravessa o PUT e sai no GET público', async () => {
+  const env = ambiente(kvDeMentira());
+  const sup = await entrar(env, '', 'senha-do-super');
+
+  const itens = catalogoPrateleiras.map(i => Object.assign({}, i, {
+    fonte: { tipo: 'bunny', libraryId: '1', videoId: 'v-' + i.id }
+  }));
+
+  const gravado = await pedir(env, {
+    metodo: 'PUT', caminho: '/api/catalogo', token: sup.token,
+    corpo: {
+      rev: 0, itens,
+      site: {
+        destaque: 'mat-2',
+        prateleiras: { institucional: { titulo: 'Da rede', ordem: 0 }, 'mais-series': { escondida: true } },
+        classes: { 'Campanhas': 'pedagogica' },
+        textos: { rodape: 'Uso interno da rede.' },
+        lixo: 'isto não é campo'
+      }
+    }
+  });
+  assert.equal(gravado.status, 200);
+
+  const publico = await pedir(env, { caminho: '/api/catalogo' });
+  assert.equal(publico.status, 200);
+  assert.equal(publico.corpo.site.destaque, 'mat-2', 'a escolha do destaque não chegou ao site');
+  assert.equal(publico.corpo.site.prateleiras.institucional.titulo, 'Da rede');
+  assert.equal(publico.corpo.site.prateleiras['mais-series'].escondida, true);
+  assert.deepEqual(publico.corpo.site.classes, { 'Campanhas': 'pedagogica' });
+  assert.deepEqual(publico.corpo.site.textos, { rodape: 'Uso interno da rede.' });
+  assert.ok(!('lixo' in publico.corpo.site), 'o GET público não saneou a estrutura');
+
+  /* O que o site desenha com o que recebeu: é a prova de ponta a ponta. */
+  const ps = GTM.prateleirasVisiveis(publico.corpo.itens, publico.corpo.site);
+  assert.equal(ps[0].titulo, 'Da rede');
+  assert.ok(!ps.some(p => p.id === 'mais-series'));
+  assert.equal(GTM.destaque(publico.corpo.itens, publico.corpo.site).id, 'mat-2');
+
+  /* O `?completo=1` devolve o documento COMO ESTÁ no KV, e o que está no KV é
+   * a estrutura SANEADA: desde a M5 o PUT guarda a forma conferida, com as
+   * chaves em ordem estável, porque é contra esse valor que o Publicar confere
+   * o "antes" na próxima vez — e dois mapas iguais em ordem diferente contariam
+   * como mudança que ninguém fez. O campo inventado não sobreviveu à gravação. */
+  const completo = await pedir(env, { caminho: '/api/catalogo?completo=1', token: sup.token });
+  assert.ok(!('lixo' in completo.corpo.site), 'o PUT guardou um campo que o saneador descarta');
+  assert.deepEqual(completo.corpo.site, publico.corpo.site,
+    'o que está guardado e o que sai para o site deixaram de ser a mesma coisa');
+
+  /* E a permissão, no servidor: quem só tem "conteúdo" não arruma a chegada. */
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'ana', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  const ana = await entrar(env, 'ana', 'senha-bem-comprida');
+  const recusa = await pedir(env, {
+    metodo: 'PUT', caminho: '/api/catalogo', token: ana.token,
+    corpo: Object.assign({}, completo.corpo, { site: { destaque: 'enq-1' } })
+  });
+  assert.equal(recusa.status, 403);
+  assert.equal(recusa.corpo.barradas[0].permissao, 'estrutura');
+});
+
+/* O rodapé é o único dos seis textos que já existe no HTML — ele é desenhado
+ * com a página, antes de o catálogo responder. O `app.js` escreve o texto do
+ * dado por cima, e só quando é diferente: se o padrão do código e a frase do
+ * `index.html` separarem, o rodapé passa a piscar em TODA visita, e ninguém
+ * ligaria uma coisa à outra meses depois. */
+test('o rodapé do HTML e o padrão do código são a mesma frase', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const rodape = html.match(/<footer class="rodape">([\s\S]*?)<\/footer>/);
+  assert.ok(rodape, 'não achei o rodapé no index.html');
+  const doHtml = rodape[1].replace(/<[^>]*>/g, ' ').replace(/·[\s\S]*$/, '').replace(/\s+/g, ' ').trim();
+  assert.equal(doHtml, GTM.TEXTOS_PADRAO.rodape);
+});
+
+/* Os cinco estados do B8 saem do dado, com padrão no código. Escrever a frase
+ * de novo dentro do `app.js` seria um texto que a mesa não alcança — e é o
+ * tipo de coisa que só aparece quando alguém edita e "não muda nada". */
+test('os textos fixos do site saem do dado, e não de uma frase solta no app.js', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  for (const chave of Object.keys(GTM.TEXTOS_PADRAO)) {
+    assert.ok(app.includes("frase('" + chave + "')"), 'o app.js não desenha o texto ' + chave);
+    assert.ok(!app.includes("'" + GTM.TEXTOS_PADRAO[chave] + "'"),
+      'a frase de ' + chave + ' está escrita à mão no app.js, fora do alcance da mesa');
+  }
+  assert.match(app, /function frase\(chave\) \{\s*return GTM\.textoDoSite\(estado\.site, chave\);/);
+});
+
+/* A chegada desenha o que a mesa escolheu: as prateleiras VISÍVEIS, na ordem
+ * e com os nomes do dado, e o destaque pelo id. */
+test('a chegada do site lê a estrutura, e a prévia da mesa recebe a mesma', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  assert.match(app, /GTM\.prateleirasVisiveis\(estado\.itens, estado\.site\)/,
+    'a chegada continua montando a lista sem a estrutura, ou sem tirar as escondidas');
+  assert.match(app, /GTM\.destaque\(estado\.itens, estado\.site\)/);
+  for (const chamada of app.split('GTM.prateleiraPorId(').slice(1)) {
+    assert.match(chamada.slice(0, 120), /estado\.site\)/,
+      'um "Ver tudo" ainda acha a prateleira pelo padrão, e não pela estrutura escolhida');
+  }
+  assert.match(app, /estado\.site = dados\.site \|\| \{\};/, 'o site não guarda a estrutura que a API mandou');
+
+  /* E dentro da mesa o catálogo não vem da API: vem por postMessage. Sem o
+   * `site` nessa mensagem, a prévia mostraria a chegada padrão enquanto o
+   * site no ar mostra outra — a mesa mentiria sobre o próprio efeito. */
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  const carga = mesa.match(/tipo: 'catalogo',[\s\S]*?\n(.*dados: \{.*)/);
+  assert.ok(carga, 'não achei a mensagem do catálogo em mesa.js');
+  assert.match(carga[1], /site: cat\.site \|\| \{\}/);
+});
+
+/* A mesa da M4: a tela Estrutura e a prateleira do painel editam A MESMA
+ * coisa, e a única forma de as duas discordarem com o tempo é cada uma montar
+ * o mapa do seu jeito. Elas chamam as funções de `mesa-base.js`, que chamam as
+ * puras do core — e é isso que este teste cobra. */
+test('as duas telas da estrutura escrevem pelas mesmas funções', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  const painel = semComentarios(lerTexto(path.join(SITE, 'mesa-painel.js')));
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+
+  for (const nome of ['renomearPrateleira', 'esconderPrateleira', 'moverPrateleira',
+    'padraoDaPrateleira', 'mudarClasseDaSerie', 'mudarTextoDoSite']) {
+    assert.ok(base.includes('M.' + nome + ' = function'), 'mesa-base.js não define ' + nome);
+  }
+  /* Quem desenha não monta mapa: `comPrateleira` e companhia só aparecem no
+   * mesa-base.js, e nas telas só para LER o que já está escolhido. */
+  for (const escrita of ['GTM.comPrateleira(', 'GTM.comClasse(', 'GTM.comTexto(', 'GTM.comOrdemPrateleiras(']) {
+    assert.ok(base.includes(escrita), 'mesa-base.js deixou de usar ' + escrita);
+    assert.ok(!telas.includes(escrita), 'a tela Estrutura monta o mapa por fora: ' + escrita);
+    assert.ok(!mesa.includes(escrita), 'mesa.js monta o mapa por fora: ' + escrita);
+  }
+  /* A exceção documentada: o painel usa `comPrateleira` para PERGUNTAR quantos
+   * títulos sairiam da chegada se esta prateleira fosse escondida — não grava
+   * nada, e é a conta feita antes do clique. */
+  const usosNoPainel = (painel.match(/GTM\.comPrateleira\(/g) || []).length;
+  assert.equal(usosNoPainel, 1, 'o painel passou a montar mapa da estrutura em mais de um lugar');
+  assert.match(painel, /titulosSoEmEscondidas\(cat\.itens, GTM\.comPrateleira\(/,
+    'o único uso de comPrateleira no painel deixou de ser o aviso do que some');
+});
+
+/* Reordenar grava a ordem de TODAS as prateleiras. Meia ordem — só as duas que
+ * trocaram — poria as duas na frente de todas as outras, porque quem tem ordem
+ * escolhida vem antes de quem não tem. */
+test('mover prateleira grava a ordem inteira, e não só as duas que trocaram', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const corpo = base.match(/M\.moverPrateleira = function \(id, passo\) \{([\s\S]*?)\n  \};/);
+  assert.ok(corpo, 'não achei M.moverPrateleira');
+  assert.match(corpo[1], /GTM\.prateleiras\(M\.efetivo\(\)\.itens, M\.site\(\)\)\.map/,
+    'a ordem nova não parte da ordem que está na tela');
+  assert.match(corpo[1], /GTM\.comOrdemPrateleiras\(M\.site\(\), ids\)/);
+
+  /* E a função pura faz o que ele espera: a lista inteira, numerada de 0. */
+  const site = GTM.comOrdemPrateleiras(null, ['curtos', 'mais-series', 'institucional']);
+  assert.deepEqual(Object.keys(site.prateleiras).map(id => site.prateleiras[id].ordem).sort(), [0, 1, 2]);
+  assert.equal(site.prateleiras['curtos'].ordem, 0);
+});
+
+/* Os campos da estrutura vivem em dois lugares — o painel da direita e a tela
+ * do meio —, e cada um só pode redesenhar o OUTRO: redesenhar o lado onde o
+ * cursor está tira o campo debaixo de quem digita. Foi o defeito 1 da M1, e
+ * ele volta toda vez que alguém acrescenta um campo. */
+test('o campo da estrutura não redesenha o lado em que está', () => {
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  const daTela = mesa.match(/data-texto-prateleira'\)[^;]*;/);
+  assert.ok(daTela, 'não achei o campo de nome da tela Estrutura em mesa.js');
+  assert.match(daTela[0], /semCentro: true/, 'o campo da tela Estrutura redesenha o próprio centro');
+  const doPainel = mesa.match(/t\.id === 'pr-nome'[\s\S]{0,200}?;/);
+  assert.ok(doPainel, 'não achei o campo de nome do painel em mesa.js');
+  assert.match(doPainel[0], /semPainel: true/, 'o campo do painel redesenha o próprio painel');
+});
+
+/* A conta sem "estrutura" não arruma a chegada: os campos vêm desligados. Quem
+ * recusa continua sendo o servidor (M2) — isto é conveniência, e a tela não
+ * pode oferecer o que o PUT vai negar. */
+test('sem a permissão estrutura, a tela não oferece o que o servidor recusa', () => {
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  const tela = telas.match(/M\.telaEstrutura = function \(cat\) \{([\s\S]*?)\n  \};/);
+  assert.ok(tela, 'não achei a tela Estrutura');
+  assert.match(tela[1], /var pode = M\.pode\('estrutura'\)/);
+  /* Os dois controles do corpo da tela — a classe da série e os textos fixos.
+   * Os quatro da linha da prateleira (nome, subir, descer, esconder) estão em
+   * `linhaPrateleira`, e vêm contados logo abaixo. */
+  assert.equal((tela[1].match(/disabled: !pode/g) || []).length, 2,
+    'a tela Estrutura tem controle sem `disabled: !pode`');
+  const linha = telas.match(/function linhaPrateleira\([^)]*\) \{([\s\S]*?)\n  \}/);
+  assert.ok(linha, 'não achei a linha da prateleira');
+  assert.equal((linha[1].match(/disabled: !pode/g) || []).length, 4,
+    'a linha da prateleira tem controle que não olha a permissão');
+
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  assert.match(mesa, /M\.pode\('estrutura'\) \? itemMenu\('estrutura'/,
+    'a tela Estrutura aparece no menu de quem não pode mexer nela');
+});
+
+/* O menu e o centro têm de conhecer a tela nova: sem uma das duas pontas, o
+ * item existe e abre o vazio, ou a tela existe e ninguém chega nela. */
+test('a tela Estrutura está no menu, na trilha e no centro', () => {
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  assert.match(mesa, /itemMenu\('estrutura', 'estrutura', 'Estrutura'\)/);
+  assert.match(mesa, /st\.tela === 'estrutura' \? \['Ajustes', 'Estrutura'\]/);
+  assert.match(mesa, /st\.tela === 'estrutura' \? M\.telaEstrutura\(cat\)/);
+  /* E ela NÃO é uma tela do quadro: o centro dela é a lista, não o site. */
+  const noQuadro = mesa.match(/var NO_QUADRO = \{([^}]*)\}/);
+  assert.ok(noQuadro && !noQuadro[1].includes('estrutura'), 'a Estrutura entrou nas telas que mostram o site no quadro');
+});
+
+/* OS DOIS DEFEITOS QUE A CONFERÊNCIA NO RUNTIME ACHOU, e que 378 testes de
+ * texto e de função pura não achariam. Ficam aqui para não voltarem.
+ *
+ * 1. As funções do core recebem e devolvem o `site` INTEIRO, para se compor
+ *    umas com as outras; o rascunho guarda UM CAMPO. Sem o `.prateleiras` no
+ *    fim da linha, o campo `prateleiras` guardava um `site` dentro dele, o
+ *    `aplicarRascunho` montava `site.prateleiras.prateleiras`, e a prévia não
+ *    mudava — sem erro nenhum na tela, e com o rascunho dizendo "1 alteração". */
+test('o rascunho da estrutura guarda o campo, e não o site inteiro', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const chamadas = [...base.matchAll(/M\.mudarSite\('(\w+)',([^;]*);/g)];
+  assert.ok(chamadas.length >= 6, 'sumiram escritas da estrutura de mesa-base.js');
+  for (const [, campo, resto] of chamadas) {
+    if (campo === 'destaque') continue;   /* o destaque é um id, não um mapa */
+    assert.ok(resto.includes('.' + campo), 'M.mudarSite(\'' + campo + '\', …) guarda o site inteiro no campo ' + campo);
+  }
+
+  /* E a regra do outro lado: aplicar um rascunho assim tem de montar o mapa no
+   * lugar certo, e o site tem de enxergar a mudança. */
+  const cat = { itens: catalogoPrateleiras };
+  const mapa = GTM.comPrateleira(GTM.siteSaneado(null), 'curtos', { titulo: 'Na correria' }).prateleiras;
+  const efetivo = GTM.aplicarRascunho(cat, [{ alvo: 'site', campo: 'prateleiras', antes: undefined, depois: mapa }]);
+  assert.equal(GTM.prateleiras(efetivo.itens, efetivo.site)[0].titulo, 'Na correria',
+    'o rascunho da estrutura não chega à chegada');
+});
+
+/* 2. Redesenhar no `change` mata o clique que vem logo depois: o `mousedown` no
+ *    botão tira o foco do campo, o `change` dispara ANTES do clique, o
+ *    redesenho troca os nós — e o botão em que a pessoa clicou já não está no
+ *    documento quando o `click` sobe até `el.mesa`. Era um esconder de
+ *    prateleira que simplesmente não acontecia. É primo do defeito 2 da M3: o
+ *    ouvinte está no alto, e quem sai do documento nunca chega lá. */
+test('o campo de texto da estrutura não redesenha ao sair do campo', () => {
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  const change = mesa.match(/addEventListener\('change', function \(ev\) \{([\s\S]*?)\n  \}\);/);
+  assert.ok(change, 'não achei o ouvinte de change em mesa.js');
+  for (const campo of ["'pr-nome'", "'tx-rodape'", "data-texto'", "data-texto-prateleira'"]) {
+    assert.ok(!change[1].includes(campo),
+      'o campo ' + campo + ' voltou a redesenhar no change, e o clique seguinte morre com o nó');
+  }
+});
+
+/* ============================ o histórico (M5) =========================== */
+
+/* A última fase do PLANO-MESA (§3.5): cada publicação deixa um registro do que
+ * mudou e uma cópia inteira do catálogo, e desfazer é um rascunho novo — não um
+ * caminho de gravação à parte. */
+
+/* A ordem das chaves é a fase inteira em miniatura. A listagem do KV é sempre
+ * ASCENDENTE e não tem ordem inversa: com a rev crua na chave, mostrar as 20
+ * publicações mais novas exigiria percorrer todas as páginas até o fim, e o
+ * histórico cresce para sempre. */
+test('a chave do histórico ordena ao contrário; a da versão, em ordem', () => {
+  const revs = [1, 2, 10, 108, 999];
+  const hist = revs.map(GTM.chaveHistorico);
+  assert.deepEqual(hist.slice().sort(), hist.slice().reverse(),
+    'a listagem ascendente do KV não devolveria a rev mais nova primeiro');
+  assert.deepEqual(hist.map(GTM.revDaChaveHistorico), revs, 'a chave não volta a ser rev');
+
+  const ver = revs.map(GTM.chaveVersao);
+  assert.deepEqual(ver.slice().sort(), ver, 'a mais velha não vem primeiro — é ela que sai na retenção');
+  assert.deepEqual(ver.map(GTM.revDaChaveVersao), revs);
+
+  /* Chave estranha na listagem não vira rev zero: vira nada, e quem lê decide. */
+  assert.equal(GTM.revDaChaveHistorico('historico:abc'), null);
+  assert.equal(GTM.revDaChaveVersao('catalogo'), null);
+});
+
+test('o resumo diz o que mudou por tipo, e some com o que é zero', () => {
+  const difs = [
+    { alvo: 'a', campo: 'sinopse' }, { alvo: 'a', campo: 'tema' },
+    { alvo: 'b', campo: 'publicar' },
+    { alvo: 'site', campo: 'prateleiras' },
+    { alvo: 'c', campo: '*', tipo: 'novo' }
+  ];
+  const conta = GTM.contarMudancasPorAlvo(difs);
+  assert.equal(conta.total, 5);
+  assert.equal(conta.titulos, 3, 'dois campos do mesmo título são um título só');
+  assert.equal(conta.estrutura, 1);
+  assert.equal(conta.novos, 1);
+  assert.equal(conta.ajustes, 0);
+  assert.equal(GTM.resumoDeMudancas(conta), '3 títulos · 1 novo · estrutura');
+  assert.equal(GTM.resumoDeMudancas(GTM.contarMudancasPorAlvo([])), 'nada mudou');
+  assert.equal(GTM.resumoDeMudancas(GTM.contarMudancasPorAlvo([{ alvo: 'ajustes', campo: 'arrastoTeto' }])), 'player');
+});
+
+/* Desfazer é um RASCUNHO NOVO: a mudança contrária passa pelo mesmo Publicar,
+ * pela mesma conferência de conflito e pela mesma permissão. O que não cabe no
+ * rascunho — título criado ou removido, campo que a mesa não edita — recebe um
+ * não, em vez de virar uma gravação que ninguém confere. */
+test('desfazer devolve a mudança contrária, e diz não ao que não cabe', () => {
+  assert.deepEqual(GTM.desfazerMudanca({ alvo: 'dof-1', campo: 'sinopse', antes: 'velha', depois: 'nova' }),
+    { alvo: 'dof-1', campo: 'sinopse', valor: 'velha' });
+  assert.deepEqual(GTM.desfazerMudanca({ alvo: 'site', campo: 'destaque', antes: 'enq-1', depois: 'mat-2' }),
+    { alvo: 'site', campo: 'destaque', valor: 'enq-1' });
+  assert.deepEqual(GTM.desfazerMudanca({ alvo: 'ajustes', campo: 'arrastoTeto', antes: 0.4, depois: 0.6 }),
+    { alvo: 'ajustes', campo: 'arrastoTeto', valor: 0.4 });
+
+  /* Campo que não existia antes volta a não existir. */
+  assert.deepEqual(GTM.desfazerMudanca({ alvo: 'dof-1', campo: 'tema', depois: 'novo' }),
+    { alvo: 'dof-1', campo: 'tema', valor: null });
+
+  assert.equal(GTM.desfazerMudanca({ alvo: 'x', campo: '*', tipo: 'novo' }), null, 'título novo não se desfaz por rascunho');
+  assert.equal(GTM.desfazerMudanca({ alvo: 'x', campo: '*', tipo: 'removido' }), null);
+  assert.equal(GTM.desfazerMudanca({ alvo: 'dof-1', campo: 'fonte', antes: {} }), null, 'campo fora da mesa virou desfazível');
+  assert.equal(GTM.desfazerMudanca(null), null);
+});
+
+/* E a mudança contrária entra no rascunho como qualquer outra: mesmo formato,
+ * mesma aplicação, mesmo Publicar. */
+test('a mudança contrária cabe no rascunho sem tradução nenhuma', () => {
+  const cat = { itens: [{ id: 'a', titulo: 'Depois', publicar: true }], site: { destaque: 'a' } };
+  const difs = GTM.diferencasDoCatalogo(
+    { itens: [{ id: 'a', titulo: 'Antes', publicar: true }], site: {} }, cat);
+
+  /* O "antes" da mudança contrária é o que a publicação DEIXOU — `d.depois` —,
+   * e é contra ele que o Publicar confere se outra tela mexeu no meio. */
+  let rascunho = [];
+  for (const d of difs) {
+    const m = GTM.desfazerMudanca(d);
+    if (!m) continue;
+    rascunho = GTM.registrarMudanca(rascunho, { alvo: m.alvo, campo: m.campo, antes: d.depois, depois: m.valor });
+  }
+
+  const voltou = GTM.aplicarRascunho(cat, rascunho);
+  assert.equal(voltou.itens[0].titulo, 'Antes', 'desfazer não devolveu o título de antes');
+  assert.equal(voltou.site.destaque, null, 'desfazer não tirou o destaque que a publicação pôs');
+});
+
+/* Os testes do histórico NO RUNTIME: sobem o PUT e o /api/historico de verdade,
+ * com o KV de mentira que agora tem listagem, metadados e apagamento. */
+
+const catalogoDeTeste = (n) => ({
+  rev: n, versao: 1, itens: [
+    { id: 'a', titulo: 'Um', serie: 'Enquete', publicar: true, sinopse: 'Primeira', fonte },
+    { id: 'b', titulo: 'Dois', serie: 'Enquete', publicar: true, fonte }
+  ]
+});
+
+async function publicar(env, token, mudar) {
+  const atual = (await pedir(env, { caminho: '/api/catalogo?completo=1', token })).corpo;
+  const novo = JSON.parse(JSON.stringify(atual));
+  delete novo.config;
+  mudar(novo);
+  return pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token, corpo: novo });
+}
+
+test('cada publicação deixa registro e cópia, e o resumo vem dos metadados', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+
+  const r1 = await publicar(env, sup.token, (c) => { c.itens[0].sinopse = 'Segunda'; });
+  assert.equal(r1.status, 200);
+  assert.equal(r1.corpo.historico, true, 'a publicação não conseguiu gravar o histórico');
+  assert.equal(r1.corpo.mudancas, 1, 'um campo mudou, e o registro contou outra coisa');
+
+  const chave = GTM.chaveHistorico(r1.corpo.rev);
+  const registro = JSON.parse(env.CATALOGO.dados[chave]);
+  assert.equal(registro.rev, r1.corpo.rev);
+  assert.equal(registro.quem, 'superadmin');
+  assert.ok(registro.mudancas.some(m => m.alvo === 'a' && m.campo === 'sinopse' && m.antes === 'Primeira' && m.depois === 'Segunda'),
+    'o registro não guarda o antes e o depois do campo');
+
+  /* O resumo mora nos METADADOS: é o que faz a linha do tempo custar uma
+   * listagem só, sem abrir registro nenhum. */
+  const meta = env.CATALOGO.metas[chave];
+  assert.equal(meta.rev, r1.corpo.rev);
+  assert.equal(meta.quem, 'superadmin');
+  assert.equal(meta.resumo, '1 título');
+  assert.ok(meta.bytes > 0, 'a medida do documento não foi guardada');
+  assert.ok(JSON.stringify(meta).length < 1024, 'os metadados passaram do 1 KB que o KV dá');
+
+  /* A cópia da rev nova E a do estado que acabou de sair — a segunda uma vez
+   * só, na virada, senão o primeiro "ver como estava" não teria o que mostrar. */
+  assert.ok(env.CATALOGO.dados[GTM.chaveVersao(r1.corpo.rev)], 'não guardou a cópia da rev nova');
+  assert.ok(env.CATALOGO.dados[GTM.chaveVersao(0)], 'não guardou a cópia do estado anterior na virada');
+
+  /* E o `catalogo_anterior` aposentou: quem guarda o passado agora são as 30. */
+  assert.ok(!env.CATALOGO.dados['catalogo_anterior'], 'o catalogo_anterior continua sendo escrito');
+});
+
+test('a linha do tempo vem da mais nova para a mais velha, numa listagem só', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  for (const t of ['Um', 'Dois', 'Três']) await publicar(env, sup.token, (c) => { c.itens[0].tema = t; });
+
+  const r = await pedir(env, { caminho: '/api/historico', token: sup.token });
+  assert.equal(r.status, 200);
+  assert.deepEqual(r.corpo.linha.map(x => x.rev), [3, 2, 1],
+    'a linha do tempo não começa pela publicação mais nova');
+  assert.equal(r.corpo.linha[0].resumo, '1 título');
+  assert.ok(r.corpo.fim, 'a listagem de três publicações veio paginada');
+
+  const um = await pedir(env, { caminho: '/api/historico?rev=2', token: sup.token });
+  assert.equal(um.corpo.registro.rev, 2);
+  assert.equal(um.corpo.temCopia, true);
+  assert.ok(um.corpo.registro.mudancas.some(m => m.campo === 'tema' && m.depois === 'Dois'));
+
+  const copia = await pedir(env, { caminho: '/api/historico?versao=2', token: sup.token });
+  assert.equal(copia.corpo.catalogo.itens[0].tema, 'Dois', 'a cópia não é o catálogo daquela rev');
+
+  const nao = await pedir(env, { caminho: '/api/historico?rev=999', token: sup.token });
+  assert.equal(nao.status, 404);
+  assert.equal((await pedir(env, { caminho: '/api/historico' })).status, 401, 'o histórico abriu sem token');
+});
+
+/* A comparação é no SERVIDOR, e por isso gravação de script entra também — foi
+ * a rev 85 apagando os ajustes do player em silêncio que pediu esta fase. */
+test('gravação que não veio da mesa também deixa rastro', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(Object.assign(catalogoDeTeste(0), { ajustes: { arrastoTeto: 0.6 } })) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+
+  /* Um script que reescreve o catálogo inteiro sem os ajustes. */
+  const r = await pedir(env, {
+    metodo: 'PUT', caminho: '/api/catalogo', token: sup.token,
+    corpo: { rev: 0, versao: 1, itens: catalogoDeTeste(0).itens }
+  });
+  assert.equal(r.status, 200);
+  const registro = JSON.parse(env.CATALOGO.dados[GTM.chaveHistorico(r.corpo.rev)]);
+  const some = registro.mudancas.find(m => m.alvo === 'ajustes' && m.campo === 'arrastoTeto');
+  assert.ok(some, 'o apagamento dos ajustes por script não apareceu no histórico');
+  assert.equal(some.antes, 0.6);
+  assert.equal(some.depois, undefined);
+});
+
+test('passadas as 30, a cópia mais velha sai — e o registro dela fica', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  for (let i = 1; i <= 32; i++) await publicar(env, sup.token, (c) => { c.itens[0].tema = 'tema ' + i; });
+
+  const copias = Object.keys(env.CATALOGO.dados).filter(k => k.startsWith('versao:')).sort();
+  assert.equal(copias.length, 30, 'guardou ' + copias.length + ' cópias, e a conta da §2 é de 30');
+  assert.equal(GTM.revDaChaveVersao(copias[0]), 3, 'as cópias que saíram não foram as mais velhas');
+  assert.equal(GTM.revDaChaveVersao(copias[29]), 32);
+
+  const registros = Object.keys(env.CATALOGO.dados).filter(k => k.startsWith('historico:'));
+  assert.equal(registros.length, 32, 'o registro do que mudou some junto com a cópia');
+
+  const antiga = await pedir(env, { caminho: '/api/historico?rev=1', token: sup.token });
+  assert.equal(antiga.status, 200, 'o registro antigo sumiu');
+  assert.equal(antiga.corpo.temCopia, false, 'a tela não saberia que não dá para ver como estava');
+});
+
+test('restaurar pede a permissão histórico, e as de cada campo que a volta muda', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  await publicar(env, sup.token, (c) => { c.itens[0].sinopse = 'Escrita à mão'; });
+  await publicar(env, sup.token, (c) => { c.itens[0].publicar = false; });
+
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'ana', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  const ana = await entrar(env, 'ana', 'senha-bem-comprida');
+
+  const semPermissao = await pedir(env, { metodo: 'POST', caminho: '/api/historico', token: ana.token, corpo: { restaurar: 1 } });
+  assert.equal(semPermissao.status, 403);
+  assert.equal(semPermissao.corpo.permissao, 'historico');
+
+  /* Com `historico` mas sem `no-ar`, restaurar uma versão que põe título de
+   * volta no ar continua barrado — e o servidor diz qual campo. */
+  const mudou = await pedir(env, { metodo: 'PUT', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'ana', permissoes: ['conteudo', 'historico'] } });
+  assert.equal(mudou.status, 200, 'não consegui dar a permissão de histórico para a conta');
+  const ana2 = await entrar(env, 'ana', 'senha-bem-comprida');
+  const barrada = await pedir(env, { metodo: 'POST', caminho: '/api/historico', token: ana2.token, corpo: { restaurar: 1 } });
+  assert.equal(barrada.status, 403);
+  assert.equal(barrada.corpo.barradas[0].campo, 'publicar');
+
+  const feita = await pedir(env, { metodo: 'POST', caminho: '/api/historico', token: sup.token, corpo: { restaurar: 1 } });
+  assert.equal(feita.status, 200);
+  assert.equal(feita.corpo.rev, 3, 'restaurar tem de andar a rev para a frente, não voltar');
+  assert.equal(feita.corpo.restaurou, 1);
+
+  const agora = (await pedir(env, { caminho: '/api/catalogo?completo=1', token: sup.token })).corpo;
+  assert.equal(agora.itens[0].publicar, true, 'a volta não devolveu o título ao ar');
+  assert.equal(agora.itens[0].sinopse, 'Escrita à mão');
+
+  /* A volta é uma publicação como qualquer outra, e entra no histórico dizendo
+   * de onde veio. */
+  const meta = env.CATALOGO.metas[GTM.chaveHistorico(3)];
+  assert.equal(meta.restaurou, 1);
+  assert.equal((await pedir(env, { caminho: '/api/historico', token: sup.token })).corpo.linha[0].restaurou, 1);
+});
+
+/* O histórico é memória: um erro nele não pode derrubar a publicação que ele
+ * descreve. A resposta diz que o buraco existe, e a tela avisa. */
+test('se o histórico falhar, a publicação continua valendo', async () => {
+  const kv = kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) });
+  kv.list = async () => { throw new Error('KV fora do ar'); };
+  const env = ambiente(kv);
+  const sup = await entrar(env, '', 'senha-do-super');
+
+  const r = await publicar(env, sup.token, (c) => { c.itens[0].tema = 'Assim mesmo'; });
+  assert.equal(r.status, 200);
+  assert.equal(r.corpo.historico, false, 'a publicação não avisou que o histórico ficou para trás');
+  assert.equal(JSON.parse(kv.dados.catalogo).itens[0].tema, 'Assim mesmo', 'a publicação se perdeu junto com o histórico');
+});
+
+/* A tela do histórico. As regras que ela não pode perder são três, e as três
+ * são de PERMISSÃO ou de caminho de gravação — o resto é desenho. */
+test('a tela do histórico desfaz pelo rascunho, e restaura pelo servidor', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+
+  /* 1. Desfazer é um rascunho novo (§3.5). Se isto virar uma chamada de API,
+   *    nasce um segundo caminho de gravação — e uma segunda conferência de
+   *    permissão para manter. */
+  const desfazer = base.match(/M\.desfazerDoHistorico = function \(dif\) \{([\s\S]*?)\n  \};/);
+  assert.ok(desfazer, 'não achei M.desfazerDoHistorico');
+  assert.match(desfazer[1], /GTM\.desfazerMudanca\(dif\)/);
+  assert.match(desfazer[1], /M\.mudar\(m\.alvo, m\.campo, m\.valor\)/, 'desfazer deixou de entrar no rascunho');
+  assert.ok(!/fetch|M\.api\(/.test(desfazer[1]), 'desfazer virou uma gravação própria, fora do Publicar');
+
+  /* 2. Restaurar é do servidor, e passa a rev que a tela leu — duas telas
+   *    abertas não se atropelam mais aqui do que no Publicar. */
+  const restaurar = base.match(/M\.restaurarVersao = function \(rev\) \{([\s\S]*?)\n  \};/);
+  assert.ok(restaurar, 'não achei M.restaurarVersao');
+  assert.match(restaurar[1], /method: 'POST'/);
+  assert.match(restaurar[1], /restaurar: rev, rev: M\.st\.servidor\.rev/, 'a restauração não leva a rev que a tela leu');
+  assert.match(restaurar[1], /M\.st\.rascunho\.length/, 'restaurar por cima de um rascunho aberto não avisa nada');
+
+  /* 3. O botão de desfazer só aparece para quem pode mudar AQUELE campo, e o
+   *    de restaurar só para quem tem `historico`. A recusa de verdade é do
+   *    servidor; isto é para não oferecer o que vai ser negado. */
+  assert.match(telas, /var podeDesfazer = !!GTM\.desfazerMudanca\(dif\) && M\.pode\(dif\.permissao\)/);
+  assert.match(telas, /'data-acao': 'hist-restaurar'[\s\S]{0,120}disabled: !M\.pode\('historico'\)/);
+
+  /* E a tela existe nas três pontas: menu, trilha e centro. */
+  assert.match(mesa, /itemMenu\('historico', 'desfazer', 'Histórico'\)/);
+  assert.match(mesa, /st\.tela === 'historico' \? \['Catálogo', 'Histórico'\]/);
+  assert.match(mesa, /st\.tela === 'historico' \? M\.telaHistorico\(cat\)/);
+  const noQuadro = mesa.match(/var NO_QUADRO = \{([^}]*)\}/);
+  assert.ok(noQuadro && !noQuadro[1].includes('historico'));
+});
+
+/* Ver o histórico é de TODO admin (§3.4: todo admin vê tudo). Só a restauração
+ * pede permissão — e quem a nega é o servidor, no POST. */
+test('ver o histórico é de todo admin; restaurar é que pede permissão', () => {
+  const rota = semComentarios(lerTexto(path.join(SITE, 'functions', 'api', 'historico.js')));
+  const get = rota.match(/export async function onRequestGet\(([\s\S]*?)\n\}/);
+  assert.ok(get, 'não achei o GET do histórico');
+  assert.ok(!/contaPode/.test(get[1]), 'o GET do histórico passou a exigir permissão, e todo admin vê tudo');
+  assert.match(get[1], /if \(!data\.admin\) return json\(401/);
+
+  const post = rota.match(/export async function onRequestPost\(([\s\S]*?)\n\}/);
+  assert.ok(post, 'não achei o POST do histórico');
+  assert.match(post[1], /GTM\.contaPode\(data\.conta, 'historico'\)/);
+  assert.match(post[1], /GTM\.proibidas\(data\.conta, difs\)/,
+    'restaurar deixou de conferir campo a campo: `historico` abriria a porta E daria poderes');
+
+  /* O menu não esconde o histórico de ninguém. */
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  assert.ok(!/M\.pode\('historico'\) \? itemMenu\('historico'/.test(mesa),
+    'a tela do histórico sumiu do menu de quem não restaura — mas ver é de todo admin');
+});
+
+/* O registro é gravado DEPOIS do catálogo e dentro de um try: histórico é
+ * memória, e memória que impede de trabalhar é pior do que memória com buraco.
+ * O teste de runtime prova o comportamento; este cobra a ordem no código, que é
+ * o que garante que a publicação já está gravada quando o rastro falha. */
+test('o histórico é gravado depois do catálogo, e o erro dele fica contido', () => {
+  const api = semComentarios(lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js')));
+  const put = api.match(/export async function onRequestPut\(([\s\S]*?)\n\}/);
+  assert.ok(put, 'não achei o PUT');
+  const posGravacao = put[1].indexOf("env.CATALOGO.put(CHAVE, gravado)");
+  const posRegistro = put[1].indexOf('registrarPublicacao(');
+  assert.ok(posGravacao > 0 && posRegistro > posGravacao, 'o histórico passou a ser gravado antes do catálogo');
+  assert.match(put[1].slice(posGravacao), /try \{[\s\S]*registrarPublicacao\([\s\S]*catch/,
+    'um erro do histórico voltou a derrubar a publicação');
+  assert.ok(!/CHAVE_BACKUP/.test(api), 'o catalogo_anterior voltou a ser escrito');
+});
+
+/* O PRIMEIRO DEFEITO QUE O HISTÓRICO ACHOU, no primeiro ensaio dele (M5), e
+ * que estava no ar desde que os ajustes existem.
+ *
+ * `Number(null)` é `0`, e `0` é uma escolha VÁLIDA em `controlesEspera` — quer
+ * dizer "os controles nunca somem". Então um ajuste NÃO ESCOLHIDO (null no
+ * documento) voltava como `0` no GET; a tela devolvia esse `0` no PUT
+ * seguinte, e o padrão do player virava "nunca some", sem ninguém pedir.
+ *
+ * Só apareceu porque a linha do tempo mostrou "player" numa publicação que
+ * mexeu numa sinopse — que é exatamente o que a §3.5 prometia: a comparação
+ * está no servidor, e mudança que ninguém fez fica visível. */
+test('ajuste não escolhido volta como nada, e não como zero', async () => {
+  const env = ambiente(kvDeMentira({
+    catalogo: JSON.stringify({ rev: 7, versao: 1, itens: [], ajustes: { arrastoTeto: null, controlesEspera: null } })
+  }));
+
+  const publico = await pedir(env, { caminho: '/api/catalogo' });
+  assert.equal(publico.corpo.ajustes.controlesEspera, null,
+    'o ajuste vazio voltou como 0 — e 0 quer dizer "os controles nunca somem"');
+  assert.equal(publico.corpo.ajustes.arrastoTeto, null);
+
+  /* E o round-trip não inventa mudança: publicar o que o GET devolveu não pode
+   * aparecer no histórico como uma mexida no player. */
+  const sup = await entrar(env, '', 'senha-do-super');
+  const completo = (await pedir(env, { caminho: '/api/catalogo?completo=1', token: sup.token })).corpo;
+  delete completo.config;
+  const r = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: sup.token, corpo: completo });
+  assert.equal(r.status, 200);
+  assert.equal(r.corpo.mudancas, 0, 'publicar sem mexer em nada gravou uma mudança fantasma');
+
+  /* O zero de verdade continua atravessando: ele é uma escolha. */
+  const comZero = ambiente(kvDeMentira({
+    catalogo: JSON.stringify({ rev: 1, versao: 1, itens: [], ajustes: { arrastoTeto: 0.4, controlesEspera: 0 } })
+  }));
+  const r2 = await pedir(comZero, { caminho: '/api/catalogo' });
+  assert.equal(r2.corpo.ajustes.controlesEspera, 0, 'o "nunca some" escolhido de propósito foi apagado');
+});
+
+/* AS DUAS ARESTAS QUE O PRIMEIRO ENSAIO DO HISTÓRICO MOSTROU. As duas são da
+ * mesma família: um valor que a resposta do GET inventa, a tela devolve no PUT
+ * e o servidor guarda — e que, sem histórico, ninguém veria. */
+
+/* 1. Estrutura vazia não é dado. O GET projeta `site` mesmo sem nada escolhido
+ *    (é o que dá forma ao cliente), a tela devolve essa projeção no PUT, e sem
+ *    a limpeza toda primeira publicação inventava o campo e uma linha de
+ *    histórico dizendo "estrutura" numa publicação que mexeu numa sinopse. */
+test('publicar sem escolher estrutura não inventa o campo site', async () => {
+  const env = ambiente(kvDeMentira());
+  const sup = await entrar(env, '', 'senha-do-super');
+
+  const vazio = (await pedir(env, { caminho: '/api/catalogo' })).corpo;
+  assert.deepEqual(vazio.site, { destaque: null, prateleiras: {}, classes: {}, textos: {} },
+    'o catálogo vazio deixou de projetar a estrutura');
+
+  /* Devolver ao PUT exatamente o que o GET deu não pode gravar nada novo. */
+  const r = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: sup.token,
+    corpo: { rev: 0, versao: 1, itens: [], site: vazio.site } });
+  assert.equal(r.status, 200);
+  const guardado = JSON.parse(env.CATALOGO.dados.catalogo);
+  assert.ok(!('site' in guardado), 'a estrutura vazia virou campo no KV');
+  assert.equal(r.corpo.mudancas, 0, 'a estrutura vazia entrou no histórico como mudança');
+
+  /* E a escolhida é guardada SANEADA, com as chaves em ordem estável — é
+   * contra esse valor que o Publicar confere o "antes" na próxima vez. */
+  const r2 = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: sup.token,
+    corpo: { rev: 1, versao: 1, itens: [], site: { classes: { B: 'curta', A: 'pedagogica' }, lixo: 1 } } });
+  assert.equal(r2.status, 200);
+  const comEstrutura = JSON.parse(env.CATALOGO.dados.catalogo);
+  assert.deepEqual(Object.keys(comEstrutura.site.classes), ['A', 'B'], 'a estrutura foi guardada fora de ordem');
+  assert.ok(!('lixo' in comEstrutura.site));
+});
+
+/* 2. De onde a volta veio é assunto do histórico, não do catálogo. Um campo
+ *    `restaurou` guardado no documento viajaria em toda gravação seguinte,
+ *    apareceria como diferença na publicação seguinte e voltaria junto na
+ *    próxima restauração. */
+test('restaurar não deixa marca no catálogo — a marca fica no histórico', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  await publicar(env, sup.token, (c) => { c.itens[0].tema = 'Depois'; });
+
+  const volta = await pedir(env, { metodo: 'POST', caminho: '/api/historico', token: sup.token, corpo: { restaurar: 0 } });
+  assert.equal(volta.status, 200);
+
+  const guardado = JSON.parse(env.CATALOGO.dados.catalogo);
+  assert.ok(!('restaurou' in guardado), 'a marca da restauração ficou no catálogo');
+  assert.equal(guardado.itens[0].tema, undefined, 'a volta não desfez o que a publicação tinha feito');
+
+  const registro = JSON.parse(env.CATALOGO.dados[GTM.chaveHistorico(volta.corpo.rev)]);
+  assert.equal(registro.restaurou, 0, 'o histórico não guardou de onde a volta veio');
+  assert.ok(!registro.mudancas.some(m => m.campo === 'restaurou'), 'a marca virou uma diferença fantasma');
+
+  /* E a publicação seguinte não carrega marca nenhuma. */
+  const depois = await publicar(env, sup.token, (c) => { c.itens[0].tema = 'De novo'; });
+  const seguinte = JSON.parse(env.CATALOGO.dados[GTM.chaveHistorico(depois.corpo.rev)]);
+  assert.equal(seguinte.restaurou, undefined);
+  assert.equal(seguinte.total, 1, 'a publicação depois da volta trouxe diferença de brinde');
 });

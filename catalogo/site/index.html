@@ -22,33 +22,60 @@
 </head>
 <body>
 
-<a class="pular" href="#conteudo">Pular para o conteúdo</a>
+<!-- A SENTINELA do cabeçalho (D5): 1 px no alto do documento. Enquanto ela está
+     na tela, a página está no alto e o cabeçalho fica sem fundo; quando ela
+     sai, o cabeçalho fica sólido. Quem avisa é um IntersectionObserver no
+     app.js — nenhum ouvinte de `scroll`. -->
+<div class="topo-sentinela" id="topo-sentinela" aria-hidden="true"></div>
 
-<header class="topo">
+<a class="pular" href="#conteudo" id="pular">Pular para o conteúdo</a>
+
+<!-- O CABEÇALHO DE STREAMING (D5): o logo, dois links e a busca, numa linha
+     só. `topo-flutuante` é o que o deixa sem fundo no alto da página — o
+     /admin usa o `.topo` puro, que continua sólido.
+
+     Os chips de série SAÍRAM daqui (decisão D8): foram para a página Séries e
+     para o filtro da grade. A linha deles nascia vazia e empurrava a página ao
+     ganhar os botões, e é por isso que o cabeçalho não tem mais nenhuma caixa
+     que o JS encha depois de o catálogo chegar. -->
+<header class="topo topo-flutuante" id="topo">
   <div class="limite topo-linha">
-    <!-- O logo troca com o tema pela mesma media query do style.css. Os dois
-         arquivos são a imagem de compartilhamento do Lucas recortada no logo:
-         o "Cabeçalho" que veio junto tem o texto da pílula em Calibri viva, e
-         celular não tem Calibri. -->
-    <a class="marca" href="#/" id="ir-inicio">
-      <picture>
-        <source srcset="logo-fundo-escuro.svg" media="(prefers-color-scheme: dark)">
-        <img class="marca-logo" src="logo-fundo-claro.svg" width="117" height="48"
-             alt="Goiás Tec + — catálogo interno">
-      </picture>
+    <!-- O logo é a imagem de compartilhamento do Lucas recortada no logo: o
+         "Cabeçalho" que veio junto tem o texto da pílula em Calibri viva, e
+         celular não tem Calibri.
+         O <picture> de duas fontes saiu na D1 (14/09): com um tema só, não há
+         o que escolher. O `logo-fundo-claro.svg` continua no site — é o que
+         serve a quem exportar ou imprimir a marca sobre branco, e sai do ar
+         junto com a decisão de ter tema claro, não antes. -->
+    <a class="marca" href="#/" data-inicio>
+      <img class="marca-logo" src="logo-fundo-escuro.svg" width="117" height="48"
+           alt="Goiás Tec + — catálogo interno">
     </a>
-    <div class="busca">
+    <nav class="topo-nav" aria-label="Seções do catálogo">
+      <a class="topo-link" href="#/" data-inicio>Início</a>
+      <a class="topo-link" href="#/series">Séries</a>
+    </nav>
+    <div class="busca" id="busca-caixa">
       <label class="pular" for="busca">Buscar no catálogo</label>
       <input id="busca" type="search" autocomplete="off" spellcheck="false"
              placeholder="Buscar por título, série, tema ou tag…">
+      <!-- Só no celular, com a busca aberta. Ícone é <path> em currentColor:
+           sem fonte de ícone, sem CDN. -->
+      <button type="button" class="topo-botao busca-fechar" id="busca-fechar" aria-label="Fechar a busca">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M6 6 L18 18 M18 6 L6 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
     </div>
-  </div>
-  <div class="limite">
-    <div class="chips" id="chips" role="group" aria-label="Filtrar por série"></div>
+    <!-- Só no celular: o campo recolhido atrás de um botão. Aberto, ele toma o
+         lugar do logo e dos links, e a linha continua com a mesma altura. -->
+    <button type="button" class="topo-botao busca-abrir" id="busca-abrir" aria-controls="busca-caixa" aria-expanded="false" aria-label="Buscar no catálogo">
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M10.5 4 a6.5 6.5 0 1 0 0 13 a6.5 6.5 0 1 0 0 -13 Z M15.2 15.2 L20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
   </div>
 </header>
 
-<main id="conteudo" class="limite">
+<!-- `tabindex="-1"` é o que dá ao atalho de pular um lugar onde pousar: o
+     <main> aceita foco pelo script, e não entra na ordem do Tab. -->
+<main id="conteudo" class="limite" tabindex="-1">
   <div id="avisos"></div>
   <div id="conteudo-grade"></div>
   <div id="conteudo-ficha" hidden></div>

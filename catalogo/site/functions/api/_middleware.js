@@ -1,18 +1,37 @@
 /* functions/api/_middleware.js — roda antes de toda função em /api/*.
  *
  * Faz três coisas:
- *   1. decide se a requisição é do admin (Bearer token emitido por /api/login);
- *   2. barra o que não for público — o padrão é "exige admin", então uma função
- *      nova nasce protegida em vez de nascer aberta;
+ *   1. descobre DE QUEM é a requisição (`data.conta`) e o que essa conta pode;
+ *   2. barra o que não for público — o padrão é "exige conta", então uma
+ *      função nova nasce protegida em vez de nascer aberta;
  *   3. entrega em `data.bunny` o acesso à API do Bunny, único lugar do projeto
  *      onde a AccessKey existe. Ela nunca é devolvida ao navegador.
  *
  * `_middleware.js` é o único nome de arquivo que o Pages trata como middleware
  * e não como rota — por isso os utilitários compartilhados moram aqui.
+ *
+ * CONTAS (M2, 16/09). O superadmin é a senha do ambiente (`ADMIN_PASSWORD`) e
+ * pode tudo; ele cria as outras contas, que moram no KV com permissões
+ * escolhidas uma a uma. A conferência de verdade é no servidor: o PUT do
+ * catálogo compara o documento velho com o novo e recusa campo que a conta não
+ * pode mudar (design/PLANO-MESA.md §3.4).
  */
+import GTM from '../../catalogo-core.js';
 
 const ROTULO_TOKEN = 'gtm-admin:';
 const VALIDADE_TOKEN_S = 8 * 60 * 60;   /* 8 h: uma jornada de trabalho */
+const CHAVE_ADMINS = 'admins';
+const CHAVE_AUTORIZACOES = 'autorizacoes';
+
+/* PBKDF2 custa CPU, e o plano gratuito da Cloudflare dá 10 ms por requisição
+ * (conferido na documentação em 15/09). Medido aqui: 10 mil iterações custam
+ * ~5 ms; 100 mil custam ~35 ms e estourariam o login.
+ *
+ * O número fica GRAVADO em cada conta (`senha.iter`): dá para subi-lo pela
+ * variável SENHA_ITERACOES no dia em que o projeto for para o plano pago, sem
+ * invalidar nenhuma senha já guardada. As senhas nascem sorteadas pela mesa,
+ * com 16 caracteres — é isso que carrega a segurança aqui, não o número. */
+const ITERACOES_PADRAO = 10000;
 
 export function json(status, corpo, extras) {
   return new Response(JSON.stringify(corpo), {
@@ -28,6 +47,12 @@ const enc = new TextEncoder();
 
 function hex(buffer) {
   return [...new Uint8Array(buffer)].map(b => b.toString(16).padStart(2, '0')).join('');
+}
+
+function deHex(texto) {
+  const bytes = new Uint8Array(Math.floor(String(texto || '').length / 2));
+  for (let i = 0; i < bytes.length; i++) bytes[i] = parseInt(texto.substr(i * 2, 2), 16);
+  return bytes;
 }
 
 /* Comparação sem vazar o ponto da divergência pelo tempo de execução. */
@@ -47,25 +72,160 @@ async function assinarHmac(segredo, mensagem) {
   return hex(await crypto.subtle.sign('HMAC', chave, enc.encode(mensagem)));
 }
 
-export async function emitirToken(senha) {
-  const expira = Math.floor(Date.now() / 1000) + VALIDADE_TOKEN_S;
-  const assinatura = await assinarHmac(senha, ROTULO_TOKEN + expira);
-  return { token: expira + '.' + assinatura, expira };
+const agora = () => Math.floor(Date.now() / 1000);
+
+/* ------------------------------------------------------------------ contas */
+
+export function contaSuper() {
+  return { usuario: 'superadmin', nome: 'Superadmin', super: true, permissoes: GTM.PERMISSOES.slice(), limiteEnvio: null };
 }
 
-async function tokenValido(token, senha) {
-  if (!token || typeof token !== 'string') return false;
+export async function lerContas(env) {
+  if (!env.CATALOGO) return { contas: [] };
+  const guardado = await env.CATALOGO.get(CHAVE_ADMINS, 'json');
+  return guardado && Array.isArray(guardado.contas) ? guardado : { contas: [] };
+}
+
+export async function gravarContas(env, dados) {
+  await env.CATALOGO.put(CHAVE_ADMINS, JSON.stringify({ contas: dados.contas || [] }));
+}
+
+export function acharConta(dados, usuario) {
+  const alvo = String(usuario || '').trim().toLowerCase();
+  return ((dados && dados.contas) || []).find(c => c && c.usuario === alvo) || null;
+}
+
+/* Some cada vídeo criado com sucesso: é o que o limite de "máximo de vídeos"
+ * (limiteEnvio, M2+) confere antes de deixar subir o próximo. */
+export async function registrarEnvio(env, usuario) {
+  const dados = await lerContas(env);
+  const conta = acharConta(dados, usuario);
+  if (!conta) return;
+  conta.enviosContagem = (conta.enviosContagem || 0) + 1;
+  await gravarContas(env, dados);
+}
+
+/* --------------------------------------------------- pedidos de autorização
+ *
+ * Quando `limiteEnvio.autorizacaoManual` está ligado numa conta, o envio não
+ * cria o vídeo no Bunny na hora: fica um pedido aqui, esperando o superadmin
+ * aprovar ou recusar (/api/autorizacoes). Nada é gasto no Bunny sem aprovação.
+ */
+export async function lerAutorizacoes(env) {
+  if (!env.CATALOGO) return { pedidos: [] };
+  const guardado = await env.CATALOGO.get(CHAVE_AUTORIZACOES, 'json');
+  return guardado && Array.isArray(guardado.pedidos) ? guardado : { pedidos: [] };
+}
+
+export async function gravarAutorizacoes(env, dados) {
+  await env.CATALOGO.put(CHAVE_AUTORIZACOES, JSON.stringify({ pedidos: dados.pedidos || [] }));
+}
+
+export function acharPedido(dados, id) {
+  const alvo = String(id || '');
+  return ((dados && dados.pedidos) || []).find(p => p && p.id === alvo) || null;
+}
+
+export function idPedido() {
+  return hex(crypto.getRandomValues(new Uint8Array(12)));
+}
+
+export function iteracoesDe(env) {
+  const n = Number(env && env.SENHA_ITERACOES);
+  return Number.isFinite(n) && n >= 1000 ? Math.floor(n) : ITERACOES_PADRAO;
+}
+
+async function derivar(senha, sal, iteracoes) {
+  const chave = await crypto.subtle.importKey('raw', enc.encode(String(senha)), 'PBKDF2', false, ['deriveBits']);
+  return new Uint8Array(await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', salt: sal, iterations: iteracoes, hash: 'SHA-256' }, chave, 256));
+}
+
+export async function hashSenha(senha, iteracoes) {
+  const sal = crypto.getRandomValues(new Uint8Array(16));
+  const iter = iteracoes || ITERACOES_PADRAO;
+  return { alg: 'PBKDF2-SHA256', iter, sal: hex(sal), hash: hex(await derivar(senha, sal, iter)) };
+}
+
+/* Conta que não existe custa o MESMO que conta que existe: sem isto, o tempo
+ * de resposta diria quais usuários existem. */
+export async function conferirSenha(senha, registro) {
+  if (!registro || !registro.sal || !registro.hash) {
+    await derivar(String(senha || ''), new Uint8Array(16), ITERACOES_PADRAO);
+    return false;
+  }
+  const hash = await derivar(senha, deHex(registro.sal), registro.iter || ITERACOES_PADRAO);
+  return iguaisEmTempoConstante(hex(hash), registro.hash);
+}
+
+/* ------------------------------------------------------------------ token */
+
+export async function emitirToken(env, conta) {
+  const expira = agora() + VALIDADE_TOKEN_S;
+  const versao = conta.super ? 0 : (conta.versao || 1);
+  const assinatura = await assinarHmac(env.ADMIN_PASSWORD, ROTULO_TOKEN + conta.usuario + ':' + expira + ':' + versao);
+  return {
+    token: ['v2', conta.usuario, expira, versao, assinatura].join('.'),
+    expira,
+    usuario: conta.usuario,
+    nome: conta.nome || conta.usuario,
+    super: conta.super === true,
+    permissoes: conta.super === true ? GTM.PERMISSOES.slice() : (conta.permissoes || [])
+  };
+}
+
+/* O token de ANTES das contas (`expira.assinatura`) continua valendo, e vale
+ * como superadmin: é o que mantém os scripts de carga e as sessões abertas
+ * funcionando no dia da virada, sem ninguém entrar de novo. */
+async function tokenLegado(token, senha) {
   const partes = token.split('.');
-  if (partes.length !== 2) return false;
   const expira = Number(partes[0]);
-  if (!Number.isFinite(expira) || expira < Math.floor(Date.now() / 1000)) return false;
-  const esperado = await assinarHmac(senha, ROTULO_TOKEN + expira);
-  return iguaisEmTempoConstante(partes[1], esperado);
+  if (!Number.isFinite(expira) || expira < agora()) return false;
+  return iguaisEmTempoConstante(partes[1], await assinarHmac(senha, ROTULO_TOKEN + expira));
 }
 
-async function sha256hex(texto) {
-  return hex(await crypto.subtle.digest('SHA-256', enc.encode(texto)));
+async function contaDoToken(token, env) {
+  if (!token || typeof token !== 'string') return null;
+  const partes = token.split('.');
+  if (partes.length === 2) return (await tokenLegado(token, env.ADMIN_PASSWORD)) ? contaSuper() : null;
+  if (partes.length !== 5 || partes[0] !== 'v2') return null;
+
+  const [, usuario, expiraTexto, versaoTexto, assinatura] = partes;
+  const expira = Number(expiraTexto);
+  if (!Number.isFinite(expira) || expira < agora()) return null;
+  const esperado = await assinarHmac(env.ADMIN_PASSWORD, ROTULO_TOKEN + usuario + ':' + expira + ':' + versaoTexto);
+  if (!iguaisEmTempoConstante(assinatura, esperado)) return null;
+
+  if (usuario === 'superadmin') return contaSuper();
+
+  /* A conta é lida a cada requisição (uma leitura de KV). Tirar uma permissão,
+   * desativar a conta ou trocar a senha sobe a `versao` — e o token de antes
+   * para de valer no pedido seguinte, não daqui a 8 horas. */
+  const conta = acharConta(await lerContas(env), usuario);
+  if (!conta || conta.ativa === false || String(conta.versao || 1) !== versaoTexto) return null;
+  return {
+    usuario: conta.usuario,
+    nome: conta.nome || conta.usuario,
+    super: false,
+    permissoes: conta.permissoes || [],
+    versao: conta.versao || 1,
+    limiteEnvio: conta.limiteEnvio || null
+  };
 }
+
+export function pode(conta, permissao) {
+  return GTM.contaPode(conta, permissao);
+}
+
+/* Resposta única para "a sua conta não faz isso", para a mesa poder explicar. */
+export function semPermissao(permissao) {
+  return json(403, {
+    erro: 'esta conta não tem a permissão “' + (GTM.ROTULO_PERMISSAO[permissao] || permissao) + '”',
+    permissao
+  });
+}
+
+/* --------------------------------------------------------------- o Bunny */
 
 function criarClienteBunny(env) {
   const libraryId = String(env.BUNNY_LIBRARY_ID || '');
@@ -86,7 +246,7 @@ function criarClienteBunny(env) {
     /* Assinatura de uso único do upload TUS.
      * expire é UNIX em SEGUNDOS — milissegundos invalidam a assinatura. */
     async assinarUpload(videoId, expira) {
-      return sha256hex(libraryId + apiKey + expira + videoId);
+      return hex(await crypto.subtle.digest('SHA-256', enc.encode(libraryId + apiKey + expira + videoId)));
     }
   };
 }
@@ -101,11 +261,12 @@ export async function onRequest(context) {
 
   const cabecalho = request.headers.get('authorization') || '';
   const token = cabecalho.toLowerCase().startsWith('bearer ') ? cabecalho.slice(7).trim() : '';
-  data.admin = await tokenValido(token, env.ADMIN_PASSWORD);
+  data.conta = await contaDoToken(token, env);
+  data.admin = !!data.conta;
   data.bunny = criarClienteBunny(env);
 
   /* Aberto ao público interno: o login e a leitura do catálogo. Todo o resto
-   * exige admin — inclusive rotas que ainda nem existem. */
+   * exige conta — inclusive rotas que ainda nem existem. */
   const publico = rota === '/api/login' ||
     (rota === '/api/catalogo' && request.method === 'GET');
 
