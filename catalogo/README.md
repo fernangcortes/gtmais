@@ -20,9 +20,13 @@ que vai para o ar.
 catalogo/
 ├── site/                      ← ISTO, e só isto, é publicado
 │   ├── index.html             catálogo (público interno)
-│   ├── admin.html             área de administração
+│   ├── admin.html             a mesa de curadoria (o /admin)
 │   ├── app.js                 grade, busca, ficha do título, lista de capítulos
-│   ├── admin.js               login, upload TUS, formulário, edição
+│   ├── mesa-base.js           sessão, API, rascunho, Publicar, permissões
+│   ├── mesa-painel.js         a coluna da direita: visão geral e inspetor
+│   ├── mesa-telas.js          catálogo, envio, capa, contas, pendências, estrutura, histórico
+│   ├── mesa.js                menu, barra, o site no quadro, eventos
+│   ├── mesa.css
 │   ├── catalogo-core.js       funções puras, compartilhadas com os testes
 │   ├── style.css
 │   ├── robots.txt
@@ -30,6 +34,10 @@ catalogo/
 │       ├── _middleware.js     autenticação + acesso ao Bunny (a AccessKey mora aqui)
 │       ├── login.js           POST /api/login
 │       ├── catalogo.js        GET público / GET completo / PUT autenticado
+│       ├── historico.js       linha do tempo, cópias e a restauração
+│       ├── contas.js          contas de admin (só o superadmin)
+│       ├── conta.js           a própria conta e a própria senha
+│       ├── autorizacoes.js    pedidos de envio que esperam aprovação
 │       ├── upload-token.js    cria o vídeo e assina o upload TUS
 │       └── midia.js           status do encoding, capa e legenda
 ├── scripts/                   ferramentas de carga — NÃO são publicadas
@@ -56,10 +64,10 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test                  # 283 testes, sem rede nem credenciais
+node --test tests/catalogo.test.js   # 396 testes, sem rede nem credenciais
 ```
 
-Fora isso, a manutenção do catálogo é pela **tela de administração** (`/admin.html`), não por
+Fora isso, a manutenção do catálogo é pela **mesa de curadoria** (`/admin.html`), não por
 script e não por planilha — ver [Manutenção do catálogo](#manutenção-do-catálogo).
 
 ### Publicar uma alteração no site
@@ -169,18 +177,34 @@ curl -i -X PUT https://goias-tec-mais.pages.dev/api/catalogo -d '{"itens":[]}'
 
 ## Manutenção do catálogo
 
-O fluxo do dia a dia é a **tela de administração** (`/admin.html`):
+O fluxo do dia a dia é a **mesa de curadoria** (`/admin.html`): menu à esquerda, o site de
+verdade no meio — dentro de um quadro, com o rascunho aplicado — e o painel de edição à direita.
 
+- **Site**: o clique escolhe, o duplo clique abre a ficha. O que está escolhido se edita no painel.
+- **Todos os títulos**: buscar, filtrar, editar em lote, pôr e tirar do ar.
 - **Enviar título**: arquivo → upload direto ao Bunny com barra de progresso e retomada →
-  formulário de metadados → entra no catálogo.
-- **Catálogo**: buscar, editar metadados, publicar/despublicar, confirmar sinopses.
+  metadados → entra no catálogo.
+- **Filas de trabalho**: sinopses a revisar, pendências e sem sinopse, uma a uma e pelo teclado.
+- **Estrutura**: o nome, a ordem e o esconder das prateleiras da chegada, a classe de cada série,
+  o título em destaque e os textos fixos do site.
+- **Histórico**: cada publicação, o que ela mudou campo a campo, e de onde dá para voltar.
+- **Player** e **Contas**: os ajustes do player, e as contas de admin com o que cada uma pode fazer.
+
+**Nada vai ao ar sozinho.** O que se edita entra num rascunho, que fica no navegador de quem
+edita e sobrevive a fechar a aba; o botão **Publicar** relê o catálogo, confere campo a campo que
+o valor de antes ainda é o do servidor e grava tudo num PUT só.
 
 Editar a sinopse à mão já marca `sinopse_origem: "revisada"` — revisar é editar ou clicar em
 "Confirmar sinopse". O filtro **"Só sinopses não revisadas"** transforma a revisão numa fila.
 
 Duas telas abertas ao mesmo tempo não se sobrescrevem: cada gravação carrega o `rev` que leu, e o
-servidor recusa com 409 se o catálogo mudou no meio. O estado anterior fica no KV em
-`catalogo_anterior`.
+servidor recusa com 409 se o catálogo mudou no meio — e o Publicar diz QUAL campo mudou, e deixa
+escolher. O estado anterior fica no KV nas 30 últimas cópias (`versao:<rev>`), e o que mudou em
+cada publicação fica em `historico:<rev>` — inclusive o que foi gravado por script, porque a
+comparação é do servidor.
+
+**Quem recusa é o servidor.** O PUT compara o documento velho com o novo e nega o que a conta não
+pode mudar, campo a campo; a mesa esconder o botão é conveniência, não segurança.
 
 Excluir de vez não existe por opção: despublicar já resolve e é reversível.
 
