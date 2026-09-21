@@ -263,6 +263,19 @@ body { margin: 0; background: var(--mesa-fundo); color: var(--texto); font: 14px
 .a-tabela tr.sel td:first-child { box-shadow: inset 3px 0 0 var(--marca-ouro); }
 .a-tabela tr.fantasma .t-texto b { color: var(--texto-fraco); }
 .a-tabela .num { text-align: right; }
+/* O rótulo do cabeçalho é um botão que ordena, e ele toma a célula inteira: a
+   mira é a coluna, não a palavra. As margens negativas cabem dentro do padding
+   do <th> (8px 10px), e por isso a largura pede os 12px de volta — a coluna
+   não anda um pixel, e o alvo de clique fica com a altura toda da linha.
+   A coluna ordenada se distingue pelo texto cheio, e não pelo ouro da marca —
+   ele é reservado ao que está em edição (o cabeçalho deste arquivo). */
+.th-ordem { display: flex; align-items: center; gap: 6px; width: calc(100% + 12px); margin: -4px -6px; padding: 4px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; text-align: inherit; cursor: pointer; }
+.a-tabela th.num .th-ordem { justify-content: flex-end; }
+.th-ordem:hover { background: var(--painel-alto); }
+.th-ordem:hover, .th-ordem.ativa { color: var(--texto); }
+.th-seta { font-size: 11px; opacity: 0; }
+.th-ordem:hover .th-seta, .th-ordem:focus-visible .th-seta { opacity: .55; }
+.th-ordem.ativa .th-seta { opacity: 1; }
 .col-marca { width: 36px; }
 .t-titulo { display: flex; align-items: center; gap: 10px; min-width: 280px; }
 .t-capa { flex: none; width: 64px; aspect-ratio: 16 / 9; overflow: hidden; border-radius: 4px; background: var(--painel-alto); }

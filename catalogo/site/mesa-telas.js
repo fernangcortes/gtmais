@@ -25,10 +25,24 @@
   ];
   M.FILTROS = FILTROS;
 
+  /* As colunas da tabela, na ordem do <thead>. `ordem` é a chave que
+   * `GTM.ordenarPor` conhece — sem ela a coluna não ordena, que é o caso da
+   * primeira, onde só mora a caixinha de marcar. */
+  var COLUNAS = [
+    { rotulo: '', ordem: '' },
+    { rotulo: 'Título', ordem: 'titulo' },
+    { rotulo: 'T · E', ordem: 'episodio' },
+    { rotulo: 'Duração', ordem: 'duracao', num: true },
+    { rotulo: 'Sinopse', ordem: 'sinopse' },
+    { rotulo: 'Pendência', ordem: 'pendencia' },
+    { rotulo: 'No ar', ordem: 'no-ar' }
+  ];
+  M.COLUNAS = COLUNAS;
+
   M.linhasCatalogo = function (cat) {
     var st = M.st;
     var regra = (FILTROS.find(function (f) { return f[0] === st.filtro; }) || FILTROS[0])[2];
-    var lista = GTM.ordenar(GTM.buscar(cat.itens, st.busca).filter(regra));
+    var lista = GTM.ordenarPor(GTM.buscar(cat.itens, st.busca).filter(regra), st.ordem, st.ordemDesc);
     var tbody = h('tbody', { id: 'cat-linhas' });
     lista.forEach(function (it) {
       var capa = GTM.urlCapa(it, cat.config);
@@ -52,12 +66,30 @@
     return { tbody: tbody, n: lista.length };
   };
 
+  /* O cabeçalho ordena, e por isso o rótulo é um BOTÃO — não um <th> com um
+   * ouvinte de clique em cima. É o que dá foco, tecla e nome ao controle; ao
+   * <th> cabe o `aria-sort`, que é onde o leitor de tela procura a ordem.
+   *
+   * O id existe para o redesenho: `redesenhar()` devolve o foco pelo id do
+   * elemento, e sem ele a batida no cabeçalho jogaria quem usa teclado de
+   * volta para o começo da tela. */
+  function cabecalho(c) {
+    if (!c.ordem) return h('th', { scope: 'col', class: 'col-marca' }, h('span', { class: 'so-leitor', text: 'Marcar' }));
+    var st = M.st, ativa = st.ordem === c.ordem;
+    return h('th', { scope: 'col', class: c.num ? 'num' : '', 'aria-sort': ativa ? (st.ordemDesc ? 'descending' : 'ascending') : 'none' },
+      h('button', {
+        type: 'button', id: 'co-' + c.ordem, class: 'th-ordem' + (ativa ? ' ativa' : ''),
+        'data-acao': 'ordenar', 'data-coluna': c.ordem,
+        title: !ativa ? 'Ordenar por ' + c.rotulo : st.ordemDesc ? 'Voltar à ordem do acervo' : 'Inverter a ordem'
+      }, c.rotulo, h('span', { class: 'th-seta', 'aria-hidden': 'true', text: ativa ? (st.ordemDesc ? '↓' : '↑') : '↕' })));
+  }
+
   M.telaCatalogo = function (cat) {
     var st = M.st, r = M.linhasCatalogo(cat);
     var marcados = Object.keys(st.marcados).filter(function (k) { return st.marcados[k]; });
     var no = GTM.publicaveis(cat.itens).length;
     return h('div', { class: 'a' },
-      topo('Todos os títulos', no + ' no ar · ' + (cat.itens.length - no) + ' fora do ar · rev ' + M.st.servidor.rev + '. Clique numa linha para editar à direita; o duplo clique abre a ficha no site.'),
+      topo('Todos os títulos', no + ' no ar · ' + (cat.itens.length - no) + ' fora do ar · rev ' + M.st.servidor.rev + '. O cabeçalho ordena; clique numa linha para editar à direita, e o duplo clique abre a ficha no site.'),
       h('div', { class: 'a-filtros' },
         h('label', { class: 'a-busca', for: 'cat-busca' }, M.ic('busca'), h('span', { class: 'so-leitor', text: 'Buscar no catálogo' }),
           h('input', { type: 'search', id: 'cat-busca', placeholder: 'título, série, tema ou tag', value: st.busca })),
@@ -74,9 +106,7 @@
         h('button', { type: 'button', class: 'botao botao-leve botao-pequeno', id: 'lote-limpar', text: 'Desmarcar' }),
         h('span', { class: 'p-nota', text: 'vai para o rascunho' })) : null,
       h('div', { class: 'a-rolagem' }, h('table', { class: 'a-tabela' },
-        h('thead', null, h('tr', null, ['', 'Título', 'T · E', 'Duração', 'Sinopse', 'Pendência', 'No ar'].map(function (t, k) {
-          return h('th', { scope: 'col', class: k === 3 ? 'num' : '' }, k === 0 ? h('span', { class: 'so-leitor', text: 'Marcar' }) : t);
-        }))), r.tbody)));
+        h('thead', null, h('tr', null, COLUNAS.map(cabecalho))), r.tbody)));
   };
 
   /* ---------------------------------------------------------------- envio */

@@ -552,7 +552,11 @@ main { padding: 24px 0 64px; }
  * de padding são o que sobra do cartão ao crescer; mexer num sem o outro traz
  * o corte de volta. */
 .prateleira-pista {
-  position: relative;
+  /* SEM `position: relative`, e isso é a correção de 17/09, não uma limpeza:
+   * era ele que fazia desta caixa a moldura das setas, e uma moldura que ROLA
+   * leva a seta embora junto com os cartões. A moldura agora é o palco, logo
+   * abaixo. Quem puser aqui um filho `position: absolute` traz o defeito de
+   * volta inteiro. */
   overflow-x: auto; overflow-y: hidden;
   padding: 6px 0;
   scroll-snap-type: x mandatory;
@@ -602,6 +606,12 @@ main { padding: 24px 0 64px; }
 
 .pcard-meta { font-size: var(--tipo-micro); color: var(--texto-fraco); margin: 0; }
 
+/* O PALCO: a moldura PARADA da linha. É o irmão da pista, e é a ele que as
+ * setas se prendem — ver o comentário da pista, logo acima, para o defeito que
+ * o fez nascer. Nada mais depende dele; se um dia as setas sumirem do desenho,
+ * some o palco junto. */
+.prateleira-palco { position: relative; }
+
 /* AS SETAS só onde há ponteiro fino. Nascem escondidas e só aparecem na
  * consulta de mídia lá embaixo: quem tem dedo arrasta, e o pedaço do próximo
  * cartão já diz que dá para arrastar. */
@@ -611,21 +621,58 @@ main { padding: 24px 0 64px; }
   .prateleira-seta {
     display: flex; align-items: center; justify-content: center;
     position: absolute; top: 0; bottom: 0; z-index: 3;
-    width: 44px; padding: 0; cursor: pointer;
+    width: 52px; padding: 0; cursor: pointer;
     border: none; color: var(--texto);
-    background: linear-gradient(to right, rgba(16, 19, 21, .95), rgba(16, 19, 21, 0));
+    /* O degradê segura quase sólido até os 60% e só então abre. Antes começava
+     * a abrir na própria borda, e o bico do V — que fica no MEIO da faixa —
+     * caía justo onde já havia metade da capa aparecendo: sobre a capa clara
+     * de "Leitura" ele praticamente sumia. */
+    background: linear-gradient(to right,
+      rgba(16, 19, 21, .96), rgba(16, 19, 21, .72) 60%, rgba(16, 19, 21, 0));
     opacity: 0; transition: opacity .12s ease;
   }
   .prateleira-seta-dir {
-    right: 0; background: linear-gradient(to left, rgba(16, 19, 21, .95), rgba(16, 19, 21, 0));
+    right: 0;
+    background: linear-gradient(to left,
+      rgba(16, 19, 21, .96), rgba(16, 19, 21, .72) 60%, rgba(16, 19, 21, 0));
   }
   .prateleira-seta-esq { left: 0; }
-  .prateleira-seta svg { width: 22px; height: 22px; }
+
+  /* SÓ O TRAÇO. A seta chegou a ter pastilha — círculo de fundo e contorno — no
+   * primeiro corte de 17/09, e ela foi tirada no mesmo dia: resolvia o
+   * contraste e criava um enfeite, um botão desenhado por cima da capa onde
+   * bastava um ícone.
+   *
+   * Quem carrega o contraste é o degradê, e a conta fecha sem a pastilha: o
+   * bico do V fica no MEIO da faixa de 52 px, onde o degradê ainda está a 76%,
+   * e --texto (#e9edf0) sobre isso dá 7,36:1 no pior caso imaginável — capa
+   * BRANCA inteira atrás, que vira #494c4d. Sobre capa escura são os 15,84:1
+   * da folha. Encurtar a faixa ou abrir o degradê mais cedo derruba esse
+   * número: são a mesma peça. */
+  .prateleira-seta svg { width: 24px; height: 24px; }
+
   /* Aparecem quando o ponteiro está na linha — e também quando algum cartão
-   * dela tem foco, senão quem anda de Tab vê a pista mexer sozinha. */
-  .prateleira-pista:hover .prateleira-seta,
-  .prateleira-pista:focus-within .prateleira-seta { opacity: 1; }
-  .prateleira-seta:hover { opacity: 1; }
+   * dela tem foco, senão quem anda de Tab vê a pista mexer sozinha. O gatilho é
+   * o PALCO e não a pista: a seta é irmã da pista agora, e `.prateleira-pista:hover`
+   * não a alcançaria mais.
+   *
+   * `:focus-within` aqui só pode querer dizer UM CARTÃO COM FOCO. A seta também
+   * mora no palco, e enquanto ela pegava foco no clique era ela mesma quem
+   * acendia as duas — e as deixava acesas. Quem garante isso é o `mousedown`
+   * barrado no app.js; mexer lá reabre este buraco aqui. */
+  .prateleira-palco:hover .prateleira-seta,
+  .prateleira-palco:focus-within .prateleira-seta { opacity: 1; }
+
+  /* A seta que não tem para onde levar sai da vista E do caminho do mouse. O
+   * `pointer-events` não é zelo: sem ele a seta continuaria engolindo, de
+   * invisível, o clique no primeiro e no último cartão da linha — e nas cinco
+   * prateleiras que cabem inteiras ela engoliria os dois sem nunca aparecer.
+   *
+   * Os dois seletores repetem os dois de cima porque precisam VENCÊ-LOS: a
+   * regra que acende a seta tem três classes de especificidade, e uma classe
+   * sozinha perderia. */
+  .prateleira-palco:hover .prateleira-seta-quieta,
+  .prateleira-palco:focus-within .prateleira-seta-quieta { opacity: 0; pointer-events: none; }
 }
 
 /* Movimento reduzido: nada desliza e nada cresce. A prévia animada já está

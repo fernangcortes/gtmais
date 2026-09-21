@@ -544,6 +544,17 @@
       if (a === 'fechar') return M.escolher('');
       if (a === 'aba') { st.aba = acao.getAttribute('data-aba'); if (st.aba === 'dados') consultarMidia(); return redesenhar({ semCentro: true }); }
       if (a === 'filtro') { st.filtro = acao.getAttribute('data-filtro'); return st.tela === 'catalogo' ? redesenhar({ semPainel: true }) : irTela('catalogo'); }
+      /* O cabeçalho da tabela, em três batidas: ordena pela coluna, inverte,
+       * e devolve a ordem do acervo — que é a única que agrupa por série, e a
+       * que a tela abre. Sem a terceira, quem ordenasse por duração não teria
+       * como voltar a enxergar as séries inteiras. */
+      if (a === 'ordenar') {
+        var coluna = acao.getAttribute('data-coluna');
+        if (st.ordem !== coluna) { st.ordem = coluna; st.ordemDesc = false; }
+        else if (!st.ordemDesc) { st.ordemDesc = true; }
+        else { st.ordem = ''; st.ordemDesc = false; }
+        return redesenhar({ semPainel: true });
+      }
       if (a === 'escolher') {
         var alvo = acao.getAttribute('data-alvo');
         if (!alvo) return irTela('player');

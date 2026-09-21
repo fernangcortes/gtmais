@@ -700,6 +700,36 @@
    * já oferece e só atravancariam a travessia. */
   var seqPrateleira = 0;
 
+  /* Uma seta que não tem para onde levar não fica na tela: a da esquerda sai no
+   * começo da pista, a da direita no fim, e as duas saem na linha que já cabe
+   * inteira — cinco das onze prateleiras da chegada, medidas em 1440 px.
+   *
+   * Os 2 px de folga são o que separa "chegou ao fim" de "faltam 0,4 px": com
+   * zoom do navegador ou tela de densidade fracionária, `scrollLeft` +
+   * `clientWidth` não fecha exatamente com `scrollWidth`, e sem a folga a seta
+   * da direita nunca sairia — ficaria no canto pedindo um clique que não leva
+   * a lugar nenhum. */
+  function ajustarSetas(pista) {
+    var palco = pista.parentNode;
+    if (!palco) return;
+    var quieta = function (classe, sim) {
+      var b = palco.querySelector('.' + classe);
+      if (b) b.classList.toggle('prateleira-seta-quieta', sim);
+    };
+    quieta('prateleira-seta-esq', pista.scrollLeft <= 2);
+    quieta('prateleira-seta-dir',
+      pista.scrollLeft + pista.clientWidth >= pista.scrollWidth - 2);
+  }
+
+  /* UM observador para todas as pistas: o que muda a resposta de `ajustarSetas`
+   * sem ninguém rolar nada é a LARGURA — a janela que encolhe, a barra lateral
+   * da mesa que abre, o zoom. Uma linha que cabia inteira em 1440 px passa a
+   * ter para onde rolar em 1100, e é aqui que a seta dela reaparece. */
+  var observadorDePista = typeof ResizeObserver === 'undefined' ? null :
+    new ResizeObserver(function (entradas) {
+      for (var i = 0; i < entradas.length; i++) ajustarSetas(entradas[i].target);
+    });
+
   function prateleira(p) {
     var id = 'prat-' + (++seqPrateleira);
     var secao = criar('section', 'prateleira');
@@ -754,6 +784,18 @@
       caminho.setAttribute('stroke-linejoin', 'round');
       svg.appendChild(caminho);
       b.appendChild(svg);
+      /* O clique do mouse DÁ FOCO ao botão, e era isso que deixava as duas setas
+       * acesas depois que o ponteiro ia embora: o `:focus-within` do palco
+       * continuava valendo, e a linha ficava piscada sozinha. Só aparecia nas
+       * prateleiras COMPRIDAS — na curta, o mesmo clique chega ao fim e a seta
+       * se cala por `prateleira-seta-quieta`, que apaga por cima e esconde o
+       * defeito.
+       *
+       * Barrar o `mousedown` tira o foco sem tirar o clique, e é o certo por um
+       * segundo motivo, anterior ao sintoma: a seta é `aria-hidden` com
+       * `tabindex="-1"` — ela nunca foi feita para segurar foco, e foco em nó
+       * escondido do leitor de tela é lugar de onde não se volta. */
+      b.addEventListener('mousedown', function (e) { e.preventDefault(); });
       b.addEventListener('click', function () {
         /* 0,9 da largura e não 1: o cartão que estava na beira continua
          * visível depois do salto, e é ele que diz onde a pessoa estava. */
@@ -762,10 +804,27 @@
       });
       return b;
     };
-    pista.appendChild(faz('esq', 'anterior'));
-    pista.appendChild(faz('dir', 'próxima'));
+    /* O PALCO é uma moldura PARADA, irmã da pista, e é nele que as setas se
+     * penduram. Elas moravam dentro da pista até 17/09, e dali vinham os dois
+     * defeitos vistos no desktop: uma caixa `position: absolute` dentro de um
+     * `overflow-x: auto` se prende ao conteúdo QUE ROLA, não à moldura que o
+     * mostra. Medido na página no ar, pista de 1368 px: um clique na seta
+     * direita levava o scrollLeft a 84 e arrastava as DUAS setas 84 px para a
+     * esquerda junto — a da esquerda parava em x = -55, fora da tela,
+     * justamente no instante em que ela passava a ter serventia, e a da direita
+     * descolava da borda e ia caminhando para o meio. O palco não rola, então
+     * elas ficam onde foram postas. */
+    var palco = criar('div', 'prateleira-palco');
+    palco.appendChild(pista);
+    palco.appendChild(faz('esq', 'anterior'));
+    palco.appendChild(faz('dir', 'próxima'));
 
-    secao.appendChild(pista);
+    /* `passive`: o ouvinte só LÊ a rolagem, e prometer isso ao navegador tira o
+     * quadro que ele gastaria esperando um `preventDefault` que não vem. */
+    pista.addEventListener('scroll', function () { ajustarSetas(pista); }, { passive: true });
+    if (observadorDePista) observadorDePista.observe(pista);
+
+    secao.appendChild(palco);
     return secao;
   }
 
@@ -786,6 +845,14 @@
 
     seqPrateleira = 0;
     ps.forEach(function (p) { el.grade.appendChild(prateleira(p)); });
+
+    /* AQUI, e não dentro de `prateleira()`: só depois de entrar na página a
+     * pista tem largura, e é a largura que diz se a linha tem para onde rolar.
+     * Ler `clientWidth` obriga o navegador a fechar o cálculo antes de
+     * responder, então o primeiro quadro já sai com as setas certas — sem a
+     * piscada de duas setas na linha que cabe inteira. */
+    var pistas = el.grade.querySelectorAll('.prateleira-pista');
+    for (var i = 0; i < pistas.length; i++) ajustarSetas(pistas[i]);
   }
 
   /* ------------------------------------------------------------ as séries */

@@ -165,6 +165,8 @@
     semRascunho: false,    /* a prévia mostra o site no ar */
     verRascunho: false,
     filtro: 'todos',
+    ordem: '',             /* coluna batida no cabeçalho; '' = a ordem do acervo */
+    ordemDesc: false,
     busca: '',
     marcados: {},
     rail: false

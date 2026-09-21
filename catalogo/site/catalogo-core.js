@@ -329,6 +329,70 @@
     });
   }
 
+  /* A ORDEM DA TABELA DA MESA — quando alguém bate no cabeçalho de uma coluna.
+   *
+   * `ordenar()` continua sendo o padrão da tela e o DESEMPATE de todas as
+   * colunas: a lista já entra na ordem do acervo, e o `sort` do navegador, que
+   * é estável desde o ES2019, só mexe no que a coluna sabe comparar. Dois
+   * títulos de 12:30 seguem lado a lado dentro da série deles, e não na ordem
+   * em que o KV devolveu — que muda sozinha na próxima gravação.
+   *
+   * Duas decisões valem para todas as colunas:
+   *
+   *   1. o que está VAZIO vai para o fim NAS DUAS DIREÇÕES. Um título sem
+   *      duração não é "o mais curto", e virar a ordem não pode trazer a falta
+   *      de dado para o alto da tela;
+   *   2. as colunas de estado — sinopse, pendência, no ar — sobem pelo que
+   *      pede trabalho: a primeira batida põe no topo as sinopses vazias, as
+   *      pendências e o que está no ar. Numa mesa de curadoria é para isso que
+   *      se clica nelas. */
+  var CHAVE_ORDEM = {
+    titulo: function (i) { return normalizar(i.titulo) || null; },
+
+    /* "T1 · E2" numa chave só, com a regra de `ordenar`: o número que falta vem
+     * depois do que existe. Temporada e episódio são inteiros pequenos, e
+     * 10000 é folga de sobra para pôr os dois no mesmo número. */
+    episodio: function (i) {
+      if (i.temporada == null && i.episodio == null) return null;
+      return (i.temporada == null ? 9999 : i.temporada) * 10000 +
+        (i.episodio == null ? 9999 : i.episodio);
+    },
+
+    duracao: function (i) { return typeof i.duracao_seg === 'number' ? i.duracao_seg : null; },
+
+    /* A mesma leitura que a coluna mostra: vazia, automática, revisada. */
+    sinopse: function (i) { return !i.sinopse ? 0 : i.sinopse_origem === 'auto' ? 1 : 2; },
+
+    /* Também pelo que a coluna mostra: a pendência, ou "sem vídeo" quando não
+     * há pendência e falta o vídeo, ou nada. O dígito na frente separa os dois
+     * casos antes de os rótulos se compararem entre si; quem não tem problema
+     * nenhum é o vazio da regra 1, e nunca sobe acima de quem tem. */
+    pendencia: function (i) {
+      if (i.pendencia) return '0 ' + normalizar(rotuloPendencia(i.pendencia));
+      if (!(i.fonte && i.fonte.videoId)) return '1';
+      return null;
+    },
+
+    'no-ar': function (i) { return i.publicar === true ? 0 : 1; }
+  };
+
+  /* As colunas que este arquivo sabe comparar. A tabela da mesa monta o
+   * cabeçalho dela com esta lista na mão: uma coluna com chave que não está
+   * aqui desenharia um botão que não ordena nada, e não avisaria ninguém. */
+  var COLUNAS_ORDENAVEIS = Object.keys(CHAVE_ORDEM);
+
+  function ordenarPor(itens, coluna, decrescente) {
+    var chave = CHAVE_ORDEM[coluna];
+    var lista = ordenar(itens);
+    if (!chave) return lista;
+    var sinal = decrescente ? -1 : 1;
+    return lista.sort(function (a, b) {
+      var ka = chave(a), kb = chave(b);
+      if (ka == null || kb == null) return ka == null ? (kb == null ? 0 : 1) : -1;
+      return sinal * (typeof ka === 'string' ? ka.localeCompare(kb, 'pt') : ka - kb);
+    });
+  }
+
   function agrupar(itens) {
     var grupos = [];
     var indice = Object.create(null);
@@ -1332,6 +1396,8 @@
     urlMp4: urlMp4,
     publicaveis: publicaveis,
     ordenar: ordenar,
+    ordenarPor: ordenarPor,
+    COLUNAS_ORDENAVEIS: COLUNAS_ORDENAVEIS,
     agrupar: agrupar,
     prateleiras: prateleiras,
     prateleirasVisiveis: prateleirasVisiveis,

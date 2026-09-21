@@ -267,6 +267,68 @@ test('agrupar continua exportado mesmo sem a grade por série', () => {
   assert.equal(typeof GTM.agrupar, 'function');
 });
 
+/* ---------------- a ordem da tabela da mesa (bater no cabeçalho) -------- */
+
+/* Quatro títulos que cobrem os quatro buracos de dado que a tabela mostra: um
+ * sem duração, um sem vídeo, um fora do ar e dois sem sinopse. A ordem do
+ * acervo entre eles é curto, longo, semdur, semvid — "A classificar" é série
+ * de triagem, e vai para o fim. */
+const paraOrdenar = [
+  { id: 'longo', titulo: 'Zebu', serie: 'Festas', temporada: 1, episodio: 2, duracao_seg: 1200, publicar: true, sinopse: 'x', sinopse_origem: 'manual', fonte },
+  { id: 'curto', titulo: 'Abadia', serie: 'Festas', temporada: 1, episodio: 1, duracao_seg: 300, publicar: true, sinopse: 'y', sinopse_origem: 'auto', fonte },
+  { id: 'semdur', titulo: 'Kalunga', serie: 'Festas', temporada: 1, episodio: 3, publicar: false, pendencia: 'material_bruto', fonte },
+  { id: 'semvid', titulo: 'Avulso', serie: 'A classificar', temporada: null, episodio: null, duracao_seg: 700, publicar: true, fonte: { tipo: 'bunny' } }
+];
+const ordemDe = (coluna, decrescente) => GTM.ordenarPor(paraOrdenar, coluna, decrescente).map(i => i.id);
+
+test('sem coluna escolhida, a tabela fica na ordem do acervo', () => {
+  assert.deepEqual(ordemDe(''), ['curto', 'longo', 'semdur', 'semvid']);
+  /* E uma coluna que o core não conhece não pode virar uma ordem qualquer. */
+  assert.deepEqual(ordemDe('inventada'), ['curto', 'longo', 'semdur', 'semvid']);
+});
+
+/* O empate é o caso comum — três títulos no ar, doze com a mesma pendência —,
+ * e sem desempate a tabela ficaria na ordem em que o KV devolveu, que muda
+ * sozinha na próxima gravação. */
+test('quem empata na coluna continua na ordem do acervo', () => {
+  assert.deepEqual(ordemDe('no-ar'), ['curto', 'longo', 'semvid', 'semdur']);
+});
+
+/* A regra que mais custa a lembrar: um título sem duração não é o mais curto,
+ * e virar a ordem não pode trazer a falta de dado para o alto da tela. */
+test('o que está vazio fica no fim nas duas direções', () => {
+  assert.deepEqual(ordemDe('duracao'), ['curto', 'semvid', 'longo', 'semdur']);
+  assert.deepEqual(ordemDe('duracao', true), ['longo', 'semvid', 'curto', 'semdur']);
+  /* O mesmo na coluna T · E, onde o vazio são os dois números faltando. */
+  assert.equal(ordemDe('episodio').pop(), 'semvid');
+  assert.equal(ordemDe('episodio', true).pop(), 'semvid');
+  /* E na Pendência, onde o vazio é justamente quem não tem problema nenhum. */
+  assert.deepEqual(ordemDe('pendencia').slice(2), ['curto', 'longo']);
+  assert.deepEqual(ordemDe('pendencia', true).slice(2), ['curto', 'longo']);
+});
+
+/* As três colunas de estado sobem pelo que pede trabalho: a primeira batida
+ * põe no topo as sinopses vazias, as pendências e o que está no ar. Numa mesa
+ * de curadoria é para isso que se clica nelas. */
+test('a primeira batida põe no alto o que pede trabalho', () => {
+  assert.deepEqual(ordemDe('sinopse'), ['semdur', 'semvid', 'curto', 'longo']);
+  assert.deepEqual(ordemDe('pendencia'), ['semdur', 'semvid', 'curto', 'longo']);
+  assert.deepEqual(ordemDe('no-ar').slice(0, 3).sort(), ['curto', 'longo', 'semvid']);
+});
+
+/* A coluna Pendência mostra "sem vídeo" quando não há pendência e falta o
+ * vídeo. Ordenar por outra coisa que não o que está escrito na célula faria a
+ * tabela mentir. */
+test('a coluna Pendência ordena pelo que a célula mostra, "sem vídeo" incluído', () => {
+  assert.deepEqual(ordemDe('pendencia', true).slice(0, 2), ['semvid', 'semdur']);
+});
+
+test('ordenar pelo cabeçalho não mexe na lista que chegou', () => {
+  const antes = paraOrdenar.map(i => i.id);
+  GTM.ordenarPor(paraOrdenar, 'duracao', true);
+  assert.deepEqual(paraOrdenar.map(i => i.id), antes);
+});
+
 /* ============================ busca ===================================== */
 
 const comAcento = [
@@ -4633,6 +4695,105 @@ test('as setas da prateleira só aparecem onde há ponteiro fino', () => {
   assert.match(consultas, /\.prateleira-seta/, 'as setas saíram da consulta de ponteiro fino');
 });
 
+/* ---------------------------------------------------------------------------
+ * O conserto de 17/09, e os três testes que impedem a volta dele. O defeito
+ * chegou por relato de quem usava no desktop, e foi medido na página no ar.
+ * ------------------------------------------------------------------------- */
+
+/* A RAIZ: as setas moravam DENTRO da pista, e uma caixa `position: absolute`
+ * dentro de um `overflow-x: auto` se prende ao conteúdo QUE ROLA, não à
+ * moldura que o mostra. Medido com a pista em 1368 px: um clique na seta
+ * direita levava o scrollLeft a 84 e arrastava as DUAS setas 84 px para a
+ * esquerda junto — a da esquerda parava em x = -55, fora da tela, bem no
+ * instante em que passava a ter serventia, e a da direita descolava da borda e
+ * ia caminhando para o meio da linha. */
+test('as setas da prateleira se penduram no palco, que não rola', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function prateleira\(p\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei a função prateleira em app.js');
+  assert.match(corpo[1], /criar\('div', 'prateleira-palco'\)/, 'sumiu o palco da prateleira');
+  assert.match(corpo[1], /palco\.appendChild\(faz\('esq'/, 'a seta da esquerda saiu do palco');
+  assert.match(corpo[1], /palco\.appendChild\(faz\('dir'/, 'a seta da direita saiu do palco');
+  assert.ok(!/pista\.appendChild\(faz\(/.test(corpo[1]),
+    'uma seta voltou para dentro da pista — é a pista que rola, e ela leva a seta junto');
+
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\.prateleira-palco\s*\{[^}]*position:\s*relative/,
+    'o palco deixou de ser a moldura parada das setas');
+  /* A regra da pista, e só ela: o `m` amarra a busca ao começo da LINHA, então
+   * a palavra dentro do comentário que explica a ausência não conta como
+   * declaração. */
+  const pista = css.match(/\.prateleira-pista\s*\{([\s\S]*?)\n\}/);
+  assert.ok(pista, 'não achei a regra da pista');
+  assert.ok(!/^\s*position:\s*relative/m.test(pista[1]),
+    'a pista voltou a ser `position: relative` — e volta a arrastar a seta com o conteúdo');
+});
+
+/* A seta que chegou ao fim não fica no canto pedindo um clique que não leva a
+ * lugar nenhum — e a que nunca teve para onde ir não nasce. São cinco das onze
+ * prateleiras da chegada que cabem inteiras em 1440 px. */
+test('a seta da prateleira sai da tela quando não tem para onde levar', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function ajustarSetas\(pista\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei ajustarSetas em app.js');
+  assert.match(corpo[1], /prateleira-seta-quieta/, 'sumiu a classe que apaga a seta sem serventia');
+  assert.match(corpo[1], /scrollLeft <= 2/, 'a seta da esquerda não sai mais no começo da pista');
+  assert.match(corpo[1], /scrollLeft \+ pista\.clientWidth >= pista\.scrollWidth - 2/,
+    'a seta da direita não sai mais no fim da pista');
+
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const quieta = css.match(/\.prateleira-seta-quieta[^{}]*\{([^}]*)\}/);
+  assert.ok(quieta, 'não achei a regra da seta quieta');
+  assert.match(quieta[1], /opacity:\s*0/, 'a seta sem serventia continua aparecendo');
+  assert.match(quieta[1], /pointer-events:\s*none/,
+    'a seta sem serventia continua engolindo, de invisível, o clique no cartão embaixo dela');
+});
+
+/* Três gatilhos, porque são três maneiras de a resposta mudar: a pessoa rola,
+ * a janela muda de largura, e a página acaba de ser desenhada. Faltando o
+ * primeiro, a seta só se acerta no clique e não no arrasto do trackpad;
+ * faltando o segundo, a linha que cabia inteira em 1440 px continua sem seta
+ * em 1100. */
+/* O clique do mouse dá foco ao botão, e o `:focus-within` do palco mantinha as
+ * DUAS setas acesas depois que o ponteiro ia embora — a linha ficava piscada
+ * sozinha. Só se via nas prateleiras compridas: na curta o mesmo clique chega
+ * ao fim, a seta vira `quieta` e o defeito ficava escondido por baixo.
+ *
+ * Medido na página: com foco na própria seta, a opacidade casada dela é 1; sem
+ * foco, 0. O foco num CARTÃO da pista continua acendendo — esse é o caso
+ * legítimo, e é dele que a regra do `:focus-within` trata. */
+test('a seta da prateleira não fica acesa depois do clique', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/var faz = function \(dir, rotulo\) \{([\s\S]*?)\n    \};/);
+  assert.ok(corpo, 'não achei a fábrica de setas em app.js');
+  assert.match(corpo[1], /addEventListener\('mousedown', function \(e\) \{ e\.preventDefault\(\); \}\)/,
+    'a seta voltou a pegar foco no clique — e o `:focus-within` do palco a deixa acesa sozinha');
+
+  /* A regra que acende continua sendo a do palco: é ela que o foco na seta
+   * disparava, e é por isso que o `mousedown` barrado é a guarda dela. */
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\.prateleira-palco:focus-within \.prateleira-seta \{[^}]*opacity:\s*1/,
+    'sumiu a regra que acende a seta quando um cartão da pista tem foco');
+});
+
+test('as setas se ajustam à rolagem, à largura e à primeira pintura', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const corpo = app.match(/function prateleira\(p\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei a função prateleira em app.js');
+  assert.match(corpo[1], /addEventListener\('scroll'[\s\S]{0,80}?passive: true/,
+    'a prateleira não ouve mais a própria rolagem — a seta fica com o estado velho');
+  assert.match(corpo[1], /observadorDePista\.observe\(pista\)/,
+    'a pista saiu do observador de largura');
+
+  assert.match(semComentarios(app), /typeof ResizeObserver === 'undefined'/,
+    'o observador de largura entrou sem a guarda de quem não o tem');
+
+  const chegada = app.match(/function renderChegada\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(chegada, 'não achei renderChegada em app.js');
+  assert.match(chegada[1], /ajustarSetas\(pistas\[i\]\)/,
+    'a chegada não ajusta as setas depois de pôr as prateleiras na página');
+});
+
 /* A mesma regra das três: nada desliza, nada cresce, nada anima para quem
  * pediu menos movimento. A prévia já está barrada no app.js. */
 test('a prateleira não desliza nem cresce com movimento reduzido', () => {
@@ -5436,9 +5597,25 @@ test('o cabeçalho não ouve scroll — quem pinta o fundo é um IntersectionObs
   for (const arquivo of ['app.js', 'catalogo-core.js', 'player.js', 'player-core.js',
     'mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
     const codigo = semComentarios(lerTexto(path.join(SITE, arquivo)));
-    assert.ok(!/addEventListener\(\s*['"]scroll['"]/.test(codigo),
-      arquivo + ' ouve o evento scroll — a troca de fundo do cabeçalho é do IntersectionObserver');
+    /* O alvo proibido é a PÁGINA — `window` e `document` —, que é de onde viria
+     * o scroll capaz de redesenhar o cabeçalho a cada quadro, e é esse o
+     * defeito que este teste guarda desde que nasceu.
+     *
+     * A proibição era de QUALQUER `addEventListener('scroll')`, e em 17/09 ela
+     * passou a barrar coisa legítima: a prateleira ouve a rolagem DELA — de
+     * lado, dentro da própria caixa — para saber quando a seta chegou ao fim e
+     * pode sair da tela. Nada disso encosta no cabeçalho. O que a regra
+     * guardava continua guardado, e o que sobra ganhou a exigência de
+     * `passive`, que é a outra metade do motivo pelo qual ouvir rolagem sai
+     * caro: sem ela o navegador segura o quadro esperando um `preventDefault`
+     * que não vem. */
+    assert.ok(!/(window|document)\s*\.\s*addEventListener\(\s*['"]scroll['"]/.test(codigo),
+      arquivo + ' ouve o scroll da PÁGINA — a troca de fundo do cabeçalho é do IntersectionObserver');
     assert.ok(!/\.onscroll\s*=/.test(codigo), arquivo + ' pendura um onscroll');
+    for (const o of codigo.matchAll(/addEventListener\(\s*['"]scroll['"]/g)) {
+      assert.match(codigo.slice(o.index, o.index + 220), /passive:\s*true/,
+        arquivo + ' ouve rolagem sem `passive: true`');
+    }
   }
 
   const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
@@ -5980,6 +6157,69 @@ test('na mesa, só o título e a sinopse da ficha são editáveis no lugar', () 
     assert.ok(fn, 'não achei ' + nome);
     assert.ok(!/contentEditable/.test(fn[1]), nome + ' virou editável');
   }
+});
+
+/* A TABELA ORDENA PELO CABEÇALHO. O que estes quatro testes guardam é o que
+ * some sem fazer barulho: o botão, o `aria-sort`, a terceira batida e o lugar
+ * onde a ordem escolhida mora. */
+
+/* Quem ordena é um BOTÃO dentro do <th> — não um <th> com ouvinte de clique em
+ * cima. O botão é o que tem foco, tecla e nome; ao <th> cabe o `aria-sort`,
+ * que é onde o leitor de tela procura a ordem. Um <th> clicável passa no olho
+ * e some no teclado. */
+test('o cabeçalho que ordena é botão, e a ordem vive no aria-sort do <th>', () => {
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  const corpo = telas.match(/function cabecalho\(c\) \{([\s\S]*?)\n  \}/);
+  assert.ok(corpo, 'não achei o cabeçalho da tabela em mesa-telas.js');
+  assert.match(corpo[1], /h\('button', \{/, 'o rótulo do cabeçalho deixou de ser um botão');
+  assert.match(corpo[1], /'aria-sort': ativa \? \(st\.ordemDesc \? 'descending' : 'ascending'\) : 'none'/,
+    'o <th> deixou de dizer a ordem em aria-sort');
+  /* `redesenhar()` devolve o foco pelo id do elemento: sem id, a batida no
+   * cabeçalho joga quem usa teclado de volta para o começo da tela. */
+  assert.match(corpo[1], /id: 'co-' \+ c\.ordem/, 'o botão do cabeçalho perdeu o id, e com ele o foco');
+});
+
+/* Uma coluna com chave que o core não conhece desenha um botão que não ordena
+ * nada, e não avisa ninguém — nem em cima, nem no console. */
+test('toda coluna que oferece ordem tem chave no core', () => {
+  const bloco = lerTexto(path.join(SITE, 'mesa-telas.js')).match(/var COLUNAS = \[([\s\S]*?)\n  \];/);
+  assert.ok(bloco, 'não achei a lista de colunas da tabela');
+  const chaves = [...bloco[1].matchAll(/ordem: '([^']*)'/g)].map(m => m[1]).filter(Boolean);
+  assert.equal(chaves.length, 6, 'a tabela deixou de oferecer as seis colunas que ordenam');
+  for (const c of chaves) {
+    assert.ok(GTM.COLUNAS_ORDENAVEIS.includes(c), 'a coluna ' + c + ' não tem chave no catalogo-core.js');
+  }
+});
+
+/* Três batidas: ordena, inverte, e devolve a ordem do acervo — a única que
+ * agrupa por série, e a que a tela abre. Sem a terceira, quem ordenasse por
+ * duração não teria como voltar a enxergar as séries inteiras. */
+test('bater três vezes no cabeçalho devolve a ordem do acervo', () => {
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  const corpo = mesa.match(/if \(a === 'ordenar'\) \{([\s\S]*?)\n      \}/);
+  assert.ok(corpo, 'não achei a ação de ordenar em mesa.js');
+  assert.match(corpo[1], /st\.ordem = coluna; st\.ordemDesc = false;/, 'a primeira batida não escolhe a coluna');
+  assert.match(corpo[1], /st\.ordemDesc = true;/, 'a segunda batida não inverte');
+  assert.match(corpo[1], /st\.ordem = ''; st\.ordemDesc = false;/, 'a terceira batida não volta à ordem do acervo');
+});
+
+/* Digitar na busca troca só o <tbody>, sem redesenhar a tela — é o caminho
+ * rápido de quem está procurando. Se a ordem escolhida morasse no cabeçalho em
+ * vez de no estado, cada letra digitada desfaria a ordem, com a seta
+ * continuando na tela dizendo o contrário. */
+test('a ordem escolhida mora no estado, e a busca não a desfaz', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  assert.match(base, /ordem: ''/, 'o estado da mesa não guarda a coluna escolhida');
+  assert.match(base, /ordemDesc: false/, 'o estado da mesa não guarda a direção');
+
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  assert.match(telas, /GTM\.ordenarPor\(GTM\.buscar\(cat\.itens, st\.busca\)\.filter\(regra\), st\.ordem, st\.ordemDesc\)/,
+    'as linhas da tabela deixaram de sair da ordem que está no estado');
+
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  const busca = mesa.match(/t\.id === 'cat-busca'\) \{([\s\S]*?)\n      return;/);
+  assert.ok(busca, 'não achei o caminho rápido da busca em mesa.js');
+  assert.match(busca[1], /M\.linhasCatalogo\(/, 'a busca deixou de refazer as linhas pela mesma função');
 });
 
 /* ============================ a estrutura vira dado (M4) ================= */
