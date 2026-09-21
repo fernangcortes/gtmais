@@ -64,7 +64,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test tests/catalogo.test.js   # 396 testes, sem rede nem credenciais
+node --test tests/catalogo.test.js   # 410 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **mesa de curadoria** (`/admin.html`), não por
@@ -119,11 +119,35 @@ não duplica nada. Os que trabalham sobre o catálogo aceitam `--piloto`, `--ite
 
 ## Desenvolvimento local
 
-As funções só rodam de verdade no runtime do Pages. Para testar localmente:
+### Ver e clicar a mesa, com um catálogo dentro
+
+```bash
+node scripts/mesa-local.mjs
+```
+
+Abre `http://127.0.0.1:8790/admin.html`, **senha `local`**, usuário em branco. É o
+`site/` de verdade — o mesmo `admin.html`, o mesmo `mesa.js` — com um `/api` de mentira por cima,
+alimentado por um `catalogo.seed.json` na raiz do repositório. **Esse arquivo não vem no clone**
+(ver o README da raiz): para usar, ponha ali um JSON com a lista `itens`, no formato do catálogo.
+Serve para mexer na tela: ordenar a tabela, filtrar, buscar, editar no painel, montar rascunho,
+publicar (o PUT só sobe a `rev` na memória; o arquivo não é tocado).
+
+Não confere senha, não expira token, não olha permissão — toda sessão é superadmin, e o GET público
+ali **não** é o recorte de `paraPublico()`. Quem guarda essas regras é o `functions/api/`, e quem as
+testa é o `tests/catalogo.test.js`. Para conferir servidor, use o wrangler abaixo.
+
+> Um servidor de arquivos puro (`python -m http.server`) abre o `admin.html`, mas **nenhuma senha
+> funciona ali**: não há `/api/login` para responder, e o formulário fala com um 404.
+
+### Rodar as funções de verdade
+
+As funções só rodam de verdade no runtime do Pages:
 
 ```bash
 npx wrangler pages dev site --kv CATALOGO --binding ADMIN_PASSWORD=teste BUNNY_LIBRARY_ID=123456 BUNNY_API_KEY=xxx BUNNY_PULLZONE=vz-exemplo.b-cdn.net
 ```
+
+O KV local sobe **vazio**: entra-se na mesa e o catálogo tem zero título até alguém semeá-lo.
 
 Os testes das regras de produto não precisam de rede nem de credenciais:
 
@@ -181,7 +205,9 @@ O fluxo do dia a dia é a **mesa de curadoria** (`/admin.html`): menu à esquerd
 verdade no meio — dentro de um quadro, com o rascunho aplicado — e o painel de edição à direita.
 
 - **Site**: o clique escolhe, o duplo clique abre a ficha. O que está escolhido se edita no painel.
-- **Todos os títulos**: buscar, filtrar, editar em lote, pôr e tirar do ar.
+- **Todos os títulos**: buscar, filtrar, ordenar pelo cabeçalho, editar em lote, pôr e tirar
+  do ar. Cada coluna ordena em três batidas — ordena, inverte e volta à ordem do acervo; o que
+  está vazio fica no fim nos dois sentidos.
 - **Enviar título**: arquivo → upload direto ao Bunny com barra de progresso e retomada →
   metadados → entra no catálogo.
 - **Filas de trabalho**: sinopses a revisar, pendências e sem sinopse, uma a uma e pelo teclado.
