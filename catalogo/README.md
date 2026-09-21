@@ -21,7 +21,7 @@ catalogo/
 ├── site/                      ← ISTO, e só isto, é publicado
 │   ├── index.html             catálogo (público interno)
 │   ├── admin.html             a mesa de curadoria (o /admin)
-│   ├── app.js                 grade, busca, ficha do título, lista de capítulos
+│   ├── app.js                 chegada, grade, busca, página da série, ficha do título
 │   ├── mesa-base.js           sessão, API, rascunho, Publicar, permissões
 │   ├── mesa-painel.js         a coluna da direita: visão geral e inspetor
 │   ├── mesa-telas.js          catálogo, envio, capa, contas, pendências, estrutura, histórico
@@ -64,7 +64,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test tests/catalogo.test.js   # 410 testes, sem rede nem credenciais
+node --test tests/catalogo.test.js   # 426 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **mesa de curadoria** (`/admin.html`), não por
@@ -76,9 +76,16 @@ script e não por planilha — ver [Manutenção do catálogo](#manutenção-do-
 
 ```bash
 cd catalogo/site
-npx wrangler pages deploy . --project-name=goias-tec-mais
+npx wrangler pages deploy . --project-name=goias-tec-mais --branch main
 ```
 
+> **Não esqueça o `--branch main`.** O projeto trata `main` como Produção — é essa branch que
+> `goias-tec-mais.pages.dev` serve. Sem a flag, o wrangler usa a branch git ATUAL do checkout (a
+> que estiver aberta ali, nem sempre `main`), e o deploy sobe como **Preview**: fica só no link com
+> hash e no alias da branch, o domínio principal não muda nada, e nenhum aviso avisa disso. Confira
+> com `wrangler pages deployment list --project-name=goias-tec-mais` — a coluna `Environment` tem
+> de dizer `Production`, não `Preview`.
+>
 > **Não aponte o wrangler para a pasta de fora.** `wrangler pages deploy site --project-name=...`,
 > rodado em `catalogo/`, sobe os arquivos estáticos normalmente mas **silenciosamente pula o
 > build do `functions/`** — sem erro, sem aviso. O deploy "funciona", mas todo `/api/*` responde
@@ -163,11 +170,14 @@ continua sendo o plano B —, e os dois têm teste:
 
 - **não toca sozinho** — no player próprio, uma **única** chamada de `play()` no projeto inteiro,
   dentro de `alternarPlay`; o teste conta as ocorrências no arquivo, e se o número subir é porque
-  alguém arrumou um segundo lugar de onde o vídeo pode começar sozinho. No embed, a URL sempre leva
+  alguém arrumou um segundo lugar de onde o vídeo pode começar sozinho. O "Assistir" da chegada,
+  que abre a ficha já tocando, entra por esse mesmo caminho, e o pedido de tocar **não viaja na
+  URL**: um link não toca sozinho para quem só o abriu. No embed, a URL sempre leva
   `autoplay=false` — a armadilha principal do projeto, porque o padrão do Bunny é `true`.
 - **não repete** — o `<video>` nasce sem `loop`, e a URL do embed leva `loop=false`.
-- **não avança** — nenhum arquivo servido ao navegador escuta o fim do vídeo (o teste varre os
-  quatro atrás da string `'ended'`), e o `allow` do iframe **não** inclui `autoplay`. Esta regra é
+- **não avança** — nenhum arquivo servido ao navegador escuta o fim do vídeo (o teste varre sete
+  arquivos — o `app.js`, os dois do player e os quatro da mesa — atrás da string `'ended'`), e o
+  `allow` do iframe **não** inclui `autoplay`. Esta regra é
   uma AUSÊNCIA de código, e é assim de propósito: sem o ouvinte não existe lugar conveniente para
   alguém pendurar um "próximo episódio" automático.
 
