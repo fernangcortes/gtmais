@@ -24,8 +24,9 @@
     /* O id da prateleira aberta pelo "Ver tudo" — '' na chegada. É o que
      * distingue a tela inicial (prateleiras) de uma resposta (grade). */
     prateleira: '',
-    /* A série da rota `#/serie/<nome>` — a grade dela, até a D6 fazer dessa
-     * rota a página da série. */
+    /* A série da rota `#/serie/<nome>` — a página dela desde a D6. Até ali a
+     * rota abria a grade da série, e é a MESMA rota: o link guardado continua
+     * valendo. */
     serieRota: '',
     /* `#/series`: a página Séries, para onde os chips da chegada foram. */
     indiceSeries: false,
@@ -119,6 +120,40 @@
     return typeof GTMPlayer !== 'undefined' && GTMPlayer.pedido();
   }
 
+  /* O PEDIDO DE TOCAR (D6). O "Assistir" do destaque abre a ficha E dá o play
+   * — a decisão D5 do PLANO-DESIGN: o toque em "Assistir" é o pedido, e
+   * atendê-lo não é "tocar sozinho".
+   *
+   * O pedido mora AQUI, numa variável, e não na URL. Um `#/ver/<id>` que
+   * tocasse sozinho tocaria para quem recebeu o link e só o abriu — e isso é
+   * exatamente o "tocar sozinho" que a primeira regra do produto proíbe. O
+   * link do "Assistir" é o `#/ep/<id>` de sempre; o que ele leva a mais é o
+   * clique.
+   *
+   * Três cuidados, e cada um fecha uma porta:
+   *   - só o clique PRIMÁRIO SEM TECLA liga o pedido. Ctrl+clique abre OUTRA
+   *     aba, que não passa por esta página: o pedido ficaria ligado aqui, e a
+   *     próxima ficha aberta tocaria sem ninguém ter pedido;
+   *   - o roteador CONSOME o pedido em toda troca de tela, tocando ou não. Um
+   *     pedido que sobrasse — um clique cuja navegação não aconteceu — não
+   *     espera a próxima visita àquele título para tocar;
+   *   - quem toca é o PLAYER, pela entrada `tocar()`, que é o mesmo
+   *     `alternarPlay` do botão. Este arquivo não chama `play()` — há teste.
+   *
+   * No iPhone isto é PENDENTE DE APARELHO, pela regra de 04/09. O Safari do
+   * iOS só deixa tocar com som dentro do gesto, e o play daqui acontece no
+   * `hashchange`, um instante depois do toque. Se ele recusar, o vídeo fica
+   * parado com o botão de play à mão — que é a ficha de antes da D6, e não um
+   * defeito novo. */
+  var pedidoDeTocar = '';
+
+  function ligarAssistir(link, id) {
+    link.addEventListener('click', function (ev) {
+      if (ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
+      pedidoDeTocar = id;
+    });
+  }
+
   /* -------------------------------------------------------------- utilidades */
 
   function criar(tag, classe, texto) {
@@ -201,7 +236,8 @@
   /* ---------------------------------------------------------------- filtros */
 
   /* A lista de onde a GRADE parte, antes da busca e do chip: a prateleira do
-   * "Ver tudo", a série da rota `#/serie/<nome>`, ou o catálogo inteiro. */
+   * "Ver tudo", ou o catálogo inteiro. A série da rota `#/serie/<nome>` saiu
+   * daqui na D6 — ela tem página própria, e não é mais uma grade. */
   function baseDaGrade() {
     /* O "Ver tudo" parte da MESMA prateleira que a chegada desenhou, achada
      * pelo id — a regra dela não é reescrita aqui. O chip filtra por cima.
@@ -211,9 +247,7 @@
       var p = GTM.prateleiraPorId(estado.itens, estado.prateleira, estado.site);
       return p ? p.itens : [];
     }
-    var base = GTM.publicaveis(estado.itens);
-    if (estado.serieRota) return GTM.filtrarPorSerie(base, estado.serieRota);
-    return base;
+    return GTM.publicaveis(estado.itens);
   }
 
   /* O FILTRO POR SÉRIE — os chips que moravam no cabeçalho e saíram dele na D5
@@ -506,24 +540,16 @@
 
   /* O DESTAQUE da chegada: um título, com a capa, e nada tocando.
    *
-   * "Assistir" ABRE A FICHA, e ainda não dá o play. A D5 decidiu que deve dar
-   * — o clique é o pedido —, e a D4 tentou ligar isso daqui. Não dá, por uma
-   * trava do player que é boa e tem teste ("REGRA 1"): existe UMA chamada de
+   * "Assistir" abre a ficha E DÁ O PLAY desde a D6 — a D5 decidiu que o
+   * clique é o pedido. A D4 tentou ligar isso daqui e não deu, por uma trava
+   * do player que é boa e tem teste ("REGRA 1"): existe UMA chamada de
    * `play()` no projeto, dentro de `alternarPlay`, e é ela também que libera
-   * o download (`hls.startLoad()`). Um `video.play()` chamado deste arquivo
-   * abriria um segundo lugar de onde o vídeo começa, e nem tocaria: com
-   * `preload: none` e o hls.js parado, não há mídia nenhuma para tocar.
+   * o download. O caminho foi o player oferecer uma entrada, `tocar()`, que
+   * passa por `alternarPlay`; este arquivo só a chama, pelo pedido de tocar
+   * lá do alto (`ligarAssistir`), e o porquê de cada cuidado está ali.
    *
-   * O caminho certo é o player oferecer uma entrada que passe por
-   * `alternarPlay`, e isso é mexer no player — trabalho da D6, que redesenha a
-   * ficha. Duas coisas já sabidas para quando chegar lá:
-   *
-   *   - o pedido NÃO pode viajar na URL. Um `#/ver/<id>` que tocasse sozinho
-   *     tocaria para quem recebeu o link e só abriu, e isso é "tocar
-   *     sozinho". Ele mora numa variável do módulo, ligada só pelo clique;
-   *   - só clique primário sem tecla. Ctrl+clique abre OUTRA aba e não passa
-   *     por esta página: a variável ficaria ligada, e a próxima ficha aberta
-   *     aqui tocaria sem ninguém ter pedido. */
+   * E NADA TOCA AQUI: o destaque continua sem trailer e sem prévia. O play é
+   * na ficha, depois do clique. */
   function destaqueHtml(item) {
     var caixa = criar('section', 'destaque');
     caixa.setAttribute('aria-labelledby', 'destaque-titulo');
@@ -599,15 +625,20 @@
     play.appendChild(tri);
     assistir.appendChild(play);
     assistir.appendChild(document.createTextNode('Assistir'));
+    ligarAssistir(assistir, item.id);
     botoes.appendChild(assistir);
 
-    /* "Ver a série" cai na grade da prateleira dela enquanto a página da série
-     * (§5.6, fase D6) não existe. Só aparece quando a série TEM prateleira —
-     * senão o botão levaria a uma lista vazia. */
-    var daSerie = GTM.prateleiraPorId(estado.itens, 'serie:' + (item.serie || ''), estado.site);
-    if (daSerie) {
+    /* "Ver a série" leva à PÁGINA da série (D6), e só existe quando ela tem
+     * página — 3 ou mais títulos, a decisão D7. Numa série menor o "Assistir"
+     * já chega a uma ficha que mostra a série inteira embaixo do vídeo.
+     *
+     * Até a D6 o botão caía na grade da prateleira da série, e por isso só
+     * aparecia para quem tinha prateleira própria: uma série institucional de
+     * seis títulos, como Campanhas, ficava sem ele. */
+    var daSerie = GTM.paginaDaSerie(estado.itens, item.serie, estado.site);
+    if (daSerie && daSerie.temPagina) {
       var verSerie = criar('a', 'botao', 'Ver a série');
-      verSerie.href = '#/tudo/' + encodeURIComponent(daSerie.id);
+      verSerie.href = '#/serie/' + encodeURIComponent(daSerie.nome);
       botoes.appendChild(verSerie);
     }
 
@@ -861,10 +892,17 @@
    * dela. Veste as classes do cartão da prateleira — a mesma capa, o mesmo
    * corte em duas linhas, o mesmo crescimento pequeno — e NÃO tem prévia no
    * hover: o `preview.webp` é de um título, e a série não tem trecho que seja
-   * dela. */
+   * dela.
+   *
+   * Leva à página da série quando ela TEM página (D7: 3 ou mais títulos), e
+   * direto à ficha do primeiro título quando não tem. A ficha já mostra a
+   * série inteira embaixo do vídeo; uma página de uma linha só seria um
+   * clique a mais para chegar ao mesmo lugar. */
   function cartaoSerie(s) {
     var a = criar('a', 'pcard');
-    a.href = '#/serie/' + encodeURIComponent(s.nome);
+    a.href = s.temPagina
+      ? '#/serie/' + encodeURIComponent(s.nome)
+      : '#/ep/' + encodeURIComponent(s.itens[0].id);
 
     var capa = criar('div', 'pcard-capa');
     var url = GTM.urlCapa(s.itens[0], estado.config);
@@ -899,9 +937,9 @@
    * séries em cartões, em dois grupos — o que é para a aula e o que é do Goiás
    * Tec —, pelas mesmas listas das prateleiras.
    *
-   * Cada cartão leva a `#/serie/<nome>`, que por enquanto é a grade da série.
-   * A D6 transforma essa MESMA rota na página da série (§5.6), e o link que
-   * alguém guardar hoje continua valendo depois. */
+   * Cada cartão leva à página da série, `#/serie/<nome>` — a rota que a D5
+   * abriu como grade e que a D6 fez página —, ou à ficha, na série pequena
+   * (ver `cartaoSerie`). */
   function renderIndiceSeries() {
     document.title = 'Séries — ' + TITULO_BASE;
     var grupos = GTM.gruposDeSeries(estado.itens, estado.site);
@@ -927,6 +965,181 @@
       secao.appendChild(lista);
       el.grade.appendChild(secao);
     });
+  }
+
+  /* ------------------------------------------------------- a página da série */
+
+  /* Uma linha da lista de episódios — na página da série e embaixo do vídeo,
+   * na ficha (D6). O formato é o do Globoplay, como a §5.6 do PLANO-DESIGN
+   * pediu: capa pequena, o número, o título curto, a duração e duas linhas de
+   * sinopse.
+   *
+   * A linha inteira é UM link, como o cartão da grade: o alvo de toque é a
+   * linha toda, e não só o título. O título é o curto — "Advogada", e não "De
+   * Olho no Futuro: Advogada" —, porque a série está escrita logo acima; e o
+   * número que o `tituloCurto` tira do nome volta na linha de cima ("Parte
+   * 3"), que é o que distingue as cinco "Literatura e cidadania".
+   *
+   * A linha do título que está NA TELA não é link. Na ficha, clicar nela não
+   * levaria a lugar nenhum: o endereço é o mesmo, e sem troca de hash o
+   * roteador nem acorda. Ela é um bloco com `aria-current`, que é o que o
+   * leitor de tela anuncia, e com o "Você está aqui" escrito.
+   *
+   * Sem prévia no hover, de propósito. Na ficha a lista mora embaixo de um
+   * vídeo que pode estar tocando, e passar o ponteiro por ela a caminho da
+   * barra de rolagem puxaria 1,13 MB por linha. Na página da série a capa é
+   * pequena e a escolha é pelo título e pela sinopse. */
+  function linhaEpisodio(item, atual, nivel) {
+    var linha = criar(atual ? 'div' : 'a', atual ? 'ep ep-atual' : 'ep');
+    if (atual) linha.setAttribute('aria-current', 'true');
+    else linha.href = '#/ep/' + encodeURIComponent(item.id);
+    marcarMesa(linha, 'item:' + item.id);
+
+    var capa = criar('div', 'ep-capa');
+    var url = GTM.urlCapa(item, estado.config);
+    if (url) {
+      var img = criar('img');
+      img.src = url;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.width = 640;
+      img.height = 360;
+      img.addEventListener('error', function () {
+        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+      });
+      capa.appendChild(img);
+    } else {
+      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+    }
+    var dur = GTM.formatarDuracao(item);
+    if (dur) capa.appendChild(criar('span', 'card-duracao', dur));
+    linha.appendChild(capa);
+
+    var corpo = criar('div', 'ep-corpo');
+    var sobre = [GTM.rotuloNumero(item), item.ano].filter(Boolean).join(' · ');
+    if (sobre) corpo.appendChild(criar('p', 'ep-numero', sobre));
+    corpo.appendChild(criar(nivel, 'ep-titulo', GTM.tituloCurto(item) || '(sem título)'));
+    if (atual) corpo.appendChild(criar('p', 'ep-aqui', 'Você está aqui'));
+    var resumo = GTM.resumoSinopse(item);
+    if (resumo) corpo.appendChild(criar('p', 'ep-sinopse', resumo));
+    if (!GTM.resolverFonte(item, estado.config)) {
+      corpo.appendChild(criar('span', 'selo selo-erro', frase('videoIndisponivel')));
+    }
+    linha.appendChild(corpo);
+    return linha;
+  }
+
+  /* A lista inteira da série, numa <section> rotulada. Os episódios vão numa
+   * <ol>: são uma sequência, e o leitor de tela anuncia "lista, 11 itens",
+   * como a <ul> das prateleiras. Título de temporada só quando há mais de uma
+   * — e aí o título do episódio desce um nível, para a página continuar
+   * sendo um índice que faz sentido.
+   *
+   * `atualId` é o título da ficha, e '' na página da série. Na ficha a seção
+   * se chama "Episódios da série" e ganha o "Ver a série" no canto, quando a
+   * série tem página: é o mesmo lugar e o mesmo desenho do "Ver tudo" de uma
+   * prateleira, e é pelo mesmo motivo — ir do pedaço para o inteiro. */
+  function secaoEpisodios(s, atualId) {
+    var secao = criar('section', 'episodios');
+    secao.setAttribute('aria-labelledby', 'episodios-titulo');
+
+    var cabeca = criar('div', 'prateleira-cabeca');
+    var h2 = criar('h2', 'prateleira-titulo', atualId ? 'Episódios da série' : 'Episódios');
+    h2.id = 'episodios-titulo';
+    cabeca.appendChild(h2);
+    if (atualId && s.temPagina) {
+      var ver = criar('a', 'prateleira-tudo', 'Ver a série');
+      ver.href = '#/serie/' + encodeURIComponent(s.nome);
+      ver.setAttribute('aria-label', 'Ver a página da série ' + s.nome);
+      cabeca.appendChild(ver);
+    }
+    secao.appendChild(cabeca);
+
+    var varias = s.temporadas.length > 1;
+    s.temporadas.forEach(function (t) {
+      if (varias) secao.appendChild(criar('h3', 'episodios-temporada', GTM.rotuloTemporada(t.temporada)));
+      var lista = criar('ol', 'episodios-lista');
+      t.itens.forEach(function (item) {
+        var li = criar('li');
+        li.appendChild(linhaEpisodio(item, item.id === atualId, varias ? 'h4' : 'h3'));
+        lista.appendChild(li);
+      });
+      secao.appendChild(lista);
+    });
+    return secao;
+  }
+
+  /* O ALTO DA PÁGINA DA SÉRIE veste o desenho do destaque — é por isso que a
+   * caixa leva as DUAS classes: texto à esquerda, a capa à direita, uma coluna
+   * só abaixo de 900 px, e o padding em cima em vez de margem, que é o que
+   * mantém o CLS em zero (a regra está no `.destaque`, com teste).
+   *
+   * A capa é a do primeiro título, a mesma do cartão da série na página
+   * Séries: é a imagem pela qual a pessoa escolheu entrar. Uma série não tem
+   * sinopse no catálogo; o que ela tem é o tamanho, e é ele que vai no lugar.
+   *
+   * SEM "Assistir". Numa série sem número de episódio — De Olho no Futuro,
+   * Campanhas — o primeiro é o primeiro em ordem alfabética, e um botão grande
+   * para tocá-lo escolheria por quem está chegando. A escolha é a lista, logo
+   * abaixo. */
+  function cabecaDaSerie(s) {
+    var caixa = criar('section', 'destaque serie-cabeca');
+    caixa.setAttribute('aria-labelledby', 'serie-titulo');
+
+    var texto = criar('div', 'destaque-texto');
+    texto.appendChild(criar('p', 'destaque-serie', s.grupo.titulo));
+    var h1 = criar('h1', 'destaque-titulo', s.nome);
+    h1.id = 'serie-titulo';
+    texto.appendChild(h1);
+    var n = s.itens.length;
+    texto.appendChild(criar('p', 'destaque-meta',
+      [n + (n === 1 ? ' título' : ' títulos'), GTM.formatarMinutos(s.segundos), GTM.formatarAnos(s.anos)]
+        .filter(Boolean).join(' · ')));
+    caixa.appendChild(texto);
+
+    /* A mesma capa do destaque, com as mesmas regras: 640 px no máximo, o
+     * tamanho declarado para reservar a caixa, e prioridade alta — é a maior
+     * coisa da primeira tela, o LCP desta página. Nenhuma prévia. */
+    var moldura = criar('div', 'destaque-capa');
+    var url = GTM.urlCapa(s.itens[0], estado.config);
+    if (url) {
+      var img = criar('img');
+      img.src = url;
+      img.alt = '';
+      img.width = 640;
+      img.height = 360;
+      img.decoding = 'async';
+      img.setAttribute('fetchpriority', 'high');
+      img.addEventListener('error', function () {
+        moldura.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+      });
+      moldura.appendChild(img);
+    } else {
+      moldura.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+    }
+    caixa.appendChild(moldura);
+    return caixa;
+  }
+
+  /* A PÁGINA DA SÉRIE (D6): o alto, e a lista de episódios em ordem. É um ramo
+   * de `renderGrade`, como a página Séries, e pelo mesmo motivo: quem chega
+   * aqui vindo da ficha tem o player destruído na limpeza de lá.
+   *
+   * Vale para QUALQUER série, também a pequena que o cartão leva direto à
+   * ficha (D7): um link guardado para `#/serie/<nome>` não pode quebrar. */
+  function renderSerie(nome) {
+    var s = GTM.paginaDaSerie(estado.itens, nome, estado.site);
+    if (!s) {
+      el.grade.appendChild(aviso('Essa série não existe mais.', true));
+      var todas = criar('a', 'botao', 'Ver todas as séries');
+      todas.href = '#/series';
+      el.grade.appendChild(todas);
+      return;
+    }
+    document.title = s.nome + ' — ' + TITULO_BASE;
+    el.grade.appendChild(cabecaDaSerie(s));
+    el.grade.appendChild(secaoEpisodios(s, ''));
   }
 
   function renderGrade() {
@@ -965,16 +1178,23 @@
       return;
     }
 
+    /* A página de uma série (D6) é outro ramo daqui, pelo mesmo motivo. Ela
+     * mora na seção Séries do cabeçalho, e é lá que o sublinhado fica. */
+    if (estado.serieRota) {
+      marcarNav('series');
+      renderSerie(estado.serieRota);
+      return;
+    }
+
     /* A CHEGADA é a prateleira; a GRADE é a resposta — da busca, do filtro por
-     * série, do "Ver tudo" e da rota de uma série. Sem pergunta não há o que
-     * responder, e é por isso que a grade sai da tela inicial sem sair do
-     * site. */
-    if (!estado.termo && !estado.serie && !estado.prateleira && !estado.serieRota) {
+     * série e do "Ver tudo". Sem pergunta não há o que responder, e é por isso
+     * que a grade sai da tela inicial sem sair do site. */
+    if (!estado.termo && !estado.serie && !estado.prateleira) {
       marcarNav('inicio');
       renderChegada();
       return;
     }
-    marcarNav(estado.serieRota ? 'series' : '');
+    marcarNav('');
     /* Uma resposta na tela é busca aberta — é o caso de quem volta da ficha
      * pelo botão do navegador: no celular o campo reaparece com o termo. */
     if (estado.termo) marcarBusca(true);
@@ -993,18 +1213,6 @@
     if (prat) {
       el.grade.appendChild(criar('h1', 'grade-titulo', prat.titulo));
       document.title = prat.titulo + ' — ' + TITULO_BASE;
-    }
-
-    if (estado.serieRota) {
-      if (!GTM.filtrarPorSerie(publicados, estado.serieRota).length) {
-        el.grade.appendChild(aviso('Essa série não existe mais.', true));
-        var todas = criar('a', 'botao', 'Ver todas as séries');
-        todas.href = '#/series';
-        el.grade.appendChild(todas);
-        return;
-      }
-      el.grade.appendChild(criar('h1', 'grade-titulo', estado.serieRota));
-      document.title = estado.serieRota + ' — ' + TITULO_BASE;
     }
 
     /* O chip filtra a resposta da busca, e é por isso que as séries dele saem
@@ -1195,8 +1403,16 @@
     dl.appendChild(criar('dd', null, valor));
   }
 
+  /* O alto da coluna do lado, como no destaque (D6): a série e o episódio em
+   * cima do título, em amarelo, e a duração, o ano e os capítulos embaixo
+   * dele. Até a D6 era uma linha só, embaixo do título, com as cinco coisas. */
+  function serieDaFicha(item) {
+    return [item.serie, GTM.rotuloEpisodio(item)].filter(Boolean).join(' · ');
+  }
+
   function metaDaFicha(item) {
-    return [item.serie, GTM.rotuloEpisodio(item), GTM.formatarDuracao(item), item.ano]
+    var caps = GTM.capitulos(item).length;
+    return [GTM.formatarDuracao(item), item.ano, caps ? caps + ' capítulos' : '']
       .filter(Boolean).join(' · ');
   }
 
@@ -1227,9 +1443,15 @@
     var foco = document.activeElement;
 
     if (titulo !== foco) titulo.textContent = item.titulo || '(sem título)';
+    el.ficha.querySelector('[data-mesa-campo="serie"]').textContent = serieDaFicha(item);
     el.ficha.querySelector('[data-mesa-campo="meta"]').textContent = metaDaFicha(item);
     if (sinopse !== foco) sinopse.textContent = item.sinopse || '';
     sinopse.classList.toggle('sinopse-vazia', !item.sinopse);
+
+    /* A linha dele na lista da série, embaixo do vídeo, mostra o título CURTO:
+     * sem isto, o nome digitado na mesa mudaria no alto e ficaria velho ali. */
+    var naLista = el.ficha.querySelector('.ep-atual .ep-titulo');
+    if (naLista) naLista.textContent = GTM.tituloCurto(item) || '(sem título)';
 
     var pend = el.ficha.querySelector('[data-mesa-campo="pendencia"]');
     if (item.pendencia && pend) {
@@ -1245,10 +1467,14 @@
     pintarSelecao();
   }
 
-  function renderFicha(id) {
-    /* Trocar de episódio pelos botões da série chama renderFicha direto, sem
-     * passar pela grade: sem isto, o hls.js do título anterior continuaria
-     * puxando segmentos enquanto o novo começa. */
+  /* `tocar` é o pedido do "Assistir" (ver `ligarAssistir`), e só o roteador o
+   * passa. Os outros caminhos que remontam a ficha — o deslize ↓ da fase 7, a
+   * mesa — chamam sem ele, e a ficha volta com o vídeo parado. */
+  function renderFicha(id, tocar) {
+    /* Trocar de episódio — pela lista da série embaixo do vídeo, ou pelo
+     * Shift+N — vem de uma ficha direto para outra, sem passar pela grade: sem
+     * isto, o hls.js do título anterior continuaria puxando segmentos enquanto
+     * o novo começa. */
     destruirPlayer();
     limpar(el.ficha);
     limpar(el.avisos);
@@ -1276,8 +1502,8 @@
 
     var grade = criar('div', 'ficha');
 
-    /* ---- coluna do player ---- */
-    var coluna = criar('div');
+    /* ---- o vídeo ---- */
+    var coluna = criar('div', 'ficha-video');
     var caixa = criar('div', 'player');
     var fonte = GTM.resolverFonte(item, estado.config);
 
@@ -1285,8 +1511,9 @@
     var alvoCapitulos = null;
 
     /* Calculado antes do player porque ele precisa dos vizinhos para o
-     * Shift+N / Shift+P do teclado. Os mesmos vizinhos alimentam os botões de
-     * navegação no fim desta função. */
+     * Shift+N / Shift+P do teclado. Eles saem da mesma lista que a ficha
+     * desenha embaixo do vídeo (`GTM.paginaDaSerie`), então a tecla anda pela
+     * ordem que a tela mostra. */
     var viz = GTM.vizinhos(estado.itens, item.id);
 
     /* O player nosso é o PADRÃO desde 03/09. As duas redes de segurança
@@ -1335,36 +1562,16 @@
         'Vídeo ainda não disponível. O arquivo pode estar em processamento no servidor de vídeo.'));
     }
     coluna.appendChild(caixa);
-
-    /* Capítulos: a linha do tempo segmentada e o título sob o ponteiro vêm do
-     * Bunny quando o player é o embed, e do nosso player.js desde a fase 3.
-     * Esta lista é a outra metade, e funciona igual nos dois casos. */
-    if (alvoCapitulos) {
-      var caps = listaCapitulos(item, alvoCapitulos);
-      if (caps) coluna.appendChild(caps);
-    }
-
-    /* Navegação explícita: só muda de episódio quando alguém clica — ou aperta
-     * Shift+N / Shift+P, que é o mesmo gesto deliberado, pelo teclado. */
-    if (viz.anterior || viz.proximo) {
-      var nav = criar('nav', 'navegacao');
-      nav.setAttribute('aria-label', 'Episódios da série');
-      if (viz.anterior) {
-        var ant = criar('a', 'botao', '← ' + viz.anterior.titulo);
-        ant.href = '#/ep/' + encodeURIComponent(viz.anterior.id);
-        nav.appendChild(ant);
-      }
-      if (viz.proximo) {
-        var prox = criar('a', 'botao', viz.proximo.titulo + ' →');
-        prox.href = '#/ep/' + encodeURIComponent(viz.proximo.id);
-        nav.appendChild(prox);
-      }
-      coluna.appendChild(nav);
-    }
     grade.appendChild(coluna);
 
-    /* ---- coluna dos metadados ---- */
-    var lado = criar('div');
+    /* ---- a coluna do lado ----
+     * A D6 arrumou esta coluna como o texto do destaque: a série em amarelo,
+     * o título, e a duração, o ano e os capítulos numa linha. Abaixo de 900 px
+     * ela desce para baixo do player — e é por isso que o TÍTULO vem logo
+     * depois do vídeo no celular, e não depois de uma lista de 24 capítulos,
+     * como até a D6. */
+    var lado = criar('div', 'ficha-lado');
+    lado.appendChild(campoDaFicha(criar('p', 'destaque-serie ficha-serie', serieDaFicha(item)), item, 'serie'));
     lado.appendChild(campoDaFicha(criar('h1', null, item.titulo || '(sem título)'), item, 'titulo'));
 
     lado.appendChild(campoDaFicha(criar('p', 'ficha-meta', metaDaFicha(item)), item, 'meta'));
@@ -1394,10 +1601,50 @@
     linhaDados(dl, 'Tags', (item.tags || []).join(', '));
     if (dl.childNodes.length) lado.appendChild(dl);
 
+    /* Capítulos: a linha do tempo segmentada e o título sob o ponteiro vêm do
+     * Bunny quando o player é o embed, e do nosso player.js desde a fase 3.
+     * Esta lista é a outra metade, e funciona igual nos dois casos.
+     *
+     * Ela mora na coluna do lado desde a D6, e não mais embaixo do player: no
+     * computador fica AO LADO do vídeo, onde se clica num capítulo sem perder
+     * o quadro de vista. O comportamento é o mesmo — quem a monta continua
+     * sendo `listaCapitulos`, com o mesmo alvo. */
+    if (alvoCapitulos) {
+      var caps = listaCapitulos(item, alvoCapitulos);
+      if (caps) lado.appendChild(caps);
+    }
+
     grade.appendChild(lado);
+
+    /* ---- a série, embaixo do vídeo ----
+     * "Episódios da série" (D6), no lugar dos dois botões ← → que havia
+     * embaixo do player. É a lista da página da série, com este título
+     * marcado, e aparece quando há PARA ONDE ir: série de um título só não
+     * ganha uma lista com uma linha, que seria ela mesma.
+     *
+     * Ela é o TERCEIRO filho da grade, e quem a põe no lugar é o CSS: no
+     * computador, embaixo do player e na coluna dele, com a coluna do lado
+     * descendo ao lado dos dois; no celular, depois do texto e dos
+     * capítulos. Como seção solta depois da grade, ela começava embaixo da
+     * coluna do lado — 749 px de altura contra os 497 do player, medido em
+     * 1400 px —, com 370 px de vazio embaixo do vídeo e a próxima linha abaixo
+     * da dobra.
+     *
+     * A navegação continua explícita: muda de episódio quem clica numa linha,
+     * ou quem aperta Shift+N / Shift+P, que anda pela mesma ordem. Nada aqui
+     * reage ao fim do vídeo. */
+    var daSerie = GTM.paginaDaSerie(estado.itens, item.serie || 'Sem série', estado.site);
+    var outros = daSerie ? daSerie.itens.filter(function (i) { return i.id !== item.id; }).length : 0;
+    if (outros) grade.appendChild(secaoEpisodios(daSerie, item.id));
+
     el.ficha.appendChild(grade);
 
     window.scrollTo(0, 0);
+
+    /* O play do "Assistir", por último: com a ficha inteira na página. Só o
+     * player nosso sabe atender — o iframe do `?player=embed` é a saída de
+     * emergência, e continua esperando o clique no play dele. */
+    if (tocar && playerAtivo) playerAtivo.tocar();
   }
 
   /* ------------------------------------------------------------------ rotas */
@@ -1426,17 +1673,24 @@
     var trocouDeTela = hash !== estado.rota;
     estado.rota = hash;
 
+    /* O pedido do "Assistir" vale para UMA troca de tela, e é consumido aqui
+     * em todas, tocando ou não (ver `ligarAssistir`). */
+    var pedido = pedidoDeTocar;
+    pedidoDeTocar = '';
+
     var ep = hash.match(/^#\/ep\/(.+)$/);
     if (ep) {
       /* A busca fica guardada — o botão de voltar do navegador devolve a
        * resposta —, mas o campo recolhe: a ficha é do vídeo. */
       marcarBusca(false);
-      renderFicha(decodificar(ep[1]));
+      var id = decodificar(ep[1]);
+      renderFicha(id, pedido === id);
       return;
     }
 
     var indice = hash === '#/series';
-    /* `#/serie/<nome>` — a grade de uma série, até a D6 fazer dela a página. */
+    /* `#/serie/<nome>` — a página de uma série (D6). Era a grade dela até ali,
+     * e a rota é a mesma de propósito: link guardado continua valendo. */
     var serie = hash.match(/^#\/serie\/(.+)$/);
     /* `#/tudo/<id da prateleira>` — a mesma lista da linha, em grade. */
     var tudo = hash.match(/^#\/tudo\/(.+)$/);
@@ -1531,9 +1785,10 @@
       avisarMesa({ tipo: 'selecionar', alvo: alvo.getAttribute('data-mesa') });
     }, true);
 
-    /* O duplo clique num cartão abre a ficha, como o clique abre no site. */
+    /* O duplo clique num cartão abre a ficha, como o clique abre no site — e a
+     * linha de episódio da página da série é um cartão deitado (D6). */
     document.addEventListener('dblclick', function (ev) {
-      var alvoCartao = ev.target.closest('a.card, a.pcard');
+      var alvoCartao = ev.target.closest('a.card, a.pcard, a.ep');
       if (alvoCartao) window.location.hash = alvoCartao.getAttribute('href');
     });
 

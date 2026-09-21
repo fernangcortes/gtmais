@@ -723,17 +723,126 @@ main { padding: 24px 0 64px; }
   .indice-lista { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--esp-4) var(--esp-3); }
 }
 
+/* ------------------------------------------------ a página da série (D6)
+ *
+ * O ALTO é o `.destaque` inteiro: a caixa leva as duas classes (ver
+ * `cabecaDaSerie` no app.js), e herda dele as duas colunas, a capa de 640 px e
+ * o padding em cima, que é o que mantém o CLS em zero. Não há regra própria
+ * para ele aqui, de propósito — duas cópias do mesmo desenho envelhecem
+ * separadas.
+ *
+ * O que é daqui é a LISTA DE EPISÓDIOS, que serve às duas telas: à página da
+ * série e à ficha, embaixo do vídeo. O formato é o do Globoplay, pedido na
+ * §5.6: capa pequena à esquerda, e o número, o título curto e duas linhas de
+ * sinopse ao lado. */
+
+/* Os 48 px que separam o destaque da primeira prateleira, na chegada, aqui
+ * separam o alto da página do título da lista, que é parte da mesma coisa:
+ * medidos em 375 px, sobravam 60 px de vazio entre os dois. */
+.serie-cabeca { margin-bottom: var(--esp-6); }
+
+/* Um teto de largura: sem ele, numa janela de 1400, a sinopse correria mais
+ * de 1100 px de ponta a ponta, e ninguém lê uma linha assim de uma vez. */
+.episodios { max-width: 960px; margin: 0 0 var(--esp-6); }
+
+.episodios-temporada {
+  margin: var(--esp-5) 0 var(--esp-2); color: var(--texto-fraco);
+  font-size: var(--tipo-menor); font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+
+.episodios-lista { list-style: none; margin: 0; padding: 0; }
+
+/* A linha inteira é o alvo. A margem negativa devolve ao texto o alinhamento
+ * com o título da seção, e deixa o fundo do hover e da linha atual sobrar um
+ * pouco para fora — a caixa acesa tem respiro sem o conteúdo sair do lugar. */
+.ep {
+  display: flex; gap: var(--esp-4); align-items: flex-start;
+  padding: var(--esp-3); margin: 0 calc(-1 * var(--esp-3));
+  border-radius: var(--raio); color: inherit; text-decoration: none;
+}
+a.ep:hover { background: var(--superficie); }
+a.ep:hover .ep-capa { border-color: var(--marca); }
+a.ep:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
+
+/* A linha do título que está na tela, na ficha. O verde fraco é o mesmo que
+ * marca o capítulo que está tocando na lista de capítulos: "aqui" tem uma cor
+ * só no site. --texto sobre ele dá 13,67:1; --texto-fraco, 6,21:1. */
+.ep-atual { background: var(--marca-fraca); }
+
+/* 16:9 como toda capa do site. A duração vai no canto dela, com o mesmo selo
+ * do cartão (`.card-duracao`). */
+.ep-capa {
+  flex: 0 0 224px; aspect-ratio: 16 / 9; position: relative; overflow: hidden;
+  border-radius: 8px; background: var(--marca-fraca); border: 1px solid var(--borda);
+}
+.ep-capa img { width: 100%; height: 100%; object-fit: cover; }
+
+.ep-corpo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.ep-numero {
+  margin: 0; color: var(--texto-fraco); font-size: var(--tipo-micro);
+  font-variant-numeric: tabular-nums;
+}
+
+.ep-titulo { margin: 0; font-size: var(--tipo-base); font-weight: 600; line-height: 1.3; }
+
+/* --marca sobre o verde fraco da linha atual: 6,93:1. */
+.ep-aqui { margin: 0; color: var(--marca); font-size: var(--tipo-micro); font-weight: 600; }
+
+/* Duas linhas, e o corte é do navegador, como no destaque: só ele sabe a
+ * largura real. A sinopse inteira está na ficha. */
+.ep-sinopse {
+  margin: var(--esp-1) 0 0; color: var(--texto-fraco);
+  font-size: var(--tipo-menor); line-height: 1.45;
+  display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; line-clamp: 2; overflow: hidden;
+}
+
+/* No celular a capa é a do cartão deitado da grade — 40% da linha, com teto —,
+ * e o respiro encolhe junto com o do `.limite`. */
+@media (max-width: 560px) {
+  .ep { gap: var(--esp-3); padding: var(--esp-2); margin: 0 calc(-1 * var(--esp-2)); }
+  .ep-capa { flex-basis: 40%; max-width: 160px; }
+  .ep-titulo { font-size: var(--tipo-corpo); }
+}
+
 /* ------------------------------------------------------------------ ficha */
 
+/* 44 px de alvo de toque — tinha 22, medido em 375 px em 15/09. A linha fica
+ * com a altura do alvo, e a margem de baixo encolhe para a ficha não descer
+ * mais que 10 px. */
 .voltar {
-  display: inline-block; margin-bottom: 16px; font-size: 14px;
-  color: var(--texto-fraco); text-decoration: none;
+  display: inline-flex; align-items: center; min-height: 44px; margin-bottom: var(--esp-1);
+  font-size: 14px; color: var(--texto-fraco); text-decoration: none; border-radius: 4px;
 }
 .voltar:hover { color: var(--marca); }
+.voltar:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
 
-.ficha { display: grid; gap: 28px; grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr); }
+/* TRÊS ÁREAS desde a D6: o vídeo, a coluna do lado e a série. No computador a
+ * série fica embaixo do vídeo, na coluna dele, e o lado desce pelas duas
+ * linhas — a lista começa logo embaixo do player, e não embaixo da coluna do
+ * lado, que com os capítulos é a mais alta (749 contra 497 px, em 1400). Numa
+ * coluna só, a ordem é a do HTML: vídeo, texto e capítulos, série. É também a
+ * ordem do Tab e do leitor de tela nas duas larguras.
+ *
+ * `align-items: start` é o que impede a linha do vídeo de esticar até a altura
+ * do lado: sem ele a lista da série desceria junto. */
+.ficha {
+  display: grid; gap: 28px; align-items: start;
+  grid-template-columns: minmax(0, 2fr) minmax(260px, 1fr);
+  grid-template-areas: "video lado" "serie lado";
+}
+.ficha-video { grid-area: video; min-width: 0; }
+.ficha-lado { grid-area: lado; min-width: 0; }
+.ficha > .episodios { grid-area: serie; margin: 0; }
 
-@media (max-width: 900px) { .ficha { grid-template-columns: 1fr; } }
+@media (max-width: 900px) {
+  .ficha { grid-template-columns: 1fr; grid-template-areas: "video" "lado" "serie"; }
+  /* Numa coluna, a lista vem depois de um texto que termina sem régua: o
+   * respiro maior é o que a separa da sinopse ou dos capítulos. */
+  .ficha > .episodios { margin-top: var(--esp-4); }
+}
 
 .player {
   aspect-ratio: 16 / 9; width: 100%; background: #000;
@@ -1278,8 +1387,12 @@ main { padding: 24px 0 64px; }
 /* Modo teatro (tecla T). A ficha é uma grade de duas colunas; o teatro força
    uma coluna, e o player passa a ocupar a largura toda do conteúdo. A classe
    fica no <body> porque quem manda no layout da ficha é o site, não o player —
-   e `destruir()` a remove ao sair, senão a grade voltaria estreita. */
-body.gtm-teatro .ficha { grid-template-columns: 1fr; }
+   e `destruir()` a remove ao sair, senão a grade voltaria estreita.
+
+   Desde a D6 a grade tem ÁREAS, e uma coluna só não basta: com as áreas de
+   duas colunas valendo, "lado" continuaria pedindo a segunda coluna e a
+   grade a criaria de volta. As áreas descem junto, na ordem do celular. */
+body.gtm-teatro .ficha { grid-template-columns: 1fr; grid-template-areas: "video" "lado" "serie"; }
 body.gtm-teatro .player { border-radius: 0; border-left: 0; border-right: 0; }
 
 /* Rodinha de espera. Só aparece quando o vídeo está esperando rede — não no
@@ -1298,7 +1411,12 @@ body.gtm-teatro .player { border-radius: 0; border-left: 0; border-right: 0; }
 
 .ficha h1 { font-size: 24px; line-height: 1.25; margin: 0 0 6px; }
 
-.ficha-meta { color: var(--texto-fraco); font-size: 14px; margin: 0 0 18px; }
+/* A série e o episódio em cima do título (D6), com o amarelo do destaque —
+ * `.destaque-serie` vem junto no mesmo nó. Sem série nem número a linha some,
+ * em vez de deixar o vão dela em cima do título. */
+.ficha-serie:empty { display: none; }
+
+.ficha-meta { color: var(--texto-fraco); font-size: 14px; margin: 0 0 18px; font-variant-numeric: tabular-nums; }
 
 .sinopse { font-size: 15.5px; margin: 0 0 20px; white-space: pre-wrap; }
 .sinopse-vazia { color: var(--texto-fraco); font-style: italic; }
@@ -1384,12 +1502,6 @@ body.gtm-teatro .player { border-radius: 0; border-left: 0; border-right: 0; }
   .capitulo { padding: 11px 10px; }
 }
 
-/* Navegação entre episódios: sempre por clique. Nunca automática. */
-.navegacao {
-  display: flex; gap: 10px; flex-wrap: wrap;
-  border-top: 1px solid var(--borda); margin-top: 22px; padding-top: 16px;
-}
-
 .botao {
   display: inline-block; padding: 8px 14px; font-size: 14px; cursor: pointer;
   background: var(--superficie); color: var(--texto); text-decoration: none;
@@ -1434,6 +1546,17 @@ body.gtm-teatro .player { border-radius: 0; border-left: 0; border-right: 0; }
   border-top: 1px solid var(--borda); padding: 20px 0 40px;
   color: var(--texto-fraco); font-size: 12.5px;
 }
+
+/* O "Administração" tinha 16 px de alvo (medido em 375 px em 15/09). O
+ * padding dá os 44 px — 19 da linha mais 13 em cima e 13 embaixo — e a margem
+ * negativa do mesmo tamanho os devolve, então o rodapé não cresce nem um
+ * pixel: é o alvo que aumenta, não a linha. O rodapé já foi o dono do CLS
+ * desta página, e mudar a altura dele é mexer onde dói. */
+.rodape a {
+  display: inline-block; padding: 13px 6px; margin: -13px -6px;
+  border-radius: 4px;
+}
+.rodape a:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
 
 /* O RODAPÉ ERA O DONO DO CLS de 0,0985 medido na D0, e isto é o conserto.
  *

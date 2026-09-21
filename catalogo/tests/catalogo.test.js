@@ -1122,6 +1122,67 @@ test('nada é baixado antes do play — nem pelo <video>, nem pelo hls.js', () =
     'alguém tem que liberar o download no primeiro play');
 });
 
+/* O PLAY QUE CHEGA ANTES DO hls.js (21/09). `alternarPlay` só libera o
+ * download se o hls.js já existe, e ele nasce depois que o arquivo da
+ * biblioteca chega. Um play pedido antes deixava o vídeo "tocando" sem nenhum
+ * segmento pedido, para sempre — medido: cinco segundos, `readyState` 0, só o
+ * playlist mestre na rede. Com o "Assistir" da D6, é o caso comum.
+ *
+ * A liberação que existe aqui é a do MESMO pedido: ela só acontece com o vídeo
+ * já querendo tocar. Sem o `!video.paused`, toda ficha aberta baixaria vídeo
+ * — o teste de cima continuaria verde, e a regra, quebrada. */
+test('o play pedido antes de o hls.js chegar libera o download quando ele chega', () => {
+  const ligar = PLAYER_CODIGO.match(/function ligarFonte\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(ligar, 'não achei ligarFonte em player.js');
+  assert.match(ligar[1],
+    /hls\.attachMedia\(video\);\s*if \(!video\.paused && !carregouAlgo\) \{ hls\.startLoad\(\); carregouAlgo = true; \}/,
+    'o play que chega antes do hls.js voltou a ficar preso — ou o download passou a sair sem play nenhum');
+});
+
+/* A ENTRADA DO "ASSISTIR" (D6). O player ganhou uma entrada e nenhum
+ * comportamento: `tocar()` é o mesmo `alternarPlay` do botão, e só com o vídeo
+ * parado — pedir para tocar o que já toca não pode virar pausa. */
+test('o "Assistir" entra pelo mesmo alternarPlay, e só com o vídeo parado', () => {
+  const tocar = PLAYER_CODIGO.match(/function tocar\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(tocar, 'não achei tocar em player.js');
+  assert.match(tocar[1], /^\s*if \(!video\.paused\) return;/,
+    'tocar() deixou de sair quando o vídeo já toca — pedir de novo viraria pausa');
+  assert.ok(!/\.play\s*\(/.test(tocar[1]), 'tocar() virou um segundo caminho para o play()');
+  assert.match(PLAYER_CODIGO, /irPara: irPara, aoTempo: aoTempo, tocar: tocar/,
+    'o player deixou de oferecer a entrada tocar()');
+  const chamadas = PLAYER_CODIGO.match(/\.play\s*\(/g) || [];
+  assert.equal(chamadas.length, 1, 'a D6 abriu um segundo caminho para o play()');
+});
+
+/* O "ASSISTIR" QUE SÓ TOCAVA UMA VEZ (21/09, visto no ar logo depois do deploy
+ * da D6). Com o hls.js já em cache, o `tocar()` dava o play num <video> SEM
+ * FONTE, e a biblioteca, que liga a fonte na microtarefa seguinte, cancelava o
+ * play com a carga nova — `AbortError`. O "Assistir" só tocava na primeira
+ * ficha de cada visita. O pedido agora espera a fonte, e todo caminho que liga
+ * uma — HLS nativo, MP4, hls.js — passa por quem o atende. Um caminho novo que
+ * esqueça a chamada deixa o "Assistir" parado nele, em silêncio. */
+test('o pedido do "Assistir" espera a fonte, e todo caminho que liga a fonte o atende', () => {
+  const tocar = PLAYER_CODIGO.match(/function tocar\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.match(tocar[1], /if \(!temFonte\) \{ tocarQuandoLigar = true; return; \}\s*alternarPlay\(\);/,
+    'tocar() dá o play sem fonte — com a biblioteca em cache, a troca de fonte o cancela');
+
+  const atende = PLAYER_CODIGO.match(/function aoLigarFonte\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(atende, 'não achei aoLigarFonte em player.js');
+  assert.match(atende[1], /temFonte = true;/);
+  assert.match(atende[1], /tocarQuandoLigar = false;\s*if \(video\.paused\) alternarPlay\(\);/,
+    'o pedido guardado é atendido mesmo com o vídeo já tocando — e aí vira pausa');
+
+  /* Cada `video.src = …` é seguido de quem atende o pedido, e o hls.js o chama
+   * depois do `attachMedia`. */
+  const fontes = [...PLAYER_CODIGO.matchAll(/video\.src = url\w+;([^}]*)/g)];
+  assert.equal(fontes.length, 3, 'mudou o número de lugares que dão fonte ao <video> — confira cada um');
+  for (const f of fontes) {
+    assert.match(f[1], /aoLigarFonte\(\)/, 'um caminho liga a fonte sem atender o pedido: ' + f[0].trim());
+  }
+  assert.match(PLAYER_CODIGO, /hls\.attachMedia\(video\);[\s\S]{0,200}?aoLigarFonte\(\);\s*\}\)\.catch/,
+    'o hls.js liga a fonte e o pedido do "Assistir" fica esperando para sempre');
+});
+
 /* `rememberPosition=false` do embed: não gravamos onde o vídeo parou.
  *
  * A fase 2 abriu UMA exceção ao "nada guardado no navegador": a preferência de
@@ -4985,12 +5046,48 @@ test('a capa do destaque é o LCP: prioridade alta, sem lazy, sem prévia', () =
  * isso daqui — e não dá: a REGRA 1 do player admite UMA chamada de play(), em
  * `alternarPlay`, que é também quem libera o download (`hls.startLoad()`). Um
  * `.play()` neste arquivo abriria um segundo lugar de onde o vídeo começa, e
- * nem tocaria. O caminho é o player oferecer uma entrada que passe por
- * `alternarPlay` — trabalho da D6. Este teste é o que impede o atalho. */
+ * nem tocaria. O caminho foi o player oferecer uma entrada que passa por
+ * `alternarPlay` — o `tocar()` da D6. Este teste é o que impede o atalho. */
 test('o app.js não chama play() — quem começa o vídeo é o player', () => {
   const codigo = semComentarios(lerTexto(path.join(SITE, 'app.js')));
   assert.ok(!/\.play\s*\(/.test(codigo),
     'app.js chama play() — isso é um segundo lugar de onde o vídeo começa, fora de alternarPlay');
+});
+
+/* O "ASSISTIR" DÁ O PLAY (D6), e as portas que o pedido não pode abrir: viajar
+ * na URL (um link que tocasse sozinho tocaria para quem só o abriu), ligar por
+ * Ctrl+clique (a outra aba não passa por aqui, e o pedido sobraria) e sobrar de
+ * uma tela para a outra. */
+test('o "Assistir" pede o play por clique, e o pedido não viaja na URL nem sobra', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const ligar = app.match(/function ligarAssistir\(link, id\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(ligar, 'não achei ligarAssistir em app.js');
+  assert.match(ligar[1], /ev\.button !== 0 \|\| ev\.ctrlKey \|\| ev\.metaKey \|\| ev\.shiftKey \|\| ev\.altKey\) return;/,
+    'o pedido de tocar liga com Ctrl+clique — a outra aba não passa por aqui, e ele sobraria');
+  assert.match(ligar[1], /pedidoDeTocar = id/);
+
+  const destaque = app.match(/function destaqueHtml\(item\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(destaque[1], /ligarAssistir\(assistir, item\.id\)/, 'o "Assistir" do destaque não pede mais o play');
+  assert.match(destaque[1], /assistir\.href = '#\/ep\/' \+ encodeURIComponent\(item\.id\);/,
+    'o link do "Assistir" mudou — o pedido de tocar não pode viajar na URL');
+
+  /* O roteador gasta o pedido em TODA troca de tela, antes de qualquer desvio. */
+  const rotear = app.match(/function rotear\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(rotear[1], /var pedido = pedidoDeTocar;\s*pedidoDeTocar = '';/,
+    'o roteador deixou de consumir o pedido — um clique perdido tocaria na próxima visita');
+  assert.ok(rotear[1].indexOf("pedidoDeTocar = ''") < rotear[1].indexOf('if (ep)'),
+    'o pedido só é gasto em parte das telas');
+  assert.match(rotear[1], /renderFicha\(id, pedido === id\)/, 'a ficha toca um título que não foi o pedido');
+
+  /* Quem toca é o player, uma vez, no fim da ficha montada — e só o roteador
+   * passa o pedido: o deslize ↓ e a mesa remontam a ficha com o vídeo parado. */
+  const ficha = app.match(/function renderFicha\(id, tocar\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(ficha[1], /if \(tocar && playerAtivo\) playerAtivo\.tocar\(\);\s*$/,
+    'o play do "Assistir" saiu do fim da ficha, ou deixou de depender do pedido');
+  assert.equal((app.match(/\.tocar\(\)/g) || []).length, 1, 'apareceu outro lugar que manda o player tocar');
+  const chamadas = [...app.matchAll(/(?<!function )renderFicha\(([^)]*)\)/g)].map(m => m[1]);
+  assert.deepEqual(chamadas.filter(a => a.includes(',')), ['id, pedido === id'],
+    'outro caminho passou a remontar a ficha tocando');
 });
 
 /* O destaque é UM. Escolher um título tem que apagar a marca dos outros NA
@@ -5087,6 +5184,10 @@ test('todo token de cor passa o contraste da WCAG sobre o fundo em que é usado'
     /* A série do destaque é escrita em amarelo direto sobre o fundo da
      * página, não sobre um cartão (D4). */
     ['marca-ouro', 'fundo', 4.5],
+    /* A linha do título que está na tela, na lista de episódios (D6): o
+     * fundo é o verde fraco, e sobre ele vão o título, a sinopse e o "Você
+     * está aqui" em verde. */
+    ['texto', 'marca-fraca', 4.5], ['texto-fraco', 'marca-fraca', 4.5], ['marca', 'marca-fraca', 4.5],
     ['alerta', 'alerta-fundo', 4.5], ['erro', 'erro-fundo', 4.5],
     ['contorno', 'fundo', 3], ['contorno', 'superficie', 3]
   ];
@@ -5792,12 +5893,120 @@ test('os minutos somados de uma série são escritos para gente', () => {
   assert.equal(GTM.formatarMinutos('abc'), '');
 });
 
-/* As duas rotas novas. `#/serie/<nome>` nasce como a grade da série e é a MESMA
- * rota que a D6 vai transformar na página da série (§5.6): o link que alguém
- * guardar hoje continua valendo depois. O nome passa por encodeURIComponent na
- * ida e por uma decodificação protegida na volta — "PequiPod / Ciranda da Arte"
- * tem uma barra, e um endereço torto não pode derrubar o roteador. */
-test('#/series abre o índice, e #/serie/<nome> abre a grade daquela série', () => {
+/* A PÁGINA DE UMA SÉRIE (D6). A lista dela é a mesma da "Episódios da série"
+ * da ficha, e é por ela que o Shift+N / Shift+P anda: a tecla não pode levar a
+ * um episódio que a tela mostra em outro lugar. */
+test('a página da série anda na mesma ordem do Shift+N', () => {
+  const pag = GTM.paginaDaSerie(catalogoPrateleiras, 'De Olho no Futuro');
+  assert.deepEqual(pag.itens.map(i => i.id), ['dof-1', 'dof-2', 'dof-3'],
+    'a página tem de vir na ordem de ordenar(), e sem o título fora do ar');
+  assert.equal(pag.segundos, 420 + 430 + 440, 'o título fora do ar entrou na conta dos minutos');
+
+  const andado = [pag.itens[0].id];
+  let v = GTM.vizinhos(catalogoPrateleiras, andado[0]);
+  while (v.proximo) {
+    andado.push(v.proximo.id);
+    v = GTM.vizinhos(catalogoPrateleiras, v.proximo.id);
+  }
+  assert.deepEqual(andado, pag.itens.map(i => i.id),
+    'o Shift+N percorre a série numa ordem diferente da que a página mostra');
+
+  assert.equal(pag.grupo.id, 'aula');
+  assert.equal(GTM.paginaDaSerie(catalogoPrateleiras, 'Campanhas').grupo.titulo, 'Do Goiás Tec',
+    'a página e a página Séries discordam sobre o lado da série');
+});
+
+/* A D7: página própria só para a série de 3 ou mais títulos. A ROTA vale para
+ * todas — um link guardado não quebra —, mas o cartão da série pequena leva
+ * direto à ficha, que já traz a série inteira embaixo do vídeo. */
+test('só a série de 3 ou mais títulos é oferecida como página — a rota vale para todas', () => {
+  assert.equal(GTM.MINIMO_PAGINA_SERIE, 3);
+  assert.equal(GTM.paginaDaSerie(catalogoPrateleiras, 'Enquete').temPagina, true);
+  const mat = GTM.paginaDaSerie(catalogoPrateleiras, 'Matematicidades');
+  assert.equal(mat.temPagina, false, 'duas linhas não fazem uma página — a D7');
+  assert.equal(mat.itens.length, 2, 'a rota deixou de responder pela série pequena');
+
+  /* O título fora do ar não conta para chegar aos três. */
+  const quase = [
+    { id: 'p1', titulo: 'A', serie: 'Nova', publicar: true },
+    { id: 'p2', titulo: 'B', serie: 'Nova', publicar: true },
+    { id: 'p3', titulo: 'C', serie: 'Nova', publicar: false }
+  ];
+  assert.equal(GTM.paginaDaSerie(quase, 'Nova').temPagina, false);
+
+  /* O cartão da página Séries faz a mesma pergunta, e tem de ouvir a mesma
+   * resposta. */
+  const temPagina = Object.fromEntries(GTM.gruposDeSeries(catalogoPrateleiras)
+    .flatMap(g => g.series).map(s => [s.nome, s.temPagina]));
+  assert.equal(temPagina['De Olho no Futuro'], true);
+  assert.equal(temPagina['Matematicidades'], false);
+  assert.equal(temPagina['Curtas — Kalunga'], false);
+});
+
+/* O Blá Blá Blá tem as cinco partes da T1 e um episódio da T2 — é a única
+ * série com duas temporadas no ar (17/09). Título de temporada só aparece
+ * quando há mais de uma; senão seria um "Temporada 1" em cima de toda lista. */
+test('a página só separa temporada quando há mais de uma', () => {
+  const bla = [
+    { id: 't2e1', titulo: 'Blá Blá Blá: Tecnologias digitais', serie: 'Blá Blá Blá com o Ivair', temporada: 2, episodio: 1, publicar: true },
+    { id: 't1e2', titulo: 'Blá Blá Blá: Literatura e cidadania (Parte 2)', serie: 'Blá Blá Blá com o Ivair', temporada: 1, episodio: 2, publicar: true },
+    { id: 't1e1', titulo: 'Blá Blá Blá: Literatura e cidadania (Parte 1)', serie: 'Blá Blá Blá com o Ivair', temporada: 1, episodio: 1, publicar: true }
+  ];
+  const pag = GTM.paginaDaSerie(bla, 'Blá Blá Blá com o Ivair');
+  assert.deepEqual(pag.temporadas.map(t => [t.temporada, t.itens.map(i => i.id)]),
+    [[1, ['t1e1', 't1e2']], [2, ['t2e1']]]);
+  assert.equal(GTM.rotuloTemporada(2), 'Temporada 2');
+
+  assert.equal(GTM.paginaDaSerie(catalogoPrateleiras, 'Enquete').temporadas.length, 1);
+  assert.equal(GTM.paginaDaSerie(catalogoPrateleiras, 'De Olho no Futuro').temporadas[0].temporada, null);
+
+  /* Misturada: o grupo sem número vem por último, com nome, e sem um número
+   * inventado para ele. */
+  const mista = GTM.paginaDaSerie([
+    { id: 'x', titulo: 'X', serie: 'S', publicar: true },
+    { id: 'y', titulo: 'Y', serie: 'S', temporada: 1, episodio: 1, publicar: true }
+  ], 'S');
+  assert.deepEqual(mista.temporadas.map(t => t.temporada), [1, null]);
+  assert.equal(GTM.rotuloTemporada(null), 'Sem temporada');
+});
+
+test('os anos da série vão do primeiro ao último, e o vazio não vira ano zero', () => {
+  const pag = GTM.paginaDaSerie([
+    { id: 'a', titulo: 'A', serie: 'S', ano: 2025, publicar: true },
+    { id: 'b', titulo: 'B', serie: 'S', ano: '2023', publicar: true },
+    { id: 'c', titulo: 'C', serie: 'S', ano: '', publicar: true },
+    { id: 'd', titulo: 'D', serie: 'S', publicar: true }
+  ], 'S');
+  assert.deepEqual(pag.anos, { de: 2023, ate: 2025 });
+  assert.equal(GTM.formatarAnos(pag.anos), '2023 a 2025');
+  assert.equal(GTM.formatarAnos({ de: 2024, ate: 2024 }), '2024');
+  assert.equal(GTM.formatarAnos(null), '');
+  assert.equal(GTM.paginaDaSerie([{ id: 'a', titulo: 'A', serie: 'S', publicar: true }], 'S').anos, null);
+});
+
+/* O nome vazio chega ao `filtrarPorSerie` como "sem filtro" — era assim que
+ * os vizinhos de um título sem série viravam o catálogo inteiro. */
+test('série sem título publicado não tem página, e o título sem série só tem vizinho sem série', () => {
+  assert.equal(GTM.paginaDaSerie(catalogoPrateleiras, 'Não existe'), null);
+  assert.equal(GTM.paginaDaSerie(catalogoPrateleiras, ''), null, 'nome vazio devolveria o catálogo inteiro');
+  assert.equal(GTM.paginaDaSerie([{ id: 'o', titulo: 'O', serie: 'S', publicar: false }], 'S'), null);
+  assert.equal(GTM.paginaDaSerie(null, 'S'), null);
+
+  const soltos = [
+    { id: 'a', titulo: 'A', publicar: true },
+    { id: 'b', titulo: 'B', publicar: true },
+    { id: 'c', titulo: 'C', serie: 'Outra', publicar: true }
+  ];
+  assert.equal(GTM.vizinhos(soltos, 'a').anterior, null, 'o vizinho do título sem série era outra série');
+  assert.equal(GTM.vizinhos(soltos, 'a').proximo.id, 'b');
+});
+
+/* As duas rotas da D5. `#/serie/<nome>` nasceu como a grade da série e a D6 a
+ * fez página (§5.6) — a MESMA rota, para o link guardado continuar valendo. O
+ * nome passa por encodeURIComponent na ida e por uma decodificação protegida na
+ * volta — "PequiPod / Ciranda da Arte" tem uma barra, e um endereço torto não
+ * pode derrubar o roteador. */
+test('#/series abre o índice, e #/serie/<nome> abre a página daquela série', () => {
   const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
   const rotear = app.match(/function rotear\(\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(rotear, 'não achei rotear em app.js');
@@ -5811,14 +6020,180 @@ test('#/series abre o índice, e #/serie/<nome> abre a grade daquela série', ()
     'a decodificação da rota não se protege de endereço torto');
   assert.ok(!/decodeURIComponent\(/.test(rotear[1]), 'o roteador voltou a decodificar sem proteção');
 
-  /* O índice é um ramo de renderGrade, DEPOIS da limpeza: é ela que destrói o
-   * player de quem chega da ficha. */
+  /* O índice e a página da série são ramos de renderGrade, DEPOIS da limpeza:
+   * é ela que destrói o player de quem chega da ficha. */
   const grade = app.match(/function renderGrade\(\)\s*\{([\s\S]*?)\n  \}/);
   assert.match(grade[1], /limpar\(el\.ficha\)[\s\S]*renderIndiceSeries\(\)/,
     'o índice de séries não passa pela limpeza que destrói o player');
+  assert.match(grade[1], /limpar\(el\.ficha\)[\s\S]*renderSerie\(estado\.serieRota\)/,
+    'a página da série não passa pela limpeza que destrói o player');
+
+  /* E a série deixou de ser uma grade: a rota não filtra mais a lista de onde
+   * a busca e o "Ver tudo" partem. */
+  const base = app.match(/function baseDaGrade\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(base, 'não achei baseDaGrade em app.js');
+  assert.ok(!/serieRota/.test(base[1]), 'a rota da série voltou a ser uma grade filtrada');
 
   /* E o link da seção em que a pessoa está diz isso ao leitor de tela. */
   assert.match(app, /setAttribute\('aria-current', 'page'\)/, 'o cabeçalho não marca mais onde a pessoa está');
+});
+
+/* A PÁGINA DA SÉRIE (D6) é o alto e a lista — sem grade, sem chip e sem
+ * contagem "de 69", que eram coisa de resposta de busca. */
+test('a página da série é o alto e a lista de episódios, e não uma grade', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const pagina = app.match(/function renderSerie\(nome\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(pagina, 'não achei renderSerie em app.js');
+  assert.match(pagina[1], /GTM\.paginaDaSerie\(/, 'a página não monta a série pelo core');
+  assert.match(pagina[1], /cabecaDaSerie\(s\)[\s\S]*secaoEpisodios\(s, ''\)/, 'faltou o alto ou a lista');
+  assert.ok(!/filtroSeries\(|'grade'|contagem/.test(pagina[1]), 'a página da série voltou a ser grade');
+  /* Série que não existe diz isso, e oferece o caminho de volta. */
+  assert.match(pagina[1], /if \(!s\)[\s\S]*'#\/series'/, 'a série que sumiu deixa a tela vazia');
+});
+
+/* A lista serve à página e à ficha. Numa <ol> rotulada, porque é sequência e o
+ * leitor anuncia quantos são; a linha do título que está na tela NÃO é link —
+ * na ficha ela levaria ao mesmo endereço, e sem troca de hash nada acontece. */
+test('a lista de episódios é uma <ol> rotulada, e o título na tela não é link', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const secao = app.match(/function secaoEpisodios\(s, atualId\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(secao, 'não achei secaoEpisodios em app.js');
+  assert.match(secao[1], /criar\('section'/, 'a lista saiu da <section>');
+  assert.match(secao[1], /aria-labelledby/, 'a <section> perdeu o rótulo');
+  assert.match(secao[1], /criar\('ol'/, 'os episódios saíram da <ol> — o leitor não anuncia quantos são');
+  assert.match(secao[1], /s\.temporadas\.length > 1/, 'o título de temporada aparece mesmo com uma só');
+
+  const linha = app.match(/function linhaEpisodio\(item, atual, nivel\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(linha, 'não achei linhaEpisodio em app.js');
+  assert.match(linha[1], /criar\(atual \? 'div' : 'a'/, 'a linha do título na tela voltou a ser link');
+  assert.match(linha[1], /setAttribute\('aria-current', 'true'\)/, 'a linha atual não diz que é a atual');
+  assert.match(linha[1], /GTM\.tituloCurto\(item\)/, 'a linha repete o nome da série no título');
+  assert.match(linha[1], /GTM\.rotuloNumero\(item\)/,
+    'a linha perdeu o número — as cinco "Literatura e cidadania" ficam iguais');
+  /* Onze capas numa lista que desce da tela: só as que aparecem são pedidas,
+   * e nenhuma prévia, porque na ficha a lista mora embaixo de um vídeo. */
+  assert.match(linha[1], /img\.loading = 'lazy'/, 'as capas da lista são pedidas todas de uma vez');
+  assert.match(linha[1], /img\.width = 640/, 'a capa da lista não reserva a caixa');
+  assert.ok(!/ligarPreview\(|urlPreview\(/.test(linha[1]), 'a lista de episódios ganhou prévia animada');
+
+  /* Na mesa, a linha é um cartão: um clique escolhe, e o duplo abre a ficha. */
+  assert.match(app, /closest\('a\.card, a\.pcard, a\.ep'\)/, 'o duplo clique da mesa não abre a linha de episódio');
+});
+
+/* O alto da página é o destaque — as mesmas regras de LCP e de CLS. */
+test('o alto da série veste o destaque: capa com prioridade alta, sem lazy, sem prévia', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const cabeca = app.match(/function cabecaDaSerie\(s\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(cabeca, 'não achei cabecaDaSerie em app.js');
+  assert.match(cabeca[1], /criar\('section', 'destaque serie-cabeca'\)/,
+    'o alto da série deixou de vestir o .destaque — e com ele o padding que segura o CLS');
+  assert.match(cabeca[1], /setAttribute\('fetchpriority', 'high'\)/, 'a capa do alto perdeu a prioridade');
+  assert.ok(!/loading\s*=/.test(cabeca[1]), 'a capa do alto ficou preguiçosa — ela é o LCP da página');
+  assert.ok(!/ligarPreview\(|urlPreview\(/.test(cabeca[1]), 'o alto da série ganhou prévia animada');
+  assert.match(cabeca[1], /img\.width = 640/);
+  assert.ok(!/'Assistir'/.test(cabeca[1]),
+    'o alto da série ganhou "Assistir" — numa série sem número, o primeiro é só o primeiro do alfabeto');
+
+  /* A margem que ele ganhou é de BAIXO: margem em cima colapsaria através do
+   * <main> e empurraria a página quando o catálogo chega. */
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const regra = css.match(/\n\.serie-cabeca\s*\{([^}]*)\}/);
+  assert.ok(regra, 'não achei a regra de .serie-cabeca');
+  assert.ok(!/margin-top|margin:/.test(regra[1]), 'o alto da série ganhou margem em cima');
+});
+
+/* A FICHA DA D6. Os dois botões ← → embaixo do player saíram, e no lugar deles
+ * entrou a lista da série — a mesma da página, com o título na tela marcado. O
+ * portão da fase é "capítulos e Shift+N/P intactos": o Shift+N continua vindo
+ * dos vizinhos, e a lista de capítulos continua sendo montada pela mesma
+ * função, com o mesmo alvo — só mudou de coluna. */
+test('a ficha troca os botões ← → pela lista da série, e o Shift+N continua', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const ficha = app.match(/function renderFicha\(id, tocar\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(ficha, 'não achei renderFicha em app.js');
+  assert.ok(!/navegacao|viz\.anterior\.titulo|viz\.proximo\.titulo/.test(ficha[1]),
+    'os botões ← → voltaram para a ficha');
+  assert.match(ficha[1], /anterior: viz\.anterior, proximo: viz\.proximo/,
+    'o player perdeu os vizinhos — o Shift+N / Shift+P deixa de andar');
+  assert.match(ficha[1], /GTM\.paginaDaSerie\(/, 'a lista da ficha não sai da mesma função da página');
+  assert.match(ficha[1], /grade\.appendChild\(secaoEpisodios\(daSerie, item\.id\)\)/,
+    'a lista da série saiu da grade da ficha, ou deixou de marcar o título na tela');
+  /* Série de um título só não ganha uma lista com uma linha, que seria ela
+   * mesma. */
+  assert.match(ficha[1], /i\.id !== item\.id/, 'a lista aparece mesmo sem outro título para onde ir');
+  assert.match(ficha[1], /listaCapitulos\(item, alvoCapitulos\)[\s\S]*lado\.appendChild\(caps\)/,
+    'a lista de capítulos saiu da coluna do lado');
+
+  /* A grade de três áreas: no computador a série fica embaixo do vídeo, e o
+   * lado desce pelas duas linhas; numa coluna, a ordem é a do HTML — e o modo
+   * teatro tem de descer as ÁREAS junto, senão "lado" recria a segunda coluna. */
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const grade = css.match(/\n\.ficha\s*\{([^}]*)\}/);
+  assert.ok(grade, 'não achei a regra de .ficha');
+  assert.match(grade[1], /grid-template-areas:\s*"video lado" "serie lado"/,
+    'a lista da série deixou de ficar embaixo do vídeo no computador');
+  assert.match(grade[1], /align-items:\s*start/, 'a linha do vídeo estica até a altura do lado');
+  assert.match(css, /\.ficha \{ grid-template-columns: 1fr; grid-template-areas: "video" "lado" "serie"; \}/,
+    'no celular a ordem deixou de ser vídeo, texto, série');
+  assert.match(css, /body\.gtm-teatro \.ficha \{ grid-template-columns: 1fr; grid-template-areas: "video" "lado" "serie"; \}/,
+    'o modo teatro não desce as áreas — a segunda coluna volta');
+});
+
+/* 44 px — os três alvos da ficha que a D5 mediu abaixo disso em 375 px, em
+ * 15/09: o "← Voltar ao catálogo" (22), os botões de episódio (40, e eles
+ * saíram) e o "Administração" do rodapé (16). */
+test('44 px no "Voltar" e no "Administração" — e o rodapé não cresce por isso', () => {
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const regra = (seletor) => {
+    const escapado = seletor.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const m = css.match(new RegExp('\\n' + escapado + '\\s*\\{([^}]*)\\}'));
+    assert.ok(m, 'não achei a regra base de ' + seletor);
+    return m[1];
+  };
+  assert.match(regra('.voltar'), /min-height:\s*44px/, 'o "Voltar" da ficha ficou abaixo de 44 px');
+
+  /* O alvo do rodapé é a linha mais o padding de cima e de baixo, e a margem
+   * negativa devolve os dois: o alvo cresce, a linha não. A conta usa a letra
+   * do rodapé e a entrelinha do <body>, lidas do arquivo. */
+  const link = regra('.rodape a');
+  const pad = link.match(/padding:\s*(\d+)px/);
+  const marg = link.match(/margin:\s*-(\d+)px/);
+  assert.ok(pad && marg, 'o "Administração" perdeu o padding ou a margem que o compensa');
+  assert.equal(pad[1], marg[1], 'a margem não devolve o padding inteiro — o rodapé muda de altura');
+  const letra = Number(regra('.rodape').match(/font-size:\s*([\d.]+)px/)[1]);
+  const entrelinha = Number(regra('body').match(/font:\s*[\d.]+px\/([\d.]+)/)[1]);
+  assert.ok(letra * entrelinha + 2 * Number(pad[1]) >= 44,
+    'o "Administração" tem ' + (letra * entrelinha + 2 * Number(pad[1])).toFixed(1) + ' px de alvo');
+  assert.match(link, /display:\s*inline-block/, 'padding vertical em elemento inline não cresce o alvo de todo navegador');
+});
+
+/* Na mesa, o rascunho troca os textos da ficha no lugar. A série em cima do
+ * título é um campo novo (D6), e mudar a série de um título no inspetor tem de
+ * aparecer ali sem derrubar o player. */
+test('na mesa, a série em cima do título também muda no lugar', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  assert.match(app, /campoDaFicha\(criar\('p', 'destaque-serie ficha-serie', serieDaFicha\(item\)\), item, 'serie'\)/,
+    'a série em cima do título não está marcada para a mesa');
+  const noLugar = app.match(/function atualizarFichaNoLugar\(id\) \{([\s\S]*?)\n  \}/);
+  assert.match(noLugar[1], /\[data-mesa-campo="serie"\]'\)\.textContent = serieDaFicha\(item\)/,
+    'a mesa muda a série e a ficha continua mostrando a antiga');
+  assert.match(noLugar[1], /\.ep-atual \.ep-titulo/, 'o título digitado na mesa fica velho na lista da série');
+});
+
+/* A D7 no cartão e no destaque: a série pequena não tem página, e ninguém é
+ * mandado para uma. */
+test('o cartão e o "Ver a série" só levam à página quando a série tem uma', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const cartao = app.match(/function cartaoSerie\(s\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(cartao, 'não achei cartaoSerie em app.js');
+  assert.match(cartao[1], /s\.temPagina\s*\?\s*'#\/serie\/' \+ encodeURIComponent\(s\.nome\)\s*:\s*'#\/ep\/' \+ encodeURIComponent\(s\.itens\[0\]\.id\)/,
+    'o cartão da série pequena não leva mais direto à ficha');
+
+  const destaque = app.match(/function destaqueHtml\(item\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(destaque[1], /daSerie && daSerie\.temPagina/, '"Ver a série" aparece para série sem página');
+  assert.match(destaque[1], /'#\/serie\/' \+ encodeURIComponent\(daSerie\.nome\)/,
+    '"Ver a série" não leva à página da série');
+  assert.ok(!/'#\/tudo\/'/.test(destaque[1]), '"Ver a série" voltou para a grade da prateleira');
 });
 
 /* "Início" é um link para #/ — e com uma busca digitada o endereço JÁ É #/,

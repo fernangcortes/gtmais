@@ -181,7 +181,9 @@
 
   /* ------------------------------------------------------------------ player
    *
-   * Devolve { no, destruir } ou null quando o item não tem vídeo utilizável.
+   * Devolve { no, video, destruir, irPara, aoTempo, tocar } ou null quando o
+   * item não tem vídeo utilizável. `tocar()` é a entrada do "Assistir" (D6), e
+   * o comentário dela diz por que ela não é um segundo play.
    *
    * `destruir()` NÃO é opcional. Tirar o <video> do DOM para a reprodução do
    * elemento, mas a instância do hls.js continua viva com os seus próprios
@@ -240,6 +242,11 @@
     var hls = null;
     var carregouAlgo = false;      /* o primeiro play já mandou baixar? */
     var destruido = false;
+    /* O <video> já tem de onde tocar? E o "Assistir" pediu o play antes
+     * disso? As duas respostas moram aqui por causa de `tocar()`, que é quem
+     * explica por que o pedido espera a fonte. */
+    var temFonte = false;
+    var tocarQuandoLigar = false;
 
     /* ---------------------------------------------------------- controles */
 
@@ -680,6 +687,42 @@
       } else {
         video.pause();
       }
+    }
+
+    /* A ENTRADA DO "ASSISTIR" (D6 do PLANO-DESIGN). O destaque da chegada abre
+     * a ficha com o pedido de tocar, e o app.js chama isto logo depois de
+     * `criar()` — a decisão D5, "o toque em Assistir é o pedido".
+     *
+     * NÃO É UM SEGUNDO CAMINHO PARA O PLAY: é o MESMO `alternarPlay` do botão,
+     * da tecla e do toque, e só com o vídeo parado — pedir para tocar o que já
+     * toca não pode virar pausa. A REGRA 1 continua com uma chamada de
+     * `play()` no projeto, e o teste que as conta continua em 1.
+     *
+     * O player não sabe de onde veio o pedido, e não precisa: quem garante que
+     * só se chega aqui por um clique é o app.js, que não deixa o pedido
+     * viajar na URL — um link que tocasse sozinho tocaria para quem só o
+     * abriu.
+     *
+     * O PEDIDO ESPERA A FONTE. No caminho do hls.js o <video> só ganha fonte
+     * no `.then` da biblioteca, e o `tocar()` chega antes, logo depois de
+     * `criar()`. Um play dado ali é CANCELADO quando a biblioteca já está em
+     * cache: o `.then` roda na microtarefa seguinte, e o `attachMedia` troca a
+     * fonte de um elemento que acabou de pedir uma — o `networkState` dele
+     * ainda está em "sem fonte", e não em "vazio", porque a seleção de fonte
+     * do play só termina depois. A carga nova interrompe o play: `AbortError`,
+     * "The play() request was interrupted by a new load request". Medido no
+     * ar em 21/09, logo depois do deploy da D6 — o "Assistir" só tocava na
+     * PRIMEIRA ficha de cada visita, a única em que a biblioteca ainda está
+     * chegando. O teste local só tinha exercitado essa.
+     *
+     * Por isso, sem fonte, o pedido fica guardado, e quem liga a fonte o
+     * atende (`aoLigarFonte`) — com o <video> já tendo de onde tocar. Com
+     * fonte, o play sai na hora: é o caminho do HLS nativo do iPhone, onde o
+     * play precisa ficar o mais perto possível do toque. */
+    function tocar() {
+      if (!video.paused) return;
+      if (!temFonte) { tocarQuandoLigar = true; return; }
+      alternarPlay();
     }
 
     function sincronizarPlay() {
@@ -2393,6 +2436,19 @@
 
     /* -------------------------------------------------------------- fonte */
 
+    /* Todo caminho que dá fonte ao <video> passa por aqui logo depois — o
+     * HLS nativo, o MP4 e o hls.js depois do `attachMedia`. É aqui que o
+     * pedido do "Assistir" guardado por `tocar()` é atendido: o <video> já
+     * tem de onde tocar, e a troca de fonte não tem mais play nenhum para
+     * cancelar. Só com o vídeo parado — se alguém apertou o play nesse meio
+     * tempo, o pedido já foi atendido, e atendê-lo de novo seria pausar. */
+    function aoLigarFonte() {
+      temFonte = true;
+      if (!tocarQuandoLigar || destruido) return;
+      tocarQuandoLigar = false;
+      if (video.paused) alternarPlay();
+    }
+
     /* Último recurso: MP4 progressivo. Sem qualidade adaptativa e pesado —
      * 360p para não afogar a rede da escola. */
     function cairParaMp4(motivo) {
@@ -2401,13 +2457,14 @@
       video.src = urlMp4;
       carregouAlgo = true;
       avisar('');
+      aoLigarFonte();
     }
 
     /* HLS nativo, para quem não tem MSE — na prática o iPhone, onde o Safari
      * toca de verdade. Só é escolhido quando o hls.js está fora de questão. */
     function cairParaNativoOuMp4() {
       if (destruido) return;
-      if (urlHls && temHlsNativo(video)) { video.src = urlHls; return; }
+      if (urlHls && temHlsNativo(video)) { video.src = urlHls; aoLigarFonte(); return; }
       cairParaMp4('');
     }
 
@@ -2420,7 +2477,7 @@
         hlsNativo: temHlsNativo(video)
       });
 
-      if (caminho === 'nativo') { video.src = urlHls; return; }
+      if (caminho === 'nativo') { video.src = urlHls; aoLigarFonte(); return; }
       if (caminho === 'mp4') { cairParaMp4(''); return; }
 
       carregarHls().then(function (Hls) {
@@ -2437,6 +2494,25 @@
         });
         hls.loadSource(urlHls);
         hls.attachMedia(video);
+        /* O PLAY QUE CHEGOU ANTES DA BIBLIOTECA — de quem apertou o play da
+         * primeira ficha de uma visita antes de o `vendor/hls.light.min.js`
+         * chegar, numa rede lenta. `alternarPlay` só libera o download se o
+         * hls.js já existe, e ele nasce aqui. Sem esta linha o vídeo ficava
+         * querendo tocar (`paused` falso, o botão dizendo "Pausar", a rodinha
+         * girando) sem nenhum segmento pedido, para sempre. Medido em 21/09,
+         * com o clique dado antes de o `Hls` existir: cinco segundos depois,
+         * `readyState` 0 e só o playlist mestre na rede. Quem clicava de novo
+         * PAUSAVA, e só o terceiro clique tocava.
+         *
+         * `startLoad()` antes do manifesto é seguro no hls.js 1.6: ele marca o
+         * pedido (`forceStartLoad`) e começa quando o manifesto chega. E o
+         * vídeo continua querendo tocar depois do `attachMedia` porque a
+         * biblioteca chega numa TAREFA POSTERIOR ao clique: até lá o <video>
+         * voltou a `networkState` vazio, e um elemento vazio troca de fonte sem
+         * voltar a pausar. O "Assistir" não passa por aqui, e não pode — o
+         * `tocar()` explica por quê. */
+        if (!video.paused && !carregouAlgo) { hls.startLoad(); carregouAlgo = true; }
+        aoLigarFonte();
       }).catch(cairParaNativoOuMp4);
     }
 
@@ -2545,7 +2621,7 @@
 
     return {
       no: caixa, video: video, destruir: destruir,
-      irPara: irPara, aoTempo: aoTempo
+      irPara: irPara, aoTempo: aoTempo, tocar: tocar
     };
   }
 

@@ -805,41 +805,124 @@
     return prateleiras(itens, site).find(function (p) { return p.id === id; }) || null;
   }
 
+  /* Os dois lados de uma série, pelas MESMAS listas das prateleiras: o que é
+   * para a aula (pedagógicas e curtas) e o que é do Goiás Tec (institucionais).
+   * A página Séries agrupa por eles, e a página de uma série diz de que lado
+   * ela está — um nome só para as duas telas. */
+  var GRUPOS_DE_SERIE = [
+    { id: 'aula', titulo: 'Para a aula' },
+    { id: 'institucional', titulo: 'Do Goiás Tec' }
+  ];
+
+  function grupoDaSerie(nome, site) {
+    return GRUPOS_DE_SERIE[classeDaSerie(nome, site) === 'institucional' ? 1 : 0];
+  }
+
+  /* Abaixo disto a série não tem página própria — a decisão D7 do
+   * PLANO-DESIGN. O número é o da prateleira, e pelo mesmo motivo: uma página
+   * com uma ou duas linhas é um clique a mais para chegar à ficha, que já
+   * mostra a série inteira embaixo do vídeo. Mas são DUAS decisões, e cada uma
+   * tem a sua constante: mexer no tamanho da prateleira não pode tirar a
+   * página de série nenhuma sem ninguém perceber. */
+  var MINIMO_PAGINA_SERIE = 3;
+
   /* A PÁGINA SÉRIES (D5) — para onde os chips da chegada foram (decisão D8).
    *
-   * Dois grupos, pelas MESMAS listas das prateleiras: o que é para a aula
-   * (pedagógicas e curtas) e o que é do Goiás Tec (institucionais). Uma série
-   * que não está em lista nenhuma cai do lado da aula, pela mesma razão da
-   * chegada: o site não esconde título por causa de uma lista desatualizada —
-   * quem avisa é o teste "toda série está em exatamente uma das três listas".
+   * Dois grupos, os de `grupoDaSerie`. Uma série que não está em lista
+   * nenhuma cai do lado da aula, pela mesma razão da chegada: o site não
+   * esconde título por causa de uma lista desatualizada — quem avisa é o teste
+   * "toda série está em exatamente uma das três listas".
    *
-   * Cada série é { nome, itens, segundos }. Os itens vêm na ordem de
-   * `ordenar()`, e o primeiro deles é a capa do cartão — a mesma que a página
-   * da série vai usar na D6. Dentro do grupo a ordem é a de `series()`:
-   * alfabética, com a triagem ("A classificar") no fim. */
+   * Cada série é { nome, itens, segundos, temPagina }. Os itens vêm na ordem
+   * de `ordenar()`, e o primeiro deles é a capa do cartão — a mesma que a
+   * página da série usa no alto. `temPagina` diz para onde o cartão leva: a
+   * página da série, ou direto a ficha do primeiro título (D7). Dentro do
+   * grupo a ordem é a de `series()`: alfabética, com a triagem ("A
+   * classificar") no fim. */
   function gruposDeSeries(itens, site) {
     var porNome = Object.create(null);
     var nomes = [];
     ordenar(publicaveis(itens)).forEach(function (i) {
       var nome = i.serie || 'Sem série';
       if (!(nome in porNome)) {
-        porNome[nome] = { nome: nome, itens: [], segundos: 0 };
+        porNome[nome] = { nome: nome, itens: [], segundos: 0, temPagina: false };
         nomes.push(nome);
       }
       porNome[nome].itens.push(i);
       if (typeof i.duracao_seg === 'number' && i.duracao_seg > 0) porNome[nome].segundos += i.duracao_seg;
     });
 
-    var aula = [];
-    var inst = [];
+    var porGrupo = GRUPOS_DE_SERIE.map(function (g) { return { id: g.id, titulo: g.titulo, series: [] }; });
     nomes.forEach(function (nome) {
-      (classeDaSerie(nome, site) === 'institucional' ? inst : aula).push(porNome[nome]);
+      var s = porNome[nome];
+      s.temPagina = s.itens.length >= MINIMO_PAGINA_SERIE;
+      porGrupo[GRUPOS_DE_SERIE.indexOf(grupoDaSerie(nome, site))].series.push(s);
+    });
+    return porGrupo.filter(function (g) { return g.series.length; });
+  }
+
+  /* A PÁGINA DE UMA SÉRIE (D6) — `#/serie/<nome>`, a rota que a D5 abriu como
+   * a grade da série e que agora é a página dela (PLANO-DESIGN §5.6). A mesma
+   * lista serve à "Episódios da série", embaixo do vídeo na ficha.
+   *
+   * Devolve { nome, grupo, itens, segundos, anos, temporadas, temPagina }, ou
+   * null quando a série não tem título publicado — aí a tela diz que ela não
+   * existe mais. Título fora do ar não entra na lista nem na conta.
+   *
+   * A ORDEM É A DE `ordenar()`, e é ela que o Shift+N / Shift+P percorre:
+   * `vizinhos()` nasce DAQUI, e não de uma segunda leitura da série. Se as
+   * duas discordassem, o Shift+N levaria a um episódio que a lista mostra em
+   * outro lugar.
+   *
+   * `temporadas` é a lista cortada onde a temporada muda — a ordem já as deixa
+   * juntas. Quem desenha só põe título de temporada quando há mais de uma: é o
+   * *Blá Blá Blá*, com as cinco partes da T1 e o episódio da T2. Uma série de
+   * temporada única, ou sem temporada nenhuma, é uma lista só.
+   *
+   * `temPagina` é a D7: a rota vale para QUALQUER série — link guardado não
+   * quebra —, mas só a de 3 ou mais títulos é oferecida como página. */
+  function paginaDaSerie(itens, nome, site) {
+    if (!nome) return null;
+    var lista = ordenar(filtrarPorSerie(publicaveis(itens), nome));
+    if (!lista.length) return null;
+
+    var segundos = 0;
+    var anos = [];
+    var temporadas = [];
+    lista.forEach(function (i) {
+      if (typeof i.duracao_seg === 'number' && i.duracao_seg > 0) segundos += i.duracao_seg;
+      /* O ano vem do KV como número, e já veio como texto: "2024" conta, e o
+       * campo vazio não vira o ano zero. */
+      var ano = i.ano == null || i.ano === '' ? NaN : Number(i.ano);
+      if (isFinite(ano)) anos.push(ano);
+      var t = i.temporada == null ? null : i.temporada;
+      var ultima = temporadas[temporadas.length - 1];
+      if (!ultima || ultima.temporada !== t) temporadas.push({ temporada: t, itens: [] });
+      temporadas[temporadas.length - 1].itens.push(i);
     });
 
-    var saida = [];
-    if (aula.length) saida.push({ id: 'aula', titulo: 'Para a aula', series: aula });
-    if (inst.length) saida.push({ id: 'institucional', titulo: 'Do Goiás Tec', series: inst });
-    return saida;
+    return {
+      nome: nome,
+      grupo: grupoDaSerie(nome, site),
+      itens: lista,
+      segundos: segundos,
+      anos: anos.length ? { de: Math.min.apply(null, anos), ate: Math.max.apply(null, anos) } : null,
+      temporadas: temporadas,
+      temPagina: lista.length >= MINIMO_PAGINA_SERIE
+    };
+  }
+
+  /* "Temporada 2". O grupo sem número existe quando uma série mistura título
+   * com temporada e sem: ele vem por último, pela ordem de `ordenar()`, e o
+   * nome diz o que ele é em vez de inventar um número. */
+  function rotuloTemporada(temporada) {
+    return temporada == null ? 'Sem temporada' : 'Temporada ' + temporada;
+  }
+
+  /* "2023 a 2025", ou "2024" quando é um ano só. */
+  function formatarAnos(anos) {
+    if (!anos) return '';
+    return anos.de === anos.ate ? String(anos.de) : anos.de + ' a ' + anos.ate;
   }
 
   function series(itens) {
@@ -895,12 +978,20 @@
     return (itens || []).find(function (i) { return i.id === id; }) || null;
   }
 
-  /* Vizinhos dentro da mesma série, para os botões EXPLÍCITOS de navegação.
-   * Nunca use isto para avançar sozinho ao fim do vídeo — é proibido pelo produto. */
+  /* Vizinhos dentro da mesma série, para a navegação EXPLÍCITA — o Shift+N e o
+   * Shift+P do player. Nunca use isto para avançar sozinho ao fim do vídeo — é
+   * proibido pelo produto.
+   *
+   * Os irmãos são a lista de `paginaDaSerie()`, a mesma que a ficha desenha
+   * embaixo do vídeo (D6): a tecla anda pela ordem que a tela mostra. E o
+   * título sem série fica entre os sem série — antes daqui, o nome vazio
+   * chegava ao `filtrarPorSerie`, que o lê como "sem filtro", e os vizinhos
+   * dele eram o catálogo inteiro. */
   function vizinhos(itens, id) {
     var atual = porId(itens, id);
     if (!atual) return { anterior: null, proximo: null };
-    var irmaos = ordenar(filtrarPorSerie(publicaveis(itens), atual.serie));
+    var pagina = paginaDaSerie(itens, atual.serie || 'Sem série');
+    var irmaos = pagina ? pagina.itens : [];
     var pos = irmaos.findIndex(function (i) { return i.id === id; });
     if (pos < 0) return { anterior: null, proximo: null };
     return {
@@ -1419,7 +1510,13 @@
     SERIES_PEDAGOGICAS: SERIES_PEDAGOGICAS,
     MINIMO_PRATELEIRA: MINIMO_PRATELEIRA,
     series: series,
+    GRUPOS_DE_SERIE: GRUPOS_DE_SERIE,
+    grupoDaSerie: grupoDaSerie,
+    MINIMO_PAGINA_SERIE: MINIMO_PAGINA_SERIE,
     gruposDeSeries: gruposDeSeries,
+    paginaDaSerie: paginaDaSerie,
+    rotuloTemporada: rotuloTemporada,
+    formatarAnos: formatarAnos,
     seriesDoFiltro: seriesDoFiltro,
     buscar: buscar,
     filtrarPorSerie: filtrarPorSerie,
