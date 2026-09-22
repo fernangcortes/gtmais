@@ -28,6 +28,10 @@ catalogo/
 │   ├── mesa.js                menu, barra, o site no quadro, eventos
 │   ├── mesa.css
 │   ├── catalogo-core.js       funções puras, compartilhadas com os testes
+│   ├── busca-core.js          a busca: relevância, trechos, a junção com o sentido — só desce
+│   │                          no foco do campo de busca, nunca na chegada
+│   ├── indice-core.js         a leitura da legenda e o índice da busca — o mesmo código na
+│   │                          mesa, nas funções, nos scripts e nos testes
 │   ├── style.css
 │   ├── robots.txt
 │   └── functions/api/
@@ -39,7 +43,11 @@ catalogo/
 │       ├── conta.js           a própria conta e a própria senha
 │       ├── autorizacoes.js    pedidos de envio que esperam aprovação
 │       ├── upload-token.js    cria o vídeo e assina o upload TUS
-│       └── midia.js           status do encoding, capa e legenda
+│       ├── midia.js           status do encoding, capa e legenda
+│       └── busca/
+│           ├── fala.js        GET público: o que é falado nos vídeos no ar
+│           ├── sentido.js     GET público: a busca por sentido (Workers AI + Vectorize)
+│           └── indexar.js     o único caminho de escrita no índice da busca
 ├── scripts/                   ferramentas de carga — NÃO são publicadas
 ├── tests/catalogo.test.js     node --test
 └── capitulos.json             os cortes, escritos à mão
@@ -64,7 +72,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test tests/catalogo.test.js   # 426 testes, sem rede nem credenciais
+node --test tests/catalogo.test.js   # 481 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **mesa de curadoria** (`/admin.html`), não por
@@ -109,6 +117,7 @@ não duplica nada. Os que trabalham sobre o catálogo aceitam `--piloto`, `--ite
 | `publicar.mjs` | Publica na grade quem passa nas três condições: sem pendência registrada, com `fonte.videoId`, e encoding concluído no Bunny. `--com-pendencia` força; `--despublicar <id>` desfaz. |
 | `capitulos.mjs` | Grava os capítulos de `capitulos.json` **em dois lugares**: no Bunny (segmenta a linha do tempo do embed, que é iframe de outro domínio — lá só ele desenha aquilo) e no catálogo (de onde saem tanto a lista clicável da ficha quanto os segmentos que o player próprio pinta na barra). `--so bunny` / `--so site` separam. `--transcricao <id>` imprime a legenda em blocos, para escrever cortes novos. `--limpar <id>` desfaz. |
 | `semear.mjs` | Leva o catálogo local para o KV. Recusa-se a sobrescrever um KV já populado; `--baixar backup.json` antes, `--sobrescrever` depois. |
+| `indice-busca.mjs` | Põe os títulos na **busca**: baixa a legenda de cada vídeo do Bunny, condensa em blocos de 30 s e chama `POST /api/busca/indexar` — a fala vai para o KV e os vetores do sentido, para o Vectorize. Pula o que tem hash igual no manifesto. No dia a dia **quem faz isso é a mesa**, no envio e depois do Publicar; o script é a carga e a reserva, e é o único que vê **legenda trocada pelo `capas-legendas.mjs`** — rode-o depois dele. `--refazer` ignora o manifesto; `--so fala`; `--salvar <arquivo>` escreve o índice da fala para o `mesa-local.mjs`; `--provar` mede o modelo e o corte do sentido, sem gravar; `--lote <n>`. **Não rode enquanto alguém envia pela mesa**: as duas escritas brigam pela mesma chave. |
 
 **Trabalham sobre o Bunny e o `catalogo.seed.json` local:**
 
@@ -142,6 +151,11 @@ publicar (o PUT só sobe a `rev` na memória; o arquivo não é tocado).
 Não confere senha, não expira token, não olha permissão — toda sessão é superadmin, e o GET público
 ali **não** é o recorte de `paraPublico()`. Quem guarda essas regras é o `functions/api/`, e quem as
 testa é o `tests/catalogo.test.js`. Para conferir servidor, use o wrangler abaixo.
+
+`--catalogo <arquivo>` troca o seed por outro JSON no formato do catálogo, e `--fala <arquivo>`
+serve o índice da fala que o `indice-busca.mjs --salvar` escreve. As rotas da busca são
+fingidas: a fala sai do arquivo, o manifesto vive na memória e o sentido responde vazio, como num
+ambiente sem o Workers AI.
 
 > Um servidor de arquivos puro (`python -m http.server`) abre o `admin.html`, mas **nenhuma senha
 > funciona ali**: não há `/api/login` para responder, e o formulário fala com um 404.
@@ -186,6 +200,10 @@ Mais: a AccessKey do Bunny não aparece em nenhum arquivo servido ao navegador; 
 só posiciona o vídeo, nunca chama `play()`; e todo título de `capitulos.json` está decidido —
 com capítulos ou com o motivo escrito em `sem_capitulos`, nunca nos dois.
 
+E a busca: a chegada não pede o `busca-core.js` nem a fala; a palavra achada é marcada por nó de
+texto, nunca por `innerHTML`, porque a fala é texto de reconhecimento de voz; título tirado do ar
+some da fala e do sentido sem rodar nada; o lote de vetores não sobe sem medir o CPU de novo.
+
 ---
 
 ## Segurança
@@ -197,7 +215,10 @@ com capítulos ou com o motivo escrito em `sem_capitulos`, nunca nos dois.
 - `GET /api/catalogo` devolve **só o que está publicado**, sem caminhos locais e sem links de
   origem. O catálogo completo exige o token de admin.
 - Qualquer rota nova em `functions/api/` nasce exigindo admin: o `_middleware.js` libera apenas
-  `/api/login` e o `GET /api/catalogo`.
+  `/api/login`, o `GET /api/catalogo` e os dois GET da busca — `/api/busca/fala`, que devolve
+  só a fala dos vídeos no ar, e `/api/busca/sentido`.
+- A busca por sentido é o único caminho em que o termo digitado sai do navegador. A rota não o
+  grava em lugar nenhum; o cache guarda a resposta, não quem perguntou.
 - O login devolve um token HMAC com 8 h de validade, guardado em `sessionStorage`. A senha não
   trafega a cada requisição.
 
@@ -225,6 +246,10 @@ verdade no meio — dentro de um quadro, com o rascunho aplicado — e o painel 
   o título em destaque e os textos fixos do site.
 - **Histórico**: cada publicação, o que ela mudou campo a campo, e de onde dá para voltar.
 - **Player** e **Contas**: os ajustes do player, e as contas de admin com o que cada uma pode fazer.
+- **Busca**, na visão geral: quantos títulos no ar estão na busca pela fala, quem ficou fora e
+  quem tem o sentido desatualizado, com o botão "Pôr na busca". O envio de título novo e o
+  Publicar já põem na busca sozinhos; a legenda trocada fora da mesa não aparece aqui — é o
+  `indice-busca.mjs` que a acha.
 
 **Nada vai ao ar sozinho.** O que se edita entra num rascunho, que fica no navegador de quem
 edita e sobrevive a fechar a aba; o botão **Publicar** relê o catálogo, confere campo a campo que
@@ -275,6 +300,22 @@ binding **`CATALOGO`**, e as variáveis de ambiente (`BUNNY_API_KEY` e `ADMIN_PA
 *encrypted*). Os nomes e o formato de cada uma estão em [`../.env.example`](../.env.example).
 
 > Sem o binding do KV, `/api/catalogo` responde 500 com a mensagem explicando o que falta.
+
+**A busca por sentido** usa mais duas peças, e as duas só no ambiente de **produção**: o binding
+**`AI`** (Workers AI, o modelo `@cf/baai/bge-m3`) e o binding **`VETORES`**, o índice do Vectorize
+`goias-tec-mais-busca`. O Preview fica sem elas: ali o sentido responde vazio, com
+`indisponivel: true`, a busca por palavra continua igual, e o `POST /api/busca/indexar` com
+vetores responde 503. Para recriar o índice, com o metadado ANTES do primeiro vetor — depois, o
+filtro não vale para os que já estiverem lá:
+
+```bash
+npx wrangler vectorize create goias-tec-mais-busca --dimensions=1024 --metric=cosine
+npx wrangler vectorize create-metadata-index goias-tec-mais-busca --propertyName=tipo --type=string
+```
+
+Os bindings se ligam no painel (Settings → Bindings, só em Production), e depois
+`node scripts/indice-busca.mjs --refazer` põe tudo de volta. **Não crie `wrangler.toml` no
+projeto**: no Pages ele passa a mandar na configuração, no lugar do painel.
 
 ### Restrição de acesso
 
