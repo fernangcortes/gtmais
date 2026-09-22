@@ -43,8 +43,13 @@ await carregarEnv().catch(() => {});
 
 /* O documento vive aqui dentro enquanto o processo estiver de pé. `rev` começa
  * em 1 porque a barra da mesa mostra o número, e `undefined` na tela assusta
- * à toa — o seed não tem esse campo, que nasce no KV. */
-const catalogo = await lerCatalogo();
+ * à toa — o seed não tem esse campo, que nasce no KV.
+ *
+ * `--catalogo <arquivo>` troca o seed por outro documento — uma cópia do KV
+ * baixada com `semear.mjs --baixar`, por exemplo. O seed não tem título com
+ * `publicar: true` (quem põe no ar é a mesa, e isso mora no KV), então o SITE
+ * servido por aqui só mostra alguma coisa com uma cópia dessas. */
+const catalogo = typeof op.catalogo === 'string' ? await lerCatalogo(path.resolve(op.catalogo)) : await lerCatalogo();
 catalogo.rev = catalogo.rev || 1;
 catalogo.ajustes = catalogo.ajustes || {};
 
@@ -75,6 +80,18 @@ function corpoDoPedido(req) {
 /* As permissões saem do próprio core: acrescentar uma permissão nova lá não
  * pode deixar a mesa local capenga sem ninguém notar. */
 const { default: GTM } = await import('../site/catalogo-core.js');
+
+/* A BUSCA (PLANO-BUSCA). O índice da fala vem de um arquivo — o que o
+ * `indice-busca.mjs --salvar <arquivo>` escreve —, com `--fala <arquivo>`, e
+ * vive na memória como o catálogo: o POST da mesa troca a linha aqui, e o
+ * arquivo não é tocado. As mesmas funções do servidor (`indice-core.js`), para
+ * a linha e o manifesto saírem iguais aos do KV. Sem `--fala`, a busca local
+ * responde com títulos e capítulos, e a fala fica vazia. */
+const { default: GTMI } = await import('../site/indice-core.js');
+const busca = {
+  fala: typeof op.fala === 'string' ? (await readFile(path.resolve(op.fala), 'utf8')).trim() : '',
+  manifesto: { versao: 0, videos: {} }
+};
 
 async function api(req, res, url) {
   const caminho = url.pathname;
@@ -126,6 +143,33 @@ async function api(req, res, url) {
     return responder(res, 200, { usuario: 'superadmin', nome: 'Superadmin (local)', super: true, permissoes: GTM.PERMISSOES.slice() });
   }
 
+  if (caminho === '/api/busca/fala' && req.method === 'GET') {
+    res.writeHead(200, { 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+    return res.end(GTMI.linhasNoAr(busca.fala, GTMI.videosNoAr(catalogo)));
+  }
+
+  if (caminho === '/api/busca/indexar' && req.method === 'GET') {
+    return responder(res, 200, Object.assign({}, busca.manifesto, { sentido: false }));
+  }
+
+  if (caminho === '/api/busca/indexar' && req.method === 'POST') {
+    const pedido = GTMI.validarPedido(await corpoDoPedido(req));
+    if (pedido.erro) return responder(res, 400, { erro: pedido.erro });
+    if (pedido.vetores.length) return responder(res, 503, { erro: 'a mesa local não tem busca por sentido', sentido: false });
+    if (pedido.fim) {
+      busca.manifesto = GTMI.manifestoNovo(busca.manifesto, pedido, new Date().toISOString()).manifesto;
+      if (pedido.fala !== undefined) busca.fala = GTMI.trocarLinha(busca.fala, pedido.videoId, pedido.fala);
+      console.log('  POST /api/busca/indexar — ' + pedido.videoId + ' (só na memória)');
+    }
+    return responder(res, 200, { ok: true, videoId: pedido.videoId, versao: busca.manifesto.versao, sentido: false });
+  }
+
+  /* A busca por sentido não existe aqui: sem Workers AI e sem Vectorize, a
+   * resposta é a de todo ambiente sem os dois — vazia, sem erro na tela. */
+  if (caminho === '/api/busca/sentido' && req.method === 'GET') {
+    return responder(res, 200, { resultados: [], indisponivel: true });
+  }
+
   if (caminho === '/api/contas' && req.method === 'GET') return responder(res, 200, { contas: [] });
   if (caminho === '/api/autorizacoes' && req.method === 'GET') return responder(res, 200, { pedidos: [] });
   if (caminho === '/api/historico' && req.method === 'GET') return responder(res, 200, { linha: [], fim: true });
@@ -163,7 +207,8 @@ servidor.listen(porta, '127.0.0.1', () => {
   console.log('');
   console.log('  Mesa local  ·  http://127.0.0.1:' + porta + '/admin.html');
   console.log('  Senha: local   (usuário em branco)');
-  console.log('  ' + catalogo.itens.length + ' títulos do catalogo.seed.json · o PUT não sai da memória');
+  console.log('  ' + catalogo.itens.length + ' títulos de ' + (typeof op.catalogo === 'string' ? op.catalogo : 'catalogo.seed.json') +
+    ' · ' + GTM.publicaveis(catalogo.itens).length + ' no ar · o PUT não sai da memória');
   if (!process.env.BUNNY_PULLZONE) console.log('  Sem BUNNY_PULLZONE no .env: as capas ficam cinzas, e o resto funciona.');
   console.log('');
 });

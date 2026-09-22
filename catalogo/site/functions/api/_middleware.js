@@ -33,6 +33,12 @@ const CHAVE_AUTORIZACOES = 'autorizacoes';
  * com 16 caracteres — é isso que carrega a segurança aqui, não o número. */
 const ITERACOES_PADRAO = 10000;
 
+/* As leituras da busca que o público faz sem conta (PLANO-BUSCA §5.2 e §5.3).
+ * Só GET: a escrita do índice é o `POST /api/busca/indexar`, que exige conta
+ * e permissão. Uma rota entra aqui por decisão, com teste — nunca por nascer
+ * em `functions/api/busca/`. */
+const ROTAS_DE_LEITURA_DA_BUSCA = ['/api/busca/fala', '/api/busca/sentido'];
+
 export function json(status, corpo, extras) {
   return new Response(JSON.stringify(corpo), {
     status,
@@ -265,10 +271,13 @@ export async function onRequest(context) {
   data.admin = !!data.conta;
   data.bunny = criarClienteBunny(env);
 
-  /* Aberto ao público interno: o login e a leitura do catálogo. Todo o resto
-   * exige conta — inclusive rotas que ainda nem existem. */
+  /* Aberto ao público interno: o login, a leitura do catálogo e as leituras
+   * da busca (PLANO-BUSCA). Todo o resto exige conta — inclusive rotas que
+   * ainda nem existem, e o POST de /api/busca/indexar, que escreve. */
+  const leituraDaBusca = ROTAS_DE_LEITURA_DA_BUSCA.indexOf(rota) >= 0 && request.method === 'GET';
   const publico = rota === '/api/login' ||
-    (rota === '/api/catalogo' && request.method === 'GET');
+    (rota === '/api/catalogo' && request.method === 'GET') ||
+    leituraDaBusca;
 
   if (!publico && !data.admin) {
     return json(401, { erro: 'não autorizado' });
@@ -276,7 +285,13 @@ export async function onRequest(context) {
 
   const resposta = await next();
   const saida = new Response(resposta.body, resposta);
-  saida.headers.set('cache-control', 'no-store');
+  /* Tudo sai com `no-store`, menos as leituras da busca que dizem o próprio
+   * cache: o índice da fala tem `ETag` e `no-cache`, e é isso que devolve um
+   * 304 sem corpo à visita que busca de novo. Um `no-store` por cima faria o
+   * navegador baixar os ~430 KB a cada visita. */
+  if (!(leituraDaBusca && resposta.headers.has('cache-control'))) {
+    saida.headers.set('cache-control', 'no-store');
+  }
   saida.headers.set('x-content-type-options', 'nosniff');
   saida.headers.set('referrer-policy', 'no-referrer');
   return saida;

@@ -241,6 +241,10 @@
 
     var hls = null;
     var carregouAlgo = false;      /* o primeiro play já mandou baixar? */
+    /* O momento pedido ANTES do primeiro play — o `?t=` de um trecho da
+     * busca, um capítulo clicado com o vídeo parado. É dele que o download
+     * começa (ver `liberarDownload`). */
+    var momentoAntesDoPlay = 0;
     var destruido = false;
     /* O <video> já tem de onde tocar? E o "Assistir" pediu o play antes
      * disso? As duas respostas moram aqui por causa de `tocar()`, que é quem
@@ -675,7 +679,7 @@
         /* `preload: none` e `autoStartLoad: false` seguraram a rede até agora.
          * O primeiro play é quem libera — é a tradução fiel do `preload=false`
          * que o embed do Bunny recebia. */
-        if (hls && !carregouAlgo) { hls.startLoad(); carregouAlgo = true; }
+        liberarDownload();
         /* O gesto que o AudioContext exige. Fica ANTES do `play()` para que
          * o grafo esteja montado quando o primeiro quadro tocar — montado
          * depois, o começo do vídeo sairia com o volume errado. */
@@ -752,9 +756,34 @@
     }
 
     function irPara(segundos) {
-      video.currentTime = GTMP.limitarTempo(segundos, duracao());
+      var alvo = GTMP.limitarTempo(segundos, duracao());
+      video.currentTime = alvo;
+      if (!carregouAlgo) momentoAntesDoPlay = alvo;
       pintar();
       avisarTempo();
+    }
+
+    /* LIBERAR O DOWNLOAD, no primeiro play — e a PARTIR DO MOMENTO PEDIDO.
+     *
+     * Com o vídeo parado e nada baixado, o `irPara` escreve no `currentTime`
+     * de um <video> sem dados, e o navegador guarda o valor como a posição de
+     * partida: vale quando os dados chegam. O vídeo abria no lugar certo — o
+     * clique num trecho da busca tocou em 6:39 no primeiro teste —, mas o
+     * hls.js não sabe disso e começa a baixar do ZERO: medido em 21/09 (fase 2
+     * da busca), um `video0.ts` em 240p e outro em 480p desciam antes do salto
+     * para o segmento 99.
+     *
+     * Passar a posição ao `startLoad` não basta no 1.6: antes de o manifesto
+     * chegar ele marca o pedido e DESCARTA o número, e quem o refaz depois é o
+     * carregador de playlist, com o `config.startPosition` (conferido no
+     * código do 1.6.14, `playlist-loader.ts`, `checkAutostartLoad`). Por isso o
+     * momento vai nos dois lugares. -1 é o "do começo" do próprio hls.js. */
+    function liberarDownload() {
+      if (!hls || carregouAlgo) return;
+      var inicio = momentoAntesDoPlay > 0 ? momentoAntesDoPlay : -1;
+      hls.config.startPosition = inicio;
+      hls.startLoad(inicio);
+      carregouAlgo = true;
     }
 
     /* ------------------------------------------- barra: arrasto e a dica */
@@ -1924,7 +1953,10 @@
          * ao caminho que já existe — com o grafo, o iPhone e o recado honesto
          * de quando não dá, tudo já resolvido lá dentro. */
         var teto = (som.ativo || som.possivel) ? GTMP.VOLUME_MAX_GANHO : 1;
-        var via = definirVolume(GTMP.proximoVolume(arrastoBase.volume, a.valor, teto));
+        /* `volumeDoArrasto` e não `proximoVolume`: só o gesto tem o ímã dos
+         * 100%. As setas e o painel andam em passos de 5%, onde o ímã seria
+         * um passo que não anda. */
+        var via = definirVolume(GTMP.volumeDoArrasto(arrastoBase.volume, a.valor, teto));
         mostrarSelo(GTMP.rotuloVolume({ via: via, volume: som.volume }), a.fase !== 'fim');
       }
       /* NÃO há terceiro ramo. Havia um, o brilho, e ele saiu em 09/09: era
@@ -2511,7 +2543,7 @@
          * voltou a `networkState` vazio, e um elemento vazio troca de fonte sem
          * voltar a pausar. O "Assistir" não passa por aqui, e não pode — o
          * `tocar()` explica por quê. */
-        if (!video.paused && !carregouAlgo) { hls.startLoad(); carregouAlgo = true; }
+        if (!video.paused) liberarDownload();
         aoLigarFonte();
       }).catch(cairParaNativoOuMp4);
     }

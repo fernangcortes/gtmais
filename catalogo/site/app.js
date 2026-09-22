@@ -358,7 +358,310 @@
 
   function abrirBusca() {
     marcarBusca(true);
+    prepararBusca();
     el.busca.focus();
+  }
+
+  /* ------------------------------------------------------------ a busca nova
+   *
+   * A BUSCA MORA NUM ARQUIVO À PARTE, o `busca-core.js` (design/PLANO-BUSCA.md),
+   * e ele só desce quando alguém VAI buscar: no foco do campo, na lupa do
+   * celular ou na primeira tecla. A chegada não pede nada novo — é a regra da
+   * §5.6 do plano, e há teste.
+   *
+   * Até ele chegar, a resposta sai pela `GTM.buscar` de antes, que já está na
+   * página: quem digita antes do arquivo vê a busca antiga por um instante, e
+   * não uma tela vazia. Chegou, a resposta é redesenhada. */
+  var busca = {
+    core: '',          /* '' · 'carregando' · 'pronto' */
+    indice: null,
+    indiceDe: null,    /* o `estado.itens` de onde o índice saiu */
+    /* O ÍNDICE DA FALA (fase 3): o que é falado nos vídeos no ar, ~430 KB
+     * — cinco vezes o catálogo. Desce na PRIMEIRA BUSCA, junto com o
+     * `busca-core.js`, e nunca na chegada. Até ele chegar, os títulos e os
+     * capítulos já respondem (§5.2). */
+    falaEstado: '',    /* '' · 'carregando' · 'pronta' */
+    falaTexto: null,   /* o texto que chegou antes do busca-core, esperando */
+    fala: null,        /* { videoId: blocos }, depois de lido */
+    indiceFala: null,  /* a `fala` de onde o índice saiu */
+    /* O SENTIDO (fase 4): a resposta de cada pergunta, guardada pela
+     * pergunta — a busca repetida não volta ao servidor. A pergunta sai 400
+     * ms depois da última tecla, e só a última vale: a anterior é cancelada. */
+    sentido: Object.create(null),
+    esperaSentido: 0,
+    pedidoSentido: null,
+    /* Os vídeos cujo "mais N neste vídeo" foi aberto, para a pergunta de
+     * agora. Um redesenho — o chip, o índice que chegou — não os fecha; um
+     * termo novo, sim. */
+    abertos: Object.create(null),
+    abertosDe: '',
+    /* O anúncio da contagem para quem ouve a página: um nó que já existe
+     * antes da resposta, porque um `aria-live` que nasce junto com o texto
+     * não é lido. O texto entra depois de a pessoa parar de digitar. */
+    anuncio: null,
+    esperaAnuncio: 0
+  };
+
+  function carregarScript(src) {
+    return new Promise(function (resolve, reject) {
+      var tag = document.createElement('script');
+      tag.src = src;
+      tag.async = true;
+      tag.addEventListener('load', resolve);
+      tag.addEventListener('error', function () { reject(new Error('não foi possível carregar ' + src)); });
+      document.head.appendChild(tag);
+    });
+  }
+
+  function prepararBusca() {
+    if (!busca.core) {
+      busca.core = 'carregando';
+      carregarScript('busca-core.js').then(function () {
+        busca.core = typeof GTMB !== 'undefined' ? 'pronto' : '';
+        lerFalaQueChegou();
+        redesenharResposta();
+        /* Quem digitou antes de o arquivo chegar também pergunta ao sentido. */
+        if (estado.termo) pedirSentidoDepois();
+      }, function () {
+        /* Sem o arquivo, a busca continua a de antes, e o próximo foco tenta
+         * de novo — uma rede que caiu por um instante não deixa a busca velha
+         * para sempre. */
+        busca.core = '';
+      });
+    }
+    if (!busca.falaEstado) {
+      busca.falaEstado = 'carregando';
+      /* O navegador guarda a resposta e pergunta pelo `ETag` antes de usar:
+       * a segunda visita que busca recebe um 304, sem os 430 KB. */
+      fetch('/api/busca/fala', { headers: { Accept: 'text/plain' } }).then(function (r) {
+        if (!r.ok) throw new Error('resposta ' + r.status);
+        return r.text();
+      }).then(function (texto) {
+        busca.falaTexto = texto;
+        busca.falaEstado = 'pronta';
+        lerFalaQueChegou();
+        redesenharResposta();
+      }).catch(function () {
+        /* Sem a fala, a busca continua com os títulos e os capítulos, e o
+         * próximo foco tenta de novo. */
+        busca.falaEstado = '';
+      });
+    }
+  }
+
+  /* A fala só é LIDA com o busca-core na página — é ele que sabe ler a
+   * linha. O que chegar primeiro espera o outro. */
+  function lerFalaQueChegou() {
+    if (busca.core !== 'pronto' || busca.falaTexto == null) return;
+    busca.fala = GTMB.lerFala(busca.falaTexto);
+    busca.falaTexto = null;
+  }
+
+  /* A resposta está na tela? Então ela é redesenhada com o que acabou de
+   * chegar. Na ficha e nas outras telas não há resposta a redesenhar. */
+  function redesenharResposta() {
+    if (!estado.termo || !estado.carregado || !el.ficha.hidden) return;
+    if (window.location.hash && window.location.hash !== '#/') return;
+    renderGrade();
+  }
+
+  /* Um índice por catálogo e por fala: montado na primeira busca, de novo
+   * quando a fala chega, e de novo quando o catálogo muda — na mesa, a cada
+   * tecla do rascunho. Com a fala são ~50 ms, uma vez. */
+  function indiceDaBusca() {
+    if (busca.indiceDe !== estado.itens || busca.indiceFala !== busca.fala) {
+      busca.indice = GTMB.indice(GTM.publicaveis(estado.itens), busca.fala);
+      busca.indiceDe = estado.itens;
+      busca.indiceFala = busca.fala;
+    }
+    return busca.indice;
+  }
+
+  /* A PERGUNTA AO SENTIDO (fase 4, §5.3): 400 ms depois da última tecla, com
+   * 3 letras ou mais, e só a última vale — a anterior é cancelada. A resposta
+   * fica guardada pela pergunta. Falhou — o teto do mês, a rede —, nada
+   * aparece na tela: a busca por palavra é a mesma.
+   *
+   * O termo sai do navegador aqui, e só aqui (§7, risco 6): a rota não o
+   * grava em lugar nenhum. E ele continua fora do endereço da página. */
+  function pedirSentidoDepois() {
+    clearTimeout(busca.esperaSentido);
+    if (busca.core !== 'pronto') return;
+    var q = GTMB.perguntaDoSentido(estado.termo);
+    if (!q || q in busca.sentido) return;
+    busca.esperaSentido = setTimeout(function () {
+      if (busca.pedidoSentido) busca.pedidoSentido.abort();
+      var controle = typeof AbortController !== 'undefined' ? new AbortController() : null;
+      busca.pedidoSentido = controle;
+      fetch('/api/busca/sentido?q=' + encodeURIComponent(q), controle ? { signal: controle.signal } : undefined)
+        .then(function (r) { return r.ok ? r.json() : { resultados: [] }; })
+        .then(function (d) {
+          busca.sentido[q] = d && Array.isArray(d.resultados) ? d.resultados : [];
+          if (busca.pedidoSentido === controle) busca.pedidoSentido = null;
+          if (GTMB.perguntaDoSentido(estado.termo) === q) redesenharResposta();
+        })
+        .catch(function () { /* cancelada, ou a rede: a busca por palavra continua */ });
+    }, 400);
+  }
+
+  /* A resposta de uma pergunta: os títulos na ordem em que a grade os desenha,
+   * e os trechos. Com termo e com o arquivo da busca, por relevância (fase 1),
+   * com os capítulos e a fala que responderam (fases 2 e 3), e com o sentido
+   * junto quando ele já respondeu (fase 4); sem termo — o "Ver tudo", o chip
+   * —, na ordem do catálogo, como sempre. */
+  function responder(base, termo) {
+    if (termo && !estado.prateleira && busca.core === 'pronto') {
+      var ind = indiceDaBusca();
+      var r = GTMB.procurar(ind, termo);
+      var q = GTMB.perguntaDoSentido(termo);
+      if (q && busca.sentido[q]) r = GTMB.juntar(ind, r, busca.sentido[q]);
+      var porSentido = Object.create(null);
+      r.titulos.forEach(function (t) { if (t.porSentido) porSentido[t.item.id] = true; });
+      return {
+        titulos: r.titulos.map(function (t) { return t.item; }),
+        porSentido: porSentido,
+        trechos: r.trechos,
+        casadas: r.casadas
+      };
+    }
+    return { titulos: GTM.ordenar(GTM.buscar(base, termo)), porSentido: {}, trechos: [], casadas: [] };
+  }
+
+  function anunciar(texto) {
+    if (!busca.anuncio) return;
+    clearTimeout(busca.esperaAnuncio);
+    busca.esperaAnuncio = setTimeout(function () {
+      if (busca.anuncio.textContent !== texto) busca.anuncio.textContent = texto;
+    }, 700);
+  }
+
+  /* ------------------------------------------------------------- os trechos */
+
+  /* Um texto com as palavras da consulta marcadas, a partir dos pedaços do
+   * `GTMB.marcar` ou do `GTMB.frase`. Nós de texto e <mark>, montados um a um:
+   * a fala é ASR, e nada dela passa por innerHTML. */
+  function comMarcas(no, pedacos) {
+    pedacos.forEach(function (p) {
+      no.appendChild(p.marca ? criar('mark', null, p.texto) : document.createTextNode(p.texto));
+    });
+    return no;
+  }
+
+  /* O LINK DE UM TRECHO: `#/ep/<id>?t=<segundos>`, e o mesmo pedido de tocar
+   * do "Assistir" (`ligarAssistir`): o clique abre a ficha no momento E dá o
+   * play; o link colado abre parado no momento. O minuto na frente, e depois
+   * o que diz de onde ele é: o capítulo, e — no trecho da fala — a frase em
+   * volta da palavra (§5.2). */
+  function linkDoTrecho(t, casadasDaBusca) {
+    /* O trecho do SENTIDO (fase 4) não tem palavra a marcar: ele fala do
+     * assunto sem usar a palavra. Vai sem marca e com o rótulo. */
+    var casadas = t.porSentido ? [] : casadasDaBusca;
+    var a = criar('a', 'trecho');
+    a.href = GTM.linkDaFicha(t.item.id, t.inicio);
+    ligarAssistir(a, t.item.id);
+    /* Os espaços entre os pedaços não aparecem — espaço solto entre itens de
+     * flex não ocupa lugar —, e são eles que separam as palavras no nome do
+     * link para quem ouve: sem eles, "…de trabalho" e a frase seguinte viravam
+     * uma palavra só. */
+    a.appendChild(criar('span', 'trecho-tempo', GTM.formatarTempo(t.inicio)));
+    a.appendChild(document.createTextNode(' '));
+    var corpo = criar('span', 'trecho-corpo');
+    if (t.tipo === 'capitulo') {
+      corpo.appendChild(comMarcas(criar('span', 'trecho-capitulo', 'Capítulo: '), GTMB.marcar(t.texto, casadas)));
+    } else {
+      if (t.capitulo) {
+        corpo.appendChild(comMarcas(criar('span', 'trecho-capitulo', 'Capítulo: '), GTMB.marcar(t.capitulo, casadas)));
+        corpo.appendChild(document.createTextNode(' '));
+      }
+      corpo.appendChild(comMarcas(criar('span', 'trecho-frase'), GTMB.frase(t.texto, casadas, 120)));
+    }
+    if (t.porSentido) {
+      corpo.appendChild(document.createTextNode(' '));
+      corpo.appendChild(criar('span', 'selo selo-sentido', 'Sobre o assunto'));
+    }
+    a.appendChild(corpo);
+    return a;
+  }
+
+  /* Um vídeo e os trechos dele: a linha da "Episódios da série" (D6) — a capa
+   * pequena, a série e o número, o nome curto —, com os trechos no lugar da
+   * sinopse. Até três à mostra, e o "mais N neste vídeo" abre o resto ali
+   * mesmo. A capa é enfeite e não é link: quem escolhe é o minuto.
+   *
+   * Quatro filhos soltos, e não a capa e um corpo como na `.ep`: no celular a
+   * lista de trechos desce para baixo da capa, na largura inteira (o CSS de
+   * `.trecho-grupo`). Ao lado de uma capa de 40%, a frase teria 170 px. */
+  function grupoDeTrechos(g, casadas) {
+    var li = criar('li', 'trecho-grupo');
+    var capa = criar('div', 'ep-capa');
+    var url = GTM.urlCapa(g.item, estado.config);
+    if (url) {
+      var img = criar('img');
+      img.src = url;
+      img.alt = '';
+      img.loading = 'lazy';
+      img.decoding = 'async';
+      img.width = 640;
+      img.height = 360;
+      img.addEventListener('error', function () {
+        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+      });
+      capa.appendChild(img);
+    } else {
+      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+    }
+    li.appendChild(capa);
+
+    var cabeca = criar('div', 'trecho-cabeca');
+    var sobre = [g.item.serie, GTM.rotuloNumero(g.item)].filter(Boolean).join(' · ');
+    if (sobre) cabeca.appendChild(criar('p', 'ep-numero', sobre));
+    cabeca.appendChild(criar('h3', 'ep-titulo', GTM.tituloCurto(g.item) || g.item.titulo || '(sem título)'));
+    li.appendChild(cabeca);
+
+    var ol = criar('ol', 'trechos-do-video');
+    var mostrar = function (lista) {
+      limpar(ol);
+      lista.forEach(function (t) {
+        var linha = criar('li');
+        linha.appendChild(linkDoTrecho(t, casadas));
+        ol.appendChild(linha);
+      });
+    };
+    var aberto = !!busca.abertos[g.item.id];
+    mostrar(aberto ? g.todos : g.visiveis);
+    li.appendChild(ol);
+
+    if (!aberto && g.resto.length) {
+      var mais = criar('button', 'trecho-mais', 'mais ' + g.resto.length + ' neste vídeo');
+      mais.type = 'button';
+      mais.addEventListener('click', function () {
+        busca.abertos[g.item.id] = true;
+        mostrar(g.todos);
+        /* O botão sai, e o foco vai para o primeiro trecho que ele escondia —
+         * sem isto, ele cairia no <body>. */
+        var primeiro = g.todos.indexOf(g.resto[0]);
+        var links = ol.querySelectorAll('a');
+        if (mais.parentNode) mais.parentNode.removeChild(mais);
+        if (links[primeiro]) links[primeiro].focus();
+      });
+      li.appendChild(mais);
+    }
+    return li;
+  }
+
+  function secaoTrechos(trechos, casadas) {
+    var secao = criar('section', 'trechos');
+    secao.setAttribute('aria-labelledby', 'trechos-titulo');
+    var cabeca = criar('div', 'prateleira-cabeca');
+    var h2 = criar('h2', 'prateleira-titulo', 'Trechos');
+    h2.id = 'trechos-titulo';
+    cabeca.appendChild(h2);
+    secao.appendChild(cabeca);
+
+    var lista = criar('ul', 'trechos-lista');
+    GTMB.agruparTrechos(trechos, 3).forEach(function (g) { lista.appendChild(grupoDeTrechos(g, casadas)); });
+    secao.appendChild(lista);
+    return secao;
   }
 
   /* Esquece a busca inteira: o termo, o campo e o chip que a refinava. */
@@ -381,7 +684,9 @@
   }
 
   function aoDigitar() {
+    prepararBusca();
     estado.termo = el.busca.value;
+    pedirSentidoDepois();
     /* O chip refina UMA resposta. Apagar a busca desfaz a resposta, e o chip
      * vai junto — senão a chegada não voltaria mais: `renderGrade` só a
      * desenha sem termo E sem série. */
@@ -488,7 +793,10 @@
     cartaoEl.addEventListener('mouseleave', descartar);
   }
 
-  function cartao(item) {
+  /* `porSentido`: o título que a busca achou SÓ pelo sentido (fase 4) — ele
+   * vem depois dos que casaram por palavra, com o rótulo "Sobre o assunto"
+   * (§5.3). */
+  function cartao(item, porSentido) {
     var a = criar('a', 'card');
     a.href = '#/ep/' + encodeURIComponent(item.id);
     marcarMesa(a, 'item:' + item.id);
@@ -525,6 +833,8 @@
     /* Sinopse vazia não vira parágrafo vazio: há título publicado sem ela. */
     var resumo = GTM.resumoSinopse(item);
     if (resumo) corpo.appendChild(criar('p', 'card-sinopse', resumo));
+
+    if (porSentido) corpo.appendChild(criar('span', 'selo selo-sentido', 'Sobre o assunto'));
 
     if (!GTM.resolverFonte(item, estado.config)) {
       corpo.appendChild(criar('span', 'selo selo-erro', frase('videoIndisponivel')));
@@ -1217,31 +1527,50 @@
 
     /* O chip filtra a resposta da busca, e é por isso que as séries dele saem
      * dela ANTES do chip: ligado um, os outros continuam à mão. */
-    var resposta = GTM.buscar(baseDaGrade(), estado.termo);
-    var opcoes = GTM.seriesDoFiltro(resposta, estado.serie);
+    var resposta = responder(baseDaGrade(), estado.termo);
+    var opcoes = GTM.seriesDoFiltro(resposta.titulos, estado.serie);
     if (opcoes.length) el.grade.appendChild(filtroSeries(opcoes));
 
-    var lista = GTM.filtrarPorSerie(resposta, estado.serie);
-    el.grade.appendChild(criar('p', 'contagem',
-      lista.length + (lista.length === 1 ? ' título' : ' títulos') +
-      (lista.length !== publicados.length ? ' de ' + publicados.length : '')));
+    var lista = GTM.filtrarPorSerie(resposta.titulos, estado.serie);
+    /* O chip vale para os trechos também: ligado "Aulas", um trecho do
+     * *Bombeiro militar* embaixo da grade contradiria o botão aceso. */
+    var trechos = estado.serie
+      ? resposta.trechos.filter(function (t) { return (t.item.serie || 'Sem série') === estado.serie; })
+      : resposta.trechos;
+    if (busca.abertosDe !== estado.termo) {
+      busca.abertos = Object.create(null);
+      busca.abertosDe = estado.termo;
+    }
 
-    if (!lista.length) {
+    /* "N títulos · M trechos" (§5.6). */
+    var contagem = lista.length + (lista.length === 1 ? ' título' : ' títulos') +
+      (lista.length !== publicados.length ? ' de ' + publicados.length : '') +
+      (trechos.length ? ' · ' + trechos.length + (trechos.length === 1 ? ' trecho' : ' trechos') : '');
+    el.grade.appendChild(criar('p', 'contagem', contagem));
+
+    /* O vazio do B8 só quando nem título nem trecho responde. */
+    if (!lista.length && !trechos.length) {
       var nada = criar('div', 'vazio');
       nada.appendChild(criar('h2', null, frase('buscaVazia')));
       nada.appendChild(criar('p', null, frase('buscaVaziaAjuda')));
       el.grade.appendChild(nada);
+      if (estado.termo) anunciar(frase('buscaVazia'));
       return;
     }
+    if (estado.termo) anunciar(contagem);
 
     /* Uma grade só, sem cabeçalho de série: os blocos por série deixavam um
-     * cartão sozinho por faixa e a tela inteira vazia à direita. A ordem
-     * continua vindo de `ordenar()`, então cada série segue junta na grade —
-     * quem quiser ver uma série isolada vai pela página Séries, ou pelo chip
-     * da resposta. */
+     * cartão sozinho por faixa e a tela inteira vazia à direita. A ordem é a
+     * da resposta: por RELEVÂNCIA quando há termo (PLANO-BUSCA, fase 1) — o
+     * título com a palavra no nome antes do que só a tem na sinopse —, e a de
+     * `ordenar()` no "Ver tudo" e no chip, onde cada série segue junta. Quem
+     * quiser ver uma série isolada vai pela página Séries, ou pelo chip. */
     var grade = criar('div', 'grade');
-    GTM.ordenar(lista).forEach(function (item) { grade.appendChild(cartao(item)); });
+    lista.forEach(function (item) { grade.appendChild(cartao(item, resposta.porSentido[item.id])); });
     el.grade.appendChild(grade);
+
+    /* Embaixo da grade, os TRECHOS: o pedaço do vídeo que responde (§5.6). */
+    if (trechos.length) el.grade.appendChild(secaoTrechos(trechos, resposta.casadas));
   }
 
   /* -------------------------------------------------------------- capítulos */
@@ -1285,6 +1614,32 @@
       document.head.appendChild(tag);
     });
     return playerjsPromessa;
+  }
+
+  /* UM Player.js POR IFRAME, e não um por freguês: a lista de capítulos e o
+   * momento do endereço (`?t=`, fase 2 da busca) falam com o mesmo embed, e
+   * duas instâncias no mesmo quadro seriam dois ouvintes de postMessage
+   * disputando as mesmas mensagens. A promessa resolve no `ready` do player
+   * do Bunny, e só com o iframe ainda na página: voltar para a grade destrói a
+   * ficha, e instanciar o Player em cima de um nó solto deixaria um ouvinte
+   * vivo. */
+  var conversasComEmbed = typeof WeakMap === 'undefined' ? null : new WeakMap();
+
+  function conversaComEmbed(iframe) {
+    var guardada = conversasComEmbed && conversasComEmbed.get(iframe);
+    if (guardada) return guardada;
+    var conversa = carregarPlayerjs().then(function (playerjs) {
+      return new Promise(function (resolve, reject) {
+        if (!iframe.isConnected) { reject(new Error('a ficha saiu da página')); return; }
+        var p = new playerjs.Player(iframe);
+        p.on('ready', function () {
+          if (iframe.isConnected) resolve(p);
+          else reject(new Error('a ficha saiu da página'));
+        });
+      });
+    });
+    if (conversasComEmbed) conversasComEmbed.set(iframe, conversa);
+    return conversa;
   }
 
   /* Lista clicável dos capítulos. Devolve null quando o título não tem
@@ -1369,22 +1724,13 @@
     }
 
     /* EMBED DO BUNNY. O iframe é de outro domínio; o Player.js é o único
-     * caminho que atravessa. */
-    var iframe = alvo;
-    carregarPlayerjs().then(function (playerjs) {
-      /* Voltar para a grade destrói a ficha inteira. Se isso aconteceu enquanto
-       * o script carregava, não há mais iframe para conversar — e instanciar o
-       * Player em cima de um nó solto deixaria um listener de postMessage vivo. */
-      if (!iframe.isConnected) return;
-
-      var p = new playerjs.Player(iframe);
-      p.on('ready', function () {
-        if (!iframe.isConnected) return;
-        ativar(function (s) { p.setCurrentTime(s); });
-        /* Só posição: nada aqui reage ao FIM do vídeo, e nada avança sozinho. */
-        p.on('timeupdate', function (d) {
-          destacar(GTM.capituloEm(caps, d && d.seconds));
-        });
+     * caminho que atravessa, e a conversa com ele é a mesma do momento do
+     * endereço (`conversaComEmbed`). */
+    conversaComEmbed(alvo).then(function (p) {
+      ativar(function (s) { p.setCurrentTime(s); });
+      /* Só posição: nada aqui reage ao FIM do vídeo, e nada avança sozinho. */
+      p.on('timeupdate', function (d) {
+        destacar(GTM.capituloEm(caps, d && d.seconds));
       });
     }).catch(function () {
       /* Sem Player.js a lista continua valendo como índice do vídeo, com os
@@ -1469,8 +1815,12 @@
 
   /* `tocar` é o pedido do "Assistir" (ver `ligarAssistir`), e só o roteador o
    * passa. Os outros caminhos que remontam a ficha — o deslize ↓ da fase 7, a
-   * mesa — chamam sem ele, e a ficha volta com o vídeo parado. */
-  function renderFicha(id, tocar) {
+   * mesa — chamam sem ele, e a ficha volta com o vídeo parado.
+   *
+   * `momento` é o `?t=` do endereço (PLANO-BUSCA, fase 2): o segundo em que o
+   * vídeo abre. O clique num trecho traz os dois — o momento na URL e o
+   * pedido de tocar fora dela —, e o link colado traz só o momento. */
+  function renderFicha(id, tocar, momento) {
     /* Trocar de episódio — pela lista da série embaixo do vídeo, ou pelo
      * Shift+N — vem de uma ficha direto para outra, sem passar pela grade: sem
      * isto, o hls.js do título anterior continuaria puxando segmentos enquanto
@@ -1641,10 +1991,24 @@
 
     window.scrollTo(0, 0);
 
+    /* O MOMENTO, antes do play: é para lá que o play vai. Pela entrada que a
+     * lista de capítulos já usa — `irPara` no player nosso, `setCurrentTime`
+     * pelo Player.js no embed —, e depois da lista montada, para ela acender o
+     * capítulo em que o momento cai. Nenhuma entrada nova no player (§5.5). */
+    if (momento != null && alvoCapitulos) irAoMomento(alvoCapitulos, momento);
+
     /* O play do "Assistir", por último: com a ficha inteira na página. Só o
      * player nosso sabe atender — o iframe do `?player=embed` é a saída de
      * emergência, e continua esperando o clique no play dele. */
     if (tocar && playerAtivo) playerAtivo.tocar();
+  }
+
+  function irAoMomento(alvo, segundos) {
+    if (alvo.irPara) { alvo.irPara(segundos); return; }
+    conversaComEmbed(alvo).then(function (p) { p.setCurrentTime(segundos); }, function () {
+      /* Sem Player.js o embed abre do começo — que é a ficha de antes da
+       * busca, e não um defeito novo. */
+    });
   }
 
   /* ------------------------------------------------------------------ rotas */
@@ -1678,13 +2042,15 @@
     var pedido = pedidoDeTocar;
     pedidoDeTocar = '';
 
-    var ep = hash.match(/^#\/ep\/(.+)$/);
-    if (ep) {
+    /* `#/ep/<id>`, e `#/ep/<id>?t=<segundos>` desde a fase 2 da busca — o
+     * link de um trecho. Quem separa o momento do id é o core
+     * (`GTM.rotaDaFicha`), e o `t` que não é inteiro já chega como null. */
+    var ficha = GTM.rotaDaFicha(hash);
+    if (ficha) {
       /* A busca fica guardada — o botão de voltar do navegador devolve a
        * resposta —, mas o campo recolhe: a ficha é do vídeo. */
       marcarBusca(false);
-      var id = decodificar(ep[1]);
-      renderFicha(id, pedido === id);
+      renderFicha(ficha.id, pedido === ficha.id, ficha.t);
       return;
     }
 
@@ -1721,8 +2087,8 @@
   /* Uma mudança do rascunho com a chegada ou a grade na tela: redesenha, e
    * devolve cada prateleira à rolagem de lado em que estava. */
   function redesenharPelaMesa() {
-    var ep = (window.location.hash || '').match(/^#\/ep\/(.+)$/);
-    if (ep && !el.ficha.hidden) { atualizarFichaNoLugar(decodificar(ep[1])); return; }
+    var ficha = GTM.rotaDaFicha(window.location.hash);
+    if (ficha && !el.ficha.hidden) { atualizarFichaNoLugar(ficha.id); return; }
     var laterais = {};
     var pistas = document.querySelectorAll('[data-mesa^="prateleira:"]');
     for (var i = 0; i < pistas.length; i++) {
@@ -1817,7 +2183,17 @@
     if (mesa.ligada) ligarMesa();
     ligarTopo();
 
+    /* A contagem da busca, dita a quem ouve a página (§5.6). O nó nasce aqui,
+     * vazio e escondido da vista, e é o mesmo por toda a visita. */
+    busca.anuncio = criar('p', 'pular');
+    busca.anuncio.setAttribute('role', 'status');
+    busca.anuncio.setAttribute('aria-live', 'polite');
+    el.conteudo.insertBefore(busca.anuncio, el.conteudo.firstChild);
+
     el.busca.addEventListener('input', aoDigitar);
+    /* O arquivo da busca desce no FOCO, antes da primeira tecla: quando ela
+     * vem, ele quase sempre já chegou. */
+    el.busca.addEventListener('focus', prepararBusca);
     el.busca.addEventListener('keydown', function (ev) {
       if (ev.key === 'Escape') fecharBusca();
     });

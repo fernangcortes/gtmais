@@ -392,6 +392,8 @@
       st.lidoEm = Date.now();
       st.conflitos = GTM.conflitosRascunho(st.servidor, st.rascunho);
       agendarCatalogo();
+      /* O índice da busca também é relido: é ele que diz quem ficou fora. */
+      M.carregarBusca();
       redesenhar();
       M.toast('Catálogo lido de novo · rev ' + st.servidor.rev + (st.conflitos.length ? ' · ' + st.conflitos.length + ' em conflito com o rascunho' : ''));
     }).catch(function (e) { M.toast('Não deu para ler o catálogo: ' + e.message); });
@@ -544,6 +546,8 @@
       if (a === 'fechar') return M.escolher('');
       if (a === 'aba') { st.aba = acao.getAttribute('data-aba'); if (st.aba === 'dados') consultarMidia(); return redesenhar({ semCentro: true }); }
       if (a === 'filtro') { st.filtro = acao.getAttribute('data-filtro'); return st.tela === 'catalogo' ? redesenhar({ semPainel: true }) : irTela('catalogo'); }
+      /* A busca (PLANO-BUSCA §5.4): põe na busca quem ficou fora. */
+      if (a === 'busca-por') return M.porNaBusca();
       /* O cabeçalho da tabela, em três batidas: ordena pela coluna, inverte,
        * e devolve a ordem do acervo — que é a única que agrupa por série, e a
        * que a tela abre. Sem a terceira, quem ordenasse por duração não teria
@@ -739,6 +743,9 @@
       st.conflitos = GTM.conflitosRascunho(st.servidor, st.rascunho);
       $('mesa-carregando').hidden = true;
       if (el.site.getAttribute('src') !== 'index.html?mesa=1') { st.sitePronto = false; el.site.setAttribute('src', 'index.html?mesa=1'); }
+      /* O índice da busca, em segundo plano: a visão geral mostra quem ficou
+       * fora dela (PLANO-BUSCA §5.4), e ninguém espera por isso para entrar. */
+      M.carregarBusca();
       redesenhar();
       ajustarQuadro();
       if (st.rascunho.length) {

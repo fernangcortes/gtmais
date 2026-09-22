@@ -55,7 +55,7 @@ test('nenhum dos quatro parâmetros pode faltar na URL do player', () => {
 });
 
 test('a interface não reage ao fim do vídeo — nada de avanço automático', () => {
-  for (const arquivo of ['app.js', 'player.js', 'player-core.js',
+  for (const arquivo of ['app.js', 'player.js', 'player-core.js', 'busca-core.js', 'indice-core.js',
     'mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
     const fonteJs = lerTexto(path.join(SITE, arquivo));
     assert.ok(!/['"]ended['"]/.test(fonteJs), arquivo + ' escuta o fim do vídeo');
@@ -154,7 +154,7 @@ test('o trecho animado do hover vem do preview.webp da pull zone', () => {
 test('o preview do hover não é carregado junto com a grade', () => {
   const app = lerTexto(path.join(SITE, 'app.js'));
 
-  const feitura = app.match(/function cartao\(item\)\s*\{([\s\S]*?)\n  \}/);
+  const feitura = app.match(/function cartao\(item, porSentido\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(feitura, 'não achei cartao() em app.js');
   assert.ok(!/card-previa/.test(feitura[1]),
     'cartao() monta o preview junto com a grade; ele só pode nascer no mouseenter');
@@ -216,7 +216,7 @@ test('a mini-sinopse some quando não há sinopse, sem quebrar o cartão', () =>
   assert.equal(GTM.resumoSinopse(null), '');
 
   const app = lerTexto(path.join(SITE, 'app.js'));
-  const feitura = app.match(/function cartao\(item\)\s*\{([\s\S]*?)\n  \}/);
+  const feitura = app.match(/function cartao\(item, porSentido\)\s*\{([\s\S]*?)\n  \}/);
   assert.match(feitura[1], /if \(resumo\)/,
     'cartao() precisa pular o parágrafo da sinopse quando o resumo vem vazio');
 });
@@ -255,7 +255,13 @@ test('a aba "Todas" é uma grade única, sem cabeçalho de série', () => {
   assert.ok(corpo, 'não achei renderGrade em app.js');
   assert.ok(!/serie-bloco|serie-titulo/.test(corpo[1]),
     'renderGrade voltou a quebrar a grade em blocos por série');
-  assert.match(corpo[1], /GTM\.ordenar\(/,
+  /* Desde a fase 1 da busca (PLANO-BUSCA), a ordem sai do `responder()`: por
+   * relevância quando há termo, e a de `ordenar()` no "Ver tudo" e no chip —
+   * que é o que esta regra sempre guardou. */
+  assert.match(corpo[1], /responder\(/, 'renderGrade não pega a resposta pelo responder()');
+  const responder = app.match(/function responder\(base, termo\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(responder, 'não achei responder em app.js');
+  assert.match(responder[1], /GTM\.ordenar\(GTM\.buscar\(base, termo\)\)/,
     'a grade única ainda precisa da ordem de ordenar(): série, temporada, episódio');
 
   const css = lerTexto(path.join(SITE, 'style.css'));
@@ -353,6 +359,413 @@ test('a busca alcança sinopse e tags', () => {
 
 test('busca vazia devolve tudo', () => {
   assert.equal(GTM.buscar(comAcento, '   ').length, 2);
+});
+
+/* ============================ a busca do site (PLANO-BUSCA) ============= */
+
+/* A busca pública ganhou arquivo e função próprios na fase 0 — a `GTM.buscar`
+ * de cima é a da MESA, e fica como está (decisão de 21/09). Os quatro testes
+ * dela são repetidos aqui, na função nova: o que a busca de antes garantia, a
+ * de agora continua garantindo. */
+const GTMB = require('../site/busca-core.js');
+const procurar = (itens, termo) => GTMB.procurar(GTMB.indice(itens), termo).titulos.map(t => t.item.id);
+
+test('a busca nova ignora acentos, como a de antes', () => {
+  assert.deepEqual(procurar(comAcento, 'goias'), ['x']);
+  assert.deepEqual(procurar(comAcento, 'GOIÁS'), ['x']);
+});
+
+test('a busca nova exige todos os termos, e cada um pode casar num campo', () => {
+  assert.deepEqual(procurar(comAcento, 'festas cavalhadas'), ['x']);
+  assert.deepEqual(procurar(comAcento, 'festas matematica'), []);
+});
+
+test('a busca nova alcança sinopse e tags', () => {
+  assert.deepEqual(procurar(comAcento, 'pirenopolis'), ['x']);
+  assert.deepEqual(procurar(comAcento, 'ensino'), ['y']);
+});
+
+test('a busca nova, vazia, devolve tudo', () => {
+  assert.equal(procurar(comAcento, '   ').length, 2);
+});
+
+/* A fase 1: relevância, plural e erro de digitação. Os títulos imitam os do
+ * acervo — o *Bombeiro militar* é o exemplo da prova da fase no plano. */
+const paraRelevancia = [
+  { id: 'enfermeiro', titulo: 'De Olho no Futuro: Enfermeiro', serie: 'De Olho no Futuro',
+    sinopse: 'O enfermeiro trabalha ao lado dos bombeiros no resgate.', publicar: true },
+  { id: 'bombeiro', titulo: 'De Olho no Futuro: Bombeiro militar', serie: 'De Olho no Futuro',
+    sinopse: 'A rotina de quem apaga incêndio e sobe escada.', publicar: true },
+  { id: 'aula', titulo: 'Aula de ciências', serie: 'Aulas', sinopse: 'A pressão da água na mangueira.', publicar: true },
+  { id: 'bombas', titulo: 'Curtas: bombas de água', serie: 'Curtas', sinopse: 'Como a água sobe.', publicar: true }
+];
+
+test('título com o termo no nome vem antes de quem só o tem na sinopse', () => {
+  assert.deepEqual(procurar(paraRelevancia, 'bombeiro'), ['bombeiro', 'enfermeiro']);
+  /* E o empate fica na ordem de hoje: os dois têm "sobe" só na sinopse, e
+   * "Curtas" vem antes de "De Olho no Futuro" em `GTM.ordenar`. */
+  assert.deepEqual(procurar(paraRelevancia, 'sobe'), ['bombas', 'bombeiro']);
+});
+
+test('"bombeiro", "bombeiros" e "bonbeiro" acham o Bombeiro militar, o exato na frente', () => {
+  const ind = GTMB.indice(paraRelevancia);
+  for (const q of ['bombeiro', 'bombeiros', 'bonbeiro', 'bmobeiro']) {
+    assert.equal(GTMB.procurar(ind, q).titulos[0].item.id, 'bombeiro', q + ' não pôs o Bombeiro militar na frente');
+  }
+  /* A palavra corrigida vale menos que a exata: é o que deixa o exato na
+   * frente quando os dois aparecem. */
+  const exato = GTMB.procurar(ind, 'bombeiro').titulos[0].nota;
+  const corrigido = GTMB.procurar(ind, 'bonbeiro');
+  assert.ok(corrigido.titulos[0].nota < exato, 'a palavra corrigida valeu tanto quanto a exata');
+  assert.equal(corrigido.casadas[0].corrigido, true);
+  assert.equal(GTMB.procurar(ind, 'bombeiro').casadas[0].corrigido, false, 'corrigiu o que existia');
+});
+
+test('palavra inteira vale mais que começo de palavra, que vale mais que pedaço', () => {
+  /* Na ordem alfabética, que é a do empate, seria Girassol, Sol, Soldado. */
+  const itens = [
+    { id: 'girassol', titulo: 'Girassol', serie: 'A', publicar: true },
+    { id: 'soldado', titulo: 'Soldado', serie: 'A', publicar: true },
+    { id: 'sol', titulo: 'Sol', serie: 'A', publicar: true }
+  ];
+  assert.deepEqual(procurar(itens, 'sol'), ['sol', 'soldado', 'girassol']);
+  /* "Guarda-chuva" são DUAS palavras — o hífen corta, dos dois lados —, e
+   * "chuva" é palavra inteira lá: não é pedaço. */
+  const hifen = GTMB.procurar(GTMB.indice([{ id: 'g', titulo: 'Guarda-chuva', serie: 'A', publicar: true },
+    { id: 'c', titulo: 'Chuva', serie: 'A', publicar: true }]), 'chuva').titulos;
+  assert.equal(hifen[0].nota, hifen[1].nota);
+});
+
+/* As palavras do acervo, conferidas em 21/09 contra as 8.253 que existem nas
+ * sinopses, nos capítulos e na fala. */
+test('a raiz junta plural e singular, com as palavras do acervo', () => {
+  const pares = [
+    ['bombeiros', 'bombeiro'], ['aulas', 'aula'], ['profissões', 'profissão'], ['capitães', 'capitão'],
+    ['animais', 'animal'], ['papéis', 'papel'], ['jovens', 'jovem'], ['imagens', 'imagem'],
+    ['professores', 'professor'], ['luzes', 'luz'], ['meses', 'mês'], ['países', 'país'],
+    ['canções', 'canção'], ['festas', 'festa'], ['mães', 'mãe'], ['fiéis', 'fiel'], ['finais', 'final']
+  ];
+  const r = (p) => GTMB.raiz(GTM.normalizar(p));
+  for (const [plural, singular] of pares) assert.equal(r(plural), r(singular), plural + ' e ' + singular);
+});
+
+test('a raiz não junta palavras diferentes que as regras confundiriam', () => {
+  const r = (p) => GTMB.raiz(GTM.normalizar(p));
+  for (const [a, b] of [['mães', 'mão'], ['mais', 'mal'], ['seis', 'sei'], ['dois', 'dói'], ['três', 'trê']]) {
+    assert.notEqual(r(a), r(b), a + ' caiu em ' + b);
+  }
+  assert.equal(r('mês'), 'mes', 'palavra de 3 letras não muda');
+  assert.equal(r('2024'), '2024', 'número não muda');
+});
+
+test('o erro de digitação: de 4 letras para cima, uma letra — duas a partir de 8 —, e nunca número', () => {
+  const itens = [
+    { id: 'rua', titulo: 'A rua da escola', serie: 'A', publicar: true },
+    { id: 'ano', titulo: 'Formandos do ano de 2024', serie: 'A', publicar: true },
+    { id: 'bomb', titulo: 'Bombeiros', serie: 'A', publicar: true }
+  ];
+  assert.deepEqual(procurar(itens, 'rus'), [], 'corrigiu palavra de 3 letras');
+  assert.deepEqual(procurar(itens, 'escoal'), ['rua'], 'a troca de duas vizinhas não contou como uma');
+  assert.deepEqual(procurar(itens, 'esclla'), ['rua'], 'não corrigiu uma letra numa palavra de 6');
+  assert.deepEqual(procurar(itens, 'ezcoka'), [], 'corrigiu duas letras numa palavra de 6');
+  assert.deepEqual(procurar(itens, 'bonbeiroz'), ['bomb'], 'não corrigiu duas letras numa palavra de 9');
+  assert.deepEqual(procurar(itens, '2025'), [], 'corrigiu um número');
+  assert.equal(GTMB.distancia('bmobeiro', 'bombeiro', 2), 1, 'Damerau: vizinhas trocadas são uma troca');
+  assert.equal(GTMB.distancia('casa', 'carreta', 1), 2, 'com teto, a conta desiste e devolve teto + 1');
+});
+
+/* A §5.6 do plano: nenhum PEDIDO a mais na chegada. (Ela prometia "0 byte a
+ * mais", e os arquivos que já desciam cresceram 7,0 KB comprimidos — medido,
+ * §9 de lá.) A busca nova mora num arquivo que a chegada não pede — ele desce
+ * no foco do campo, na lupa do celular ou na primeira tecla. Um <script> no
+ * index.html, ou uma chamada no `iniciar()`, poria o arquivo em toda visita,
+ * e ninguém veria nada de errado na tela. */
+test('a chegada não baixa a busca: o busca-core.js só desce quando alguém vai buscar', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.ok(!/busca-core\.js/.test(html), 'o index.html carrega o busca-core.js — a chegada paga pela busca');
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const preparar = app.match(/function prepararBusca\(\) \{([\s\S]*?)\n  \}/);
+  assert.ok(preparar && /carregarScript\('busca-core\.js'\)/.test(preparar[1]), 'quem pede o busca-core.js não é o prepararBusca');
+  assert.equal((app.match(/busca-core\.js/g) || []).length, 1, 'o busca-core.js é pedido de mais de um lugar');
+  assert.match(app, /el\.busca\.addEventListener\('focus', prepararBusca\)/, 'o foco do campo não prepara a busca');
+  assert.match(app.match(/function abrirBusca\(\) \{([\s\S]*?)\n  \}/)[1], /prepararBusca\(\)/, 'a lupa do celular não prepara a busca');
+  const iniciar = app.match(/function iniciar\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.ok(!/prepararBusca\(\)/.test(iniciar), 'o iniciar() pede a busca na chegada');
+});
+
+/* A grade da resposta sai na ordem da RELEVÂNCIA. Um `GTM.ordenar` por cima
+ * dela desfaria a fase 1 inteira, com todos os testes do core verdes. */
+test('a grade da busca sai na ordem da resposta, e não reordenada por série', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const grade = app.match(/function renderGrade\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.match(grade, /responder\(baseDaGrade\(\), estado\.termo\)/);
+  assert.ok(!/GTM\.ordenar\(lista\)/.test(grade), 'a grade reordena a resposta por série');
+  assert.ok(!/GTM\.buscar\(/.test(grade), 'a grade voltou a chamar a GTM.buscar direto');
+});
+
+/* A fase 2: os capítulos na busca, os trechos e o `?t=`. */
+test('a rota da ficha leva o momento, e o `t` que não é inteiro é ignorado', () => {
+  assert.deepEqual(GTM.rotaDaFicha('#/ep/dof-bombeiro-2024-master'), { id: 'dof-bombeiro-2024-master', t: null });
+  assert.deepEqual(GTM.rotaDaFicha('#/ep/dof-bombeiro-2024-master?t=399'), { id: 'dof-bombeiro-2024-master', t: 399 });
+  for (const torto of ['abc', '1.5', '-3', '', '1e3']) {
+    assert.equal(GTM.rotaDaFicha('#/ep/x?t=' + torto).t, null, '?t=' + torto + ' não foi ignorado');
+  }
+  /* O `?` do id vai codificado, e não separa nada; o `%` solto não derruba. */
+  assert.deepEqual(GTM.rotaDaFicha('#/ep/' + encodeURIComponent('a?b') + '?t=5'), { id: 'a?b', t: 5 });
+  assert.equal(GTM.rotaDaFicha('#/ep/100%-certo').id, '100%-certo');
+  assert.equal(GTM.rotaDaFicha('#/serie/Aulas'), null);
+  assert.equal(GTM.rotaDaFicha(GTM.linkDaFicha('a?b', 12)).t, 12, 'o link e a rota não se entendem');
+});
+
+const comCapitulos = [
+  { id: 'bombeiro', titulo: 'De Olho no Futuro: Bombeiro militar', serie: 'De Olho no Futuro', publicar: true,
+    sinopse: 'A rotina do quartel.',
+    capitulos: [{ inicio: 0, titulo: 'O quartel' }, { inicio: 125, titulo: 'Escada Magirus' },
+      { inicio: 300, titulo: 'O resgate na enchente' }, { inicio: 480, titulo: 'Salários e concurso' }] },
+  { id: 'agro', titulo: 'De Olho no Futuro: Engenheira agronômica', serie: 'De Olho no Futuro', publicar: true,
+    sinopse: 'O campo e a pesquisa.',
+    capitulos: [{ inicio: 60, titulo: 'A escada da carreira' }, { inicio: 399, titulo: 'Concursos e salários na área' }] }
+];
+
+test('o capítulo que casa vira trecho, com o momento em que começa', () => {
+  const r = GTMB.procurar(GTMB.indice(comCapitulos), 'salários');
+  assert.deepEqual(r.titulos.map(t => t.item.id), ['bombeiro', 'agro']);
+  assert.deepEqual(r.trechos.map(t => [t.item.id, t.tipo, t.inicio, t.texto]), [
+    ['bombeiro', 'capitulo', 480, 'Salários e concurso'],
+    ['agro', 'capitulo', 399, 'Concursos e salários na área']
+  ]);
+  /* O capítulo pesa mais que a sinopse e menos que o nome. */
+  assert.ok(GTMB.PESOS.titulo > GTMB.PESOS.capitulo && GTMB.PESOS.capitulo > GTMB.PESOS.sinopse);
+});
+
+/* A REGRA DO CONTEXTO: um termo no trecho, e os outros no trecho ou no
+ * título dele. O contexto é o título, e não o vídeo inteiro. */
+test('o trecho responde com o contexto do título, e não com o do vídeo inteiro', () => {
+  const ind = GTMB.indice(comCapitulos);
+  const escada = GTMB.procurar(ind, 'bombeiro escada');
+  assert.deepEqual(escada.trechos.map(t => [t.item.id, t.inicio]), [['bombeiro', 125]],
+    '"bombeiro" está no nome, "escada" no capítulo: é o Escada Magirus, e só ele');
+  const resgate = GTMB.procurar(ind, 'resgate escada');
+  assert.deepEqual(resgate.titulos.map(t => t.item.id), ['bombeiro'], 'os dois termos estão no vídeo');
+  assert.deepEqual(resgate.trechos, [],
+    'um termo em outro capítulo virou contexto — assim todo capítulo do vídeo responderia');
+});
+
+test('os trechos se agrupam por vídeo, três à mostra, na ordem do vídeo', () => {
+  const t = (id, inicio, nota) => ({ item: { id }, tipo: 'capitulo', inicio, texto: '', nota });
+  const grupos = GTMB.agruparTrechos([t('a', 500, 9), t('b', 10, 8), t('a', 30, 7), t('a', 900, 6), t('a', 100, 5)], 3);
+  assert.deepEqual(grupos.map(g => g.item.id), ['a', 'b'], 'o grupo sai na ordem do seu melhor trecho');
+  assert.deepEqual(grupos[0].visiveis.map(x => x.inicio), [30, 500, 900], 'à mostra: os três melhores, na ordem do vídeo');
+  assert.deepEqual(grupos[0].resto.map(x => x.inicio), [100]);
+  assert.deepEqual(grupos[0].todos.map(x => x.inicio), [30, 100, 500, 900], 'o "mais N" abre todos, na ordem do vídeo');
+  assert.equal(grupos[0].total, 4);
+});
+
+/* A MARCA é devolvida em pedaços de texto, e a tela os monta um a um: a fala
+ * é ASR, e um "<" dela não pode virar tag. */
+test('a marca da busca sai em pedaços de texto, com a palavra como o texto a escreve', () => {
+  const r = GTMB.procurar(GTMB.indice(comCapitulos), 'salario');
+  assert.deepEqual(GTMB.marcar('Concursos e salários na área', r.casadas),
+    [{ texto: 'Concursos e ', marca: false }, { texto: 'salários', marca: true }, { texto: ' na área', marca: false }]);
+  assert.deepEqual(GTMB.marcar('<b>salários</b>', r.casadas).map(p => p.texto).join(''), '<b>salários</b>',
+    'a marca mexeu no texto');
+  assert.deepEqual(GTMB.marcar('sem nada', []), [{ texto: 'sem nada', marca: false }]);
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  assert.ok(!/innerHTML|insertAdjacentHTML|outerHTML/.test(app), 'o app.js monta HTML de texto — a fala passaria por ali');
+  assert.match(app.match(/function comMarcas\(no, pedacos\)\s*\{([\s\S]*?)\n  \}/)[1],
+    /p\.marca \? criar\('mark', null, p\.texto\) : document\.createTextNode\(p\.texto\)/);
+});
+
+/* A tela da resposta: "N títulos · M trechos", o vazio só quando nada
+ * responde, a contagem dita a quem ouve, e 44 px em cada trecho. */
+test('a resposta conta os trechos, e o vazio só aparece quando nada responde', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const grade = app.match(/function renderGrade\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.match(grade, /if \(!lista\.length && !trechos\.length\) \{/, 'o vazio aparece com trecho na tela');
+  assert.match(grade, /' · ' \+ trechos\.length \+ \(trechos\.length === 1 \? ' trecho' : ' trechos'\)/);
+  assert.match(grade, /secaoTrechos\(trechos, resposta\.casadas\)/);
+  /* O anúncio: um nó que nasce na partida, antes de haver o que anunciar. */
+  const iniciar = app.match(/function iniciar\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.match(iniciar, /busca\.anuncio\.setAttribute\('aria-live', 'polite'\)/);
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const trecho = css.match(/\n\.trecho \{([\s\S]*?)\n\}/);
+  assert.ok(trecho, 'não achei .trecho em style.css');
+  assert.match(trecho[1], /min-height: 44px/, 'o trecho é alvo de toque, e tem de ter 44 px');
+  assert.match(css, /\.trecho:focus-visible \{ outline: 2px solid var\(--marca\)/, 'o trecho perdeu o foco visível');
+  assert.match(css, /\.trecho-mais \{[\s\S]*?min-height: 44px/, 'o "mais N" tem de ter 44 px');
+});
+
+/* A fase 3: a fala, literal. O índice mora no KV numa linha por vídeo, e o
+ * que a escreve (o servidor) e o que a lê (o navegador) são arquivos
+ * diferentes — por isso o formato tem teste de ida e volta. */
+const blocosDeFala = [[0, 'Bom dia, turma. Hoje o assunto é o mercado de trabalho.'],
+  [31, 'Quem faz o técnico entra no mercado de trabalho mais cedo.'], [62, 'E a escada da carreira começa ali.']];
+
+test('a linha da fala vai e volta: o servidor escreve e o navegador lê a mesma coisa', () => {
+  const texto = GTMI.trocarLinha('', 'video-aaaa-1111', blocosDeFala);
+  assert.deepEqual(GTMB.lerFala(texto)['video-aaaa-1111'], blocosDeFala);
+  /* Um texto com aspas, tab e quebra de linha dentro não quebra a linha. */
+  const torto = [[5, 'ele disse "olá"\te foi\nembora']];
+  assert.deepEqual(GTMB.lerFala(GTMI.linhaDaFala('video-bbbb-2222', torto))['video-bbbb-2222'], torto);
+  assert.equal(GTMI.linhaDaFala('video-bbbb-2222', torto).split('\n').length, 1);
+  /* Linha estragada é pulada, e as outras continuam. */
+  const lida = GTMB.lerFala('lixo\nvideo-cccc-3333\t[[0, "ok"]]\nvideo-dddd\t[[0,');
+  assert.deepEqual(Object.keys(lida), ['video-cccc-3333']);
+});
+
+test('trocar a linha de um vídeo não mexe nas outras, e vídeo sem fala sai do índice', () => {
+  let t = GTMI.trocarLinha('', 'video-aaaa-1111', blocosDeFala);
+  t = GTMI.trocarLinha(t, 'video-bbbb-2222', [[0, 'outro']]);
+  t = GTMI.trocarLinha(t, 'video-aaaa-1111', [[0, 'novo']]);
+  assert.deepEqual(t.split('\n').map(l => l.split('\t')[0]), ['video-aaaa-1111', 'video-bbbb-2222'], 'a troca mudou a ordem');
+  assert.deepEqual(GTMB.lerFala(t)['video-aaaa-1111'], [[0, 'novo']]);
+  t = GTMI.trocarLinha(t, 'video-aaaa-1111', []);
+  assert.deepEqual(Object.keys(GTMB.lerFala(t)), ['video-bbbb-2222']);
+});
+
+/* "Título tirado do ar some da fala sem rodar nada" (§6, fase 3): o filtro é
+ * do GET, pelo catálogo da hora. */
+test('o índice da fala sai só com os vídeos no ar, pelo catálogo da hora', () => {
+  let t = GTMI.trocarLinha('', 'video-no-ar-1', [[0, 'a']]);
+  t = GTMI.trocarLinha(t, 'video-fora-1', [[0, 'b']]);
+  const cat = { itens: [{ id: 'a', publicar: true, fonte: { videoId: 'video-no-ar-1' } },
+    { id: 'b', publicar: false, fonte: { videoId: 'video-fora-1' } }] };
+  assert.deepEqual(GTMI.linhasNoAr(t, GTMI.videosNoAr(cat)).split('\n').map(l => l.split('\t')[0]), ['video-no-ar-1']);
+  cat.itens[0].publicar = false;
+  assert.equal(GTMI.linhasNoAr(t, GTMI.videosNoAr(cat)), '');
+});
+
+test('o pedido de indexar é conferido na forma, e o torto não chega ao índice', () => {
+  const ok = GTMI.validarPedido({ videoId: 'video-aaaa-1111', fala: blocosDeFala, fim: true });
+  assert.equal(ok.erro, undefined);
+  assert.deepEqual(ok.fala, blocosDeFala);
+  const erros = [
+    {},
+    { videoId: '../catalogo', fim: true },
+    { videoId: 'video-aaaa-1111' },
+    { videoId: 'video-aaaa-1111', fala: blocosDeFala },
+    { videoId: 'video-aaaa-1111', fala: [[0, 'a'], [0, 'b']], fim: true },
+    { videoId: 'video-aaaa-1111', fala: [[1.5, 'a']], fim: true },
+    { videoId: 'video-aaaa-1111', fala: [[0, '   ']], fim: true },
+    { videoId: 'video-aaaa-1111', vetores: new Array(21).fill(['f', 0, 'x']) },
+    { videoId: 'video-aaaa-1111', vetores: [['x', 0, 'texto']] }
+  ];
+  for (const e of erros) assert.ok(GTMI.validarPedido(e).erro, 'passou: ' + JSON.stringify(e).slice(0, 80));
+});
+
+test('o manifesto guarda o hash e os inícios, e diz quais vetores sumiram', () => {
+  const um = GTMI.manifestoNovo(null, GTMI.validarPedido({ videoId: 'video-aaaa-1111', fala: blocosDeFala, fim: true }), 'x');
+  assert.equal(um.manifesto.versao, 1);
+  const v = um.manifesto.videos['video-aaaa-1111'];
+  assert.deepEqual(v.fala.inicios, [0, 31, 62]);
+  assert.equal(v.fala.hash, GTMI.hashConjunto(blocosDeFala));
+  assert.equal(v.fala.sentido, false);
+  assert.deepEqual(um.apagar, []);
+  /* A legenda trocada perdeu o bloco de 62 s: o vetor dele tem de sair. */
+  const dois = GTMI.manifestoNovo(um.manifesto,
+    GTMI.validarPedido({ videoId: 'video-aaaa-1111', fala: blocosDeFala.slice(0, 2), fim: true, sentido: true }), 'y');
+  assert.equal(dois.manifesto.versao, 2);
+  assert.deepEqual(dois.apagar, ['f:video-aaaa-1111:62']);
+  assert.equal(dois.manifesto.videos['video-aaaa-1111'].fala.sentido, true);
+  assert.equal(um.manifesto.versao, 1, 'o manifesto de antes foi alterado — a função tem de ser pura');
+  /* A sinopse que ficou vazia leva o vetor dela. */
+  const tres = GTMI.manifestoNovo(dois.manifesto, GTMI.validarPedido({ videoId: 'video-aaaa-1111', sinopse: 'Título. Sinopse.', fim: true }), 'z');
+  const quatro = GTMI.manifestoNovo(tres.manifesto, GTMI.validarPedido({ videoId: 'video-aaaa-1111', sinopse: '', fim: true }), 'w');
+  assert.deepEqual(quatro.apagar, ['s:video-aaaa-1111']);
+});
+
+test('os conjuntos de um título saem do catálogo, e a sinopse leva o título junto', () => {
+  const c = GTMI.conjuntosDoItem(comCapitulos[0]);
+  assert.deepEqual(c.capitulos.slice(0, 2), [[0, 'O quartel'], [125, 'Escada Magirus']]);
+  assert.equal(c.sinopse, 'De Olho no Futuro: Bombeiro militar. A rotina do quartel.');
+  assert.equal(GTMI.textoDaFicha({ titulo: 'Vídeo institucional' }), 'Vídeo institucional', 'título sem sinopse');
+  assert.deepEqual(GTMI.vetoresDosConjuntos({ fala: [[0, 'a']], capitulos: [[5, 'b']], sinopse: 'c' }),
+    [['f', 0, 'a'], ['c', 5, 'b'], ['s', 0, 'c']]);
+  assert.deepEqual(GTMI.lotes([1, 2, 3, 4, 5], 2), [[1, 2], [3, 4], [5]]);
+  assert.equal(GTMI.idDoVetor('s', 'v', 0), 's:v');
+  assert.equal(GTMI.idDoVetor('f', 'v', 62), 'f:v:62');
+});
+
+const comFala = { 'video-bomb-0001': [[0, 'Hoje vamos falar da profissão de bombeiro militar.'], [125, 'A escada Magirus sobe trinta metros.'],
+  [300, 'No resgate da enchente a água chegava ao telhado.']] };
+const comCapitulosEVideo = comCapitulos.map((i, n) => Object.assign({}, i, { fonte: { videoId: n === 0 ? 'video-bomb-0001' : 'video-agro-0002' } }));
+
+test('a fala entra na busca: o bloco que casa vira trecho, com o capítulo em que cai', () => {
+  const ind = GTMB.indice(comCapitulosEVideo, comFala);
+  const r = GTMB.procurar(ind, 'enchente telhado');
+  assert.deepEqual(r.titulos.map(t => t.item.id), ['bombeiro'], 'o que só a fala diz achou o título');
+  assert.deepEqual(r.trechos.map(t => [t.tipo, t.inicio, t.capitulo]), [['fala', 300, 'O resgate na enchente']]);
+  /* Sem a fala, os capítulos respondem sozinhos (§5.2). */
+  assert.deepEqual(GTMB.procurar(GTMB.indice(comCapitulosEVideo), 'enchente').trechos.map(t => t.tipo), ['capitulo']);
+  /* E a fala é a menor das notas: quem tem o termo no nome continua na frente. */
+  assert.ok(GTMB.PESOS.fala < GTMB.PESOS.sinopse);
+});
+
+/* Os capítulos foram escritos lendo estes mesmos blocos de 30 s: o capítulo e
+ * o bloco que começam no mesmo segundo são o mesmo momento, e a lista não
+ * pode mostrar a mesma linha duas vezes. */
+test('o capítulo e o bloco que começam juntos viram um trecho só, no segundo do capítulo', () => {
+  const r = GTMB.procurar(GTMB.indice(comCapitulosEVideo, comFala), 'escada');
+  const doBombeiro = r.trechos.filter(t => t.item.id === 'bombeiro');
+  assert.equal(doBombeiro.length, 1);
+  assert.deepEqual([doBombeiro[0].tipo, doBombeiro[0].inicio, doBombeiro[0].capitulo], ['fala', 125, 'Escada Magirus']);
+
+  /* O caso do *Dentista*, no ar em 21/09: o bloco começa em 1:48 e o capítulo
+   * "Os 13 vestibulares", em 1:50. Fica um trecho, no segundo do capítulo. */
+  const dentista = [{ id: 'dentista', titulo: 'Dentista', serie: 'A', publicar: true, fonte: { videoId: 'video-dent-0001' },
+    capitulos: [{ inicio: 0, titulo: 'Como escolheu a odontologia' }, { inicio: 110, titulo: 'Os 13 vestibulares' }] }];
+  const fala = { 'video-dent-0001': [[108, 'você tava falando que foram 13 vestibulares'], [400, 'o vestibular de novo, bem depois']] };
+  const trechos = GTMB.procurar(GTMB.indice(dentista, fala), 'vestibulares').trechos;
+  assert.deepEqual(trechos.map(t => [t.tipo, t.inicio, t.capitulo]).sort((a, b) => a[1] - b[1]),
+    [['fala', 110, 'Os 13 vestibulares'], ['fala', 400, 'Os 13 vestibulares']],
+    'o bloco a 2 s do capítulo virou uma linha à parte — ou o de 400 s foi engolido');
+});
+
+/* Achado ao medir a fala em 21/09: "mercado de trabalho" punha na frente o
+ * título que tinha "Mercado" no nome — o prédio — e "trabalho" solto na fala,
+ * atrás do que tem um capítulo com a expressão inteira. */
+test('os termos juntos no mesmo lugar valem mais que espalhados', () => {
+  const itens = [
+    { id: 'predio', titulo: 'Art déco e Mercado Municipal', serie: 'B', publicar: true, fonte: { videoId: 'video-pred-0001' } },
+    { id: 'tecnico', titulo: 'Técnico integrado', serie: 'A', publicar: true, fonte: { videoId: 'video-tecn-0002' },
+      capitulos: [{ inicio: 162, titulo: 'O técnico abre as portas do mercado de trabalho' }] }
+  ];
+  const fala = { 'video-pred-0001': [[0, 'o trabalho de restauro do prédio']] };
+  assert.deepEqual(procurarCom(itens, fala, 'mercado de trabalho'), ['tecnico', 'predio']);
+});
+const procurarCom = (itens, fala, termo) => GTMB.procurar(GTMB.indice(itens, fala), termo).titulos.map(t => t.item.id);
+
+test('a frase do trecho: ~120 caracteres em volta da palavra, cortados na palavra', () => {
+  const longo = 'Começo de conversa sem nada de importante por aqui, só enchendo a frase para ela ficar comprida. ' +
+    'Depois vem o resgate na enchente, com a água no telhado, e a conversa continua por muito tempo ainda, bem depois do fim.';
+  const r = GTMB.procurar(GTMB.indice([{ id: 'x', titulo: 'X', serie: 'A', publicar: true, fonte: { videoId: 'video-xxxx-0001' } }],
+    { 'video-xxxx-0001': [[0, longo]] }), 'enchente');
+  const pedacos = GTMB.frase(longo, r.casadas, 120);
+  const texto = pedacos.map(p => p.texto).join('');
+  assert.ok(texto.startsWith('…') && texto.endsWith('…'), 'o corte não foi marcado: ' + texto);
+  assert.ok(texto.length <= 125, 'a frase passou do tamanho: ' + texto.length);
+  assert.deepEqual(pedacos.filter(p => p.marca).map(p => p.texto), ['enchente']);
+  /* O miolo é um pedaço do texto que começa e termina em fronteira de
+   * palavra: antes dele e depois dele, no original, há um espaço. */
+  const miolo = texto.slice(1, -1);
+  const onde = longo.indexOf(miolo);
+  assert.ok(onde > 0, 'o miolo não é um pedaço do texto: ' + miolo);
+  assert.equal(longo[onde - 1], ' ', 'começou no meio de uma palavra');
+  assert.equal(longo[onde + miolo.length], ' ', 'terminou no meio de uma palavra');
+  /* Sem marca — o trecho do sentido, na fase 4 —, o começo do bloco. */
+  assert.ok(GTMB.frase(longo, [], 120).map(p => p.texto).join('').startsWith('Começo de conversa'));
+  /* O que já cabe, cabe inteiro. */
+  assert.equal(GTMB.frase('curto', [], 120).map(p => p.texto).join(''), 'curto');
+});
+
+test('as palavras vazias não viram termo — a não ser que a consulta seja só delas', () => {
+  const itens = [
+    { id: 'fracao', titulo: 'Frações na cozinha', serie: 'A', sinopse: 'Medidas de receita.', publicar: true },
+    { id: 'de', titulo: 'Papo de Palavra', serie: 'B', sinopse: 'Sobre a língua.', publicar: true }
+  ];
+  assert.deepEqual(GTMB.termos('o que é fração'), ['fracao']);
+  assert.deepEqual(procurar(itens, 'o que é fração'), ['fracao'], 'o "que" que falta na sinopse tirou o título da resposta');
+  assert.deepEqual(procurar(itens, 'de'), ['de', 'fracao'], 'uma consulta só de palavra vazia deixou de valer');
 });
 
 /* ============================ navegação ================================= */
@@ -716,6 +1129,33 @@ test('a junção de cues desconta o texto repetido das legendas rolantes', () =>
 
   /* sem sobreposição, junta inteiro — não pode comer palavra */
   assert.equal(LEG.juntarSemRepetir('nada em comum', 'texto novo'), 'nada em comum texto novo');
+});
+
+/* A leitura saiu de scripts/lib/legenda.mjs para site/indice-core.js na fase
+ * 0 da busca (PLANO-BUSCA §5.4): a mesa, as funções, o script e estes testes
+ * usam UM código. O módulo de lá reexporta — não pode ter virado cópia. */
+const GTMI = require('../site/indice-core.js');
+
+test('a leitura da legenda é uma só: o módulo dos scripts reexporta a de site/', () => {
+  for (const nome of ['paraSegundos', 'paraCarimbo', 'analisarVtt', 'juntarSemRepetir', 'condensar']) {
+    assert.equal(LEG[nome], GTMI[nome], nome + ' virou cópia em scripts/lib/legenda.mjs');
+  }
+  const lib = lerTexto(path.join(LIB, 'legenda.mjs'));
+  assert.ok(!/function\s+analisarVtt/.test(lib), 'a leitura voltou a ser escrita em scripts/lib/legenda.mjs');
+});
+
+/* A mesa manda o .srt que a pessoa escolheu — com vírgula no carimbo, número
+ * de cue, e o CRLF do Windows onde ele foi salvo. O parser do player recusaria
+ * (ele exige `WEBVTT`), e é por isso que a busca não usa o dele. */
+test('a leitura aceita o .srt da mesa, com vírgula no carimbo e CRLF', () => {
+  const srt = '1\r\n00:00:01,500 --> 00:00:03,000\r\nOlá, turma!\r\n\r\n' +
+    '2\r\n00:00:03,100 --> 00:00:05,000\r\n<i>Hoje:</i> frações.\r\n';
+  assert.deepEqual(GTMI.analisarVtt(srt), [
+    { inicio: 1.5, fim: 3, texto: 'Olá, turma!' },
+    { inicio: 3.1, fim: 5, texto: 'Hoje: frações.' }
+  ]);
+  assert.deepEqual(GTMI.analisarVtt('﻿' + srt).map(c => c.texto), ['Olá, turma!', 'Hoje: frações.'],
+    'o BOM derrubou o .srt');
 });
 
 test('condensar não repete o texto das legendas rolantes', () => {
@@ -1118,8 +1558,31 @@ test('as regras ficam num objeto congelado — ninguém as relaxa em tempo de ex
 test('nada é baixado antes do play — nem pelo <video>, nem pelo hls.js', () => {
   assert.equal(GTMP.atributosVideo().preload, 'none');
   assert.equal(GTMP.configHls().autoStartLoad, false);
-  assert.match(PLAYER_JS, /hls\.startLoad\(\)/,
-    'alguém tem que liberar o download no primeiro play');
+  /* Quem libera é o `liberarDownload`, desde a fase 2 da busca — e só o
+   * primeiro play o chama (o teste de baixo cobre o outro caminho). */
+  const liberar = PLAYER_CODIGO.match(/function liberarDownload\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(liberar, 'não achei liberarDownload em player.js');
+  assert.match(liberar[1], /if \(!hls \|\| carregouAlgo\) return;/, 'o download pode ser liberado duas vezes');
+  assert.match(liberar[1], /hls\.startLoad\(inicio\)/, 'alguém tem que liberar o download no primeiro play');
+  const alternar = PLAYER_CODIGO.match(/function alternarPlay\(\)\s*\{([\s\S]*?)\n    \}/);
+  assert.match(alternar[1], /if \(video\.paused\) \{\s*liberarDownload\(\);/,
+    'o play do botão deixou de liberar o download');
+});
+
+/* O MOMENTO ANTES DO PLAY (fase 2 da busca, 21/09). O clique num trecho abre
+ * a ficha em `?t=` e dá o play; o vídeo abria no lugar certo, mas o hls.js
+ * baixava do segmento 0 antes de saltar — medido: `video0.ts` em 240p e 480p
+ * antes do segmento 99. O `startLoad(posição)` do 1.6 descarta a posição
+ * antes do manifesto e o refaz com o `config.startPosition`, por isso os
+ * dois. Vale também para o capítulo clicado com o vídeo parado. */
+test('o momento pedido antes do play é de onde o download começa', () => {
+  const ir = PLAYER_CODIGO.match(/function irPara\(segundos\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(ir, 'não achei irPara em player.js');
+  assert.match(ir[1], /if \(!carregouAlgo\) momentoAntesDoPlay = alvo;/,
+    'o irPara antes do play não guarda o momento — o hls.js volta a baixar do zero');
+  const liberar = PLAYER_CODIGO.match(/function liberarDownload\(\)\s*\{([\s\S]*?)\n    \}/)[1];
+  assert.match(liberar, /hls\.config\.startPosition = inicio;\s*hls\.startLoad\(inicio\);/,
+    'a posição vai só ao startLoad, que a descarta antes de o manifesto chegar');
 });
 
 /* O PLAY QUE CHEGA ANTES DO hls.js (21/09). `alternarPlay` só libera o
@@ -1135,7 +1598,7 @@ test('o play pedido antes de o hls.js chegar libera o download quando ele chega'
   const ligar = PLAYER_CODIGO.match(/function ligarFonte\(\)\s*\{([\s\S]*?)\n    \}/);
   assert.ok(ligar, 'não achei ligarFonte em player.js');
   assert.match(ligar[1],
-    /hls\.attachMedia\(video\);\s*if \(!video\.paused && !carregouAlgo\) \{ hls\.startLoad\(\); carregouAlgo = true; \}/,
+    /hls\.attachMedia\(video\);\s*if \(!video\.paused\) liberarDownload\(\);/,
     'o play que chega antes do hls.js voltou a ficar preso — ou o download passou a sair sem play nenhum');
 });
 
@@ -3329,6 +3792,82 @@ test('o deslizar não alcança o reforço sozinho', () => {
   assert.equal(GTMP.ARRASTO_VOLUME, 1);
 });
 
+/* O ímã dos 100%: com o reforço disponível, o dedo que sobe passava de
+ * "normal" para "reforço" sem nada que avisasse. */
+test('o arrasto segura em 100% antes de entrar no reforço', () => {
+  const M = GTMP.VOLUME_MAX_GANHO;
+  const I = GTMP.IMA_VOLUME;
+  assert.equal(GTMP.volumeDoArrasto(0.5, 0.5, M), 1, 'chega em 100% e para');
+  assert.equal(GTMP.volumeDoArrasto(0.5, 0.5 + I / 2, M), 1, 'dentro do ímã continua 100%');
+  assert.equal(GTMP.volumeDoArrasto(0.5, 0.5 + I, M), 1, 'a borda do ímã ainda é 100%');
+  /* Passada a faixa o reforço começa, e SEM salto: 1 + 0,05, não 1 + 0,15. */
+  assert.equal(GTMP.volumeDoArrasto(0.5, 0.5 + I + 0.05, M), 1.05);
+  assert.equal(GTMP.volumeDoArrasto(1, 0.05, M), 1, 'quem está em 100% não vai para 105% num toque de dedo');
+  assert.equal(GTMP.volumeDoArrasto(1, I + 0.2, M), 1.2);
+});
+
+test('o ímã vale na volta: descendo do reforço, o dedo para em 100%', () => {
+  const M = GTMP.VOLUME_MAX_GANHO;
+  const I = GTMP.IMA_VOLUME;
+  /* Partir de 150% não pode saltar: o degrau só é encontrado ao descer. */
+  assert.equal(GTMP.volumeDoArrasto(1.5, 0, M), 1.5, 'sem movimento, sem salto');
+  assert.equal(GTMP.volumeDoArrasto(1.5, -0.2, M), 1.3);
+  assert.equal(GTMP.volumeDoArrasto(1.5, -0.5, M), 1, 'chegou em 100%');
+  assert.equal(GTMP.volumeDoArrasto(1.5, -0.5 - I, M), 1, 'e segura ali');
+  assert.ok(GTMP.volumeDoArrasto(1.5, -0.5 - I - 0.1, M) < 1, 'passado o ímã, abaixa');
+});
+
+test('o ímã é de um lado só: abaixo de 100% não há zona morta', () => {
+  const M = GTMP.VOLUME_MAX_GANHO;
+  assert.equal(GTMP.volumeDoArrasto(1, -0.01, M), 0.99, 'em 100%, descer responde no primeiro pixel');
+  assert.equal(GTMP.volumeDoArrasto(0.6, -0.1, M), 0.5);
+  assert.equal(GTMP.volumeDoArrasto(0.6, 0.1, M), 0.7);
+  assert.equal(GTMP.volumeDoArrasto(0.1, -0.5, M), 0, 'o piso continua 0');
+});
+
+test('o ímã não muda os extremos nem o caso sem reforço', () => {
+  const M = GTMP.VOLUME_MAX_GANHO;
+  assert.equal(GTMP.volumeDoArrasto(1, 5, M), M, 'o teto do reforço continua 200%');
+  /* Sem grafo (teto 1) é o `proximoVolume` de sempre. */
+  assert.equal(GTMP.volumeDoArrasto(0.5, 0.3, 1), 0.8);
+  assert.equal(GTMP.volumeDoArrasto(0.5, 0.9, 1), 1);
+  assert.equal(GTMP.volumeDoArrasto(0.95, 0.03, 1), 0.98, 'sem reforço o ímã não come o caminho até 100%');
+  /* Entradas tortas não viram volume torto. */
+  assert.equal(GTMP.volumeDoArrasto(NaN, 0, M), 1);
+  assert.equal(GTMP.volumeDoArrasto(0.5, NaN, M), 0.5);
+  assert.equal(GTMP.volumeDoArrasto(1, 0.5, NaN), 1, 'teto torto vale 1');
+});
+
+/* Da ponta do dedo até o volume: o mesmo ímã, pelo gesto de verdade. */
+test('o gesto de volume para em 100% e só depois entra no reforço', () => {
+  const g = gestosDe(QUADRO_CHEIO);
+  g.permitirVertical(true);
+  g.descer(dedo(1, 750, 300, 0));
+  g.mover(dedo(1, 750, 280, 10));
+  /* QUADRO_CHEIO tem 375 px de altura: 37,5 px é o ímã inteiro. */
+  const r = g.mover(dedo(1, 750, 200, 200));
+  assert.equal(r.alvo, 'volume');
+  const alvo = GTMP.volumeDoArrasto(0.8, r.valor, GTMP.VOLUME_MAX_GANHO);
+  assert.equal(alvo, 1, '0,8 + ~21% da altura ainda cai no ímã');
+});
+
+/* Os testes acima provam a conta do ímã; este prova que o player a USA. Com a
+ * chamada do arrasto de volta no `proximoVolume`, os cinco de cima seguiriam
+ * verdes e o ímã estaria fora do ar. E ele é só do gesto: as setas andam em
+ * passos de 5% pelo `proximoVolume`, e a faixa do painel põe o valor dela
+ * direto — nos dois o ímã seria um passo que não anda. */
+test('o ímã mora só no arrasto: as setas e o painel não passam por ele', () => {
+  assert.match(PLAYER_CODIGO,
+    /definirVolume\(GTMP\.volumeDoArrasto\(arrastoBase\.volume, a\.valor, teto\)\)/,
+    'o arrasto do volume tem que passar pelo ímã');
+  assert.equal((PLAYER_CODIGO.match(/volumeDoArrasto\(/g) || []).length, 1,
+    'o ímã é chamado num lugar só: o gesto');
+  const setas = PLAYER_CODIGO.match(/function ajustarVolume\(passo\)\s*\{([\s\S]*?)\n    \}/);
+  assert.ok(setas, 'não achei ajustarVolume em player.js');
+  assert.match(setas[1], /GTMP\.proximoVolume\(som\.volume, passo, teto\)/,
+    'as setas continuam em passos de 5%, sem o ímã');
+});
+
 /* O teto e o piso do brilho (0,25 e 1,75) e o `proximoBrilho` foram testados
  * aqui de 03/09 a 09/09. Saíram com o gesto — o que restou é a asserção de
  * ausência, no teste do CSS acima. */
@@ -5075,19 +5614,29 @@ test('o "Assistir" pede o play por clique, e o pedido não viaja na URL nem sobr
   const rotear = app.match(/function rotear\(\)\s*\{([\s\S]*?)\n  \}/);
   assert.match(rotear[1], /var pedido = pedidoDeTocar;\s*pedidoDeTocar = '';/,
     'o roteador deixou de consumir o pedido — um clique perdido tocaria na próxima visita');
-  assert.ok(rotear[1].indexOf("pedidoDeTocar = ''") < rotear[1].indexOf('if (ep)'),
+  assert.ok(rotear[1].indexOf("pedidoDeTocar = ''") >= 0 &&
+    rotear[1].indexOf("pedidoDeTocar = ''") < rotear[1].indexOf('if (ficha)'),
     'o pedido só é gasto em parte das telas');
-  assert.match(rotear[1], /renderFicha\(id, pedido === id\)/, 'a ficha toca um título que não foi o pedido');
+  assert.match(rotear[1], /renderFicha\(ficha\.id, pedido === ficha\.id, ficha\.t\)/,
+    'a ficha toca um título que não foi o pedido');
 
   /* Quem toca é o player, uma vez, no fim da ficha montada — e só o roteador
    * passa o pedido: o deslize ↓ e a mesa remontam a ficha com o vídeo parado. */
-  const ficha = app.match(/function renderFicha\(id, tocar\)\s*\{([\s\S]*?)\n  \}/);
+  const ficha = app.match(/function renderFicha\(id, tocar, momento\)\s*\{([\s\S]*?)\n  \}/);
   assert.match(ficha[1], /if \(tocar && playerAtivo\) playerAtivo\.tocar\(\);\s*$/,
     'o play do "Assistir" saiu do fim da ficha, ou deixou de depender do pedido');
   assert.equal((app.match(/\.tocar\(\)/g) || []).length, 1, 'apareceu outro lugar que manda o player tocar');
   const chamadas = [...app.matchAll(/(?<!function )renderFicha\(([^)]*)\)/g)].map(m => m[1]);
-  assert.deepEqual(chamadas.filter(a => a.includes(',')), ['id, pedido === id'],
+  assert.deepEqual(chamadas.filter(a => a.includes(',')), ['ficha.id, pedido === ficha.id, ficha.t'],
     'outro caminho passou a remontar a ficha tocando');
+
+  /* O TRECHO DA BUSCA (PLANO-BUSCA, fase 2) pede o play pelo mesmo caminho:
+   * o MOMENTO viaja na URL (`?t=`), e o pedido de tocar, não. */
+  const trecho = app.match(/function linkDoTrecho\(t, casadasDaBusca\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(trecho, 'não achei linkDoTrecho em app.js');
+  assert.match(trecho[1], /a\.href = GTM\.linkDaFicha\(t\.item\.id, t\.inicio\);/);
+  assert.match(trecho[1], /ligarAssistir\(a, t\.item\.id\)/, 'o clique no trecho não pede o play');
+  assert.equal(GTM.linkDaFicha('dof-bombeiro-2024-master', 399.8), '#/ep/dof-bombeiro-2024-master?t=399');
 });
 
 /* O destaque é UM. Escolher um título tem que apagar a marca dos outros NA
@@ -5309,6 +5858,12 @@ const kvDeMentira = (inicial) => {
     dados,
     metas,
     get: async (chave, tipo) => (dados[chave] == null ? null : (tipo === 'json' ? JSON.parse(dados[chave]) : dados[chave])),
+    /* O índice da fala (PLANO-BUSCA) guarda a versão nos metadados, e o GET
+     * dele lê os dois numa leitura só. */
+    getWithMetadata: async (chave, tipo) => ({
+      value: dados[chave] == null ? null : (tipo === 'json' ? JSON.parse(dados[chave]) : dados[chave]),
+      metadata: metas[chave] || null
+    }),
     put: async (chave, valor, opcoes) => {
       dados[chave] = String(valor);
       if (opcoes && opcoes.metadata) metas[chave] = JSON.parse(JSON.stringify(opcoes.metadata));
@@ -5349,7 +5904,7 @@ function bunnyDeMentira() {
 }
 
 /* Sobe o pedido pela mesma porta do Pages: middleware primeiro, rota depois. */
-async function pedir(env, { metodo = 'GET', caminho, corpo, token }) {
+async function pedir(env, { metodo = 'GET', caminho, corpo, token, cabecalhos }) {
   const mid = await import('../site/functions/api/_middleware.js');
   const rota = caminho.split('?')[0];
   const modulos = {
@@ -5359,25 +5914,34 @@ async function pedir(env, { metodo = 'GET', caminho, corpo, token }) {
     '/api/catalogo': '../site/functions/api/catalogo.js',
     '/api/upload-token': '../site/functions/api/upload-token.js',
     '/api/autorizacoes': '../site/functions/api/autorizacoes.js',
-    '/api/historico': '../site/functions/api/historico.js'
+    '/api/historico': '../site/functions/api/historico.js',
+    '/api/busca/fala': '../site/functions/api/busca/fala.js',
+    '/api/busca/indexar': '../site/functions/api/busca/indexar.js',
+    '/api/busca/sentido': '../site/functions/api/busca/sentido.js'
   };
   const request = new Request('https://exemplo.test' + caminho, {
     method: metodo,
-    headers: Object.assign({ 'content-type': 'application/json' }, token ? { authorization: 'Bearer ' + token } : {}),
+    headers: Object.assign({ 'content-type': 'application/json' }, token ? { authorization: 'Bearer ' + token } : {}, cabecalhos || {}),
     body: corpo === undefined ? undefined : JSON.stringify(corpo)
   });
   const data = {};
+  const promessas = [];
   const resposta = await mid.onRequest({
     request, env, data,
     next: async () => {
+      /* Rota que não existe responde como o Pages: 404 — e o middleware já
+       * barrou antes, se ela não é pública. */
+      if (!modulos[rota]) return new Response('não existe', { status: 404 });
       const modulo = await import(modulos[rota]);
       const fn = modulo['onRequest' + metodo[0] + metodo.slice(1).toLowerCase()];
-      return fn ? fn({ request, env, data }) : new Response('sem rota', { status: 405 });
+      return fn ? fn({ request, env, data, waitUntil: (p) => promessas.push(p) }) : new Response('sem rota', { status: 405 });
     }
   });
+  await Promise.all(promessas);
+  const texto = await resposta.clone().text();
   let corpoResposta = null;
-  try { corpoResposta = JSON.parse(await resposta.clone().text()); } catch (e) { /* resposta sem JSON */ }
-  return { status: resposta.status, corpo: corpoResposta, data };
+  try { corpoResposta = JSON.parse(texto); } catch (e) { /* resposta sem JSON */ }
+  return { status: resposta.status, corpo: corpoResposta, texto, cabecalhos: resposta.headers, data };
 }
 
 const entrar = async (env, usuario, senha) =>
@@ -5695,7 +6259,7 @@ test('a mesa não dá play em nada, nem no seletor de capa', () => {
  * com o de antes) — um limiar de 100% nele nunca dispara. E ele não existe na
  * ficha, na grade nem na página Séries. */
 test('o cabeçalho não ouve scroll — quem pinta o fundo é um IntersectionObserver', () => {
-  for (const arquivo of ['app.js', 'catalogo-core.js', 'player.js', 'player-core.js',
+  for (const arquivo of ['app.js', 'catalogo-core.js', 'busca-core.js', 'indice-core.js', 'player.js', 'player-core.js',
     'mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
     const codigo = semComentarios(lerTexto(path.join(SITE, arquivo)));
     /* O alvo proibido é a PÁGINA — `window` e `document` —, que é de onde viria
@@ -6109,7 +6673,7 @@ test('o alto da série veste o destaque: capa com prioridade alta, sem lazy, sem
  * função, com o mesmo alvo — só mudou de coluna. */
 test('a ficha troca os botões ← → pela lista da série, e o Shift+N continua', () => {
   const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
-  const ficha = app.match(/function renderFicha\(id, tocar\)\s*\{([\s\S]*?)\n  \}/);
+  const ficha = app.match(/function renderFicha\(id, tocar, momento\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(ficha, 'não achei renderFicha em app.js');
   assert.ok(!/navegacao|viz\.anterior\.titulo|viz\.proximo\.titulo/.test(ficha[1]),
     'os botões ← → voltaram para a ficha');
@@ -6467,7 +7031,7 @@ test('na mesa, o rascunho não derruba o player da ficha aberta', () => {
   assert.ok(!/destruirPlayer\(/.test(noLugar[1]), 'atualizar a ficha no lugar destrói o player');
   const pelaMesa = app.match(/function redesenharPelaMesa\(\) \{([\s\S]*?)\n  \}/);
   assert.ok(pelaMesa, 'não achei redesenharPelaMesa em app.js');
-  assert.match(pelaMesa[1], /if \(ep && !el\.ficha\.hidden\) \{ atualizarFichaNoLugar\(/,
+  assert.match(pelaMesa[1], /if \(ficha && !el\.ficha\.hidden\) \{ atualizarFichaNoLugar\(/,
     'com a ficha aberta, a mesa tem de atualizar no lugar e não redesenhar');
 });
 
@@ -6493,6 +7057,12 @@ test('a mesa não chama nem escreve em nada que ela não define', () => {
   const core = require('../site/catalogo-core.js');
   const semCore = [...doCore].filter(n => !(n in core));
   assert.deepEqual(semCore, [], 'a mesa usa GTM.' + semCore.join(', GTM.') + ', que o catalogo-core.js não exporta');
+
+  /* O mesmo para o indice-core.js, de onde vêm a leitura da legenda e as
+   * contas da busca (PLANO-BUSCA §5.4). */
+  const doIndice = new Set([...juntos.matchAll(/\bGTMI\.([A-Za-z_]\w*)/g)].map(m => m[1]));
+  const semIndice = [...doIndice].filter(n => !(n in GTMI));
+  assert.deepEqual(semIndice, [], 'a mesa usa GTMI.' + semIndice.join(', GTMI.') + ', que o indice-core.js não exporta');
 });
 
 /* Achado ao juntar a mesa com a D5 (15/09): a D5 tirou os chips e, com eles,
@@ -6518,6 +7088,64 @@ test('o modo mesa só chama funções que existem no app.js', () => {
   }
 });
 
+/* ACHADO NA FASE 5 DA BUSCA (22/09). A seção nova da visão geral chamava
+ * `fatia`, que é uma função LOCAL de `visao()`: a chamada lançava
+ * `ReferenceError`, o `desenharPainel` parava no meio e a coluna da direita
+ * ficava congelada no que já estava na tela — com a mesa de pé, sem erro
+ * visível e sem teste nenhum reclamando. Os testes de texto olhavam `M.*`,
+ * `GTM.*` e `GTMI.*`; função de arquivo, ninguém olhava.
+ *
+ * Esta varredura cobra, para CADA função de nível de arquivo do site e da
+ * mesa, que tudo o que ela chama exista no arquivo dela — ou seja da
+ * linguagem. É o `--check` que o Node não faz: ele lê a sintaxe, não os
+ * nomes. */
+test('cada função do site e da mesa só chama o que existe no arquivo dela', () => {
+  const daLinguagem = new Set(['function', 'if', 'for', 'while', 'switch', 'catch', 'return', 'typeof', 'new', 'delete',
+    'String', 'Number', 'Boolean', 'Object', 'Array', 'Promise', 'JSON', 'Math', 'Date', 'RegExp', 'Set', 'Map', 'WeakMap',
+    'Error', 'URL', 'URLSearchParams', 'AbortController', 'FileReader', 'Blob', 'Image', 'Event', 'CustomEvent',
+    'setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'requestAnimationFrame', 'cancelAnimationFrame',
+    'decodeURIComponent', 'encodeURIComponent', 'parseInt', 'parseFloat', 'isNaN', 'isFinite', 'fetch', 'confirm',
+    'alert', 'btoa', 'atob', 'require', 'IntersectionObserver', 'ResizeObserver', 'MutationObserver', 'AudioContext']);
+
+  /* O que está entre aspas não é código: `'(hover: hover) and (pointer:
+   * fine)'` tem um `and (` que não chama nada. */
+  const semTextos = (js) => js.replace(/'(\\.|[^'\\])*'|"(\\.|[^"\\])*"/g, "''");
+
+  for (const arquivo of ['app.js', 'mesa-base.js', 'mesa-painel.js', 'mesa-telas.js', 'mesa.js']) {
+    const codigo = semTextos(semComentarios(lerTexto(path.join(SITE, arquivo))));
+    /* As funções de nível de arquivo: dentro do IIFE, com dois espaços. */
+    const nomes = [...codigo.matchAll(/\n  function ([A-Za-z_]\w*)\(/g)].map((m) => m[1]);
+    assert.ok(nomes.length > 3, 'não achei as funções de ' + arquivo);
+    for (const nome of nomes) {
+      const corpo = codigo.match(new RegExp('\\n  function ' + nome + '\\(([^)]*)\\) \\{([\\s\\S]*?)\\n  \\}'));
+      if (!corpo) continue;
+      /* O que chega pronto: os parâmetros da função e os das funções de
+       * dentro dela — `resolve` e `reject` de uma promessa, o `fn` de um
+       * `forEach`. */
+      const parametros = new Set(corpo[1].split(',').map((p) => p.trim()).filter(Boolean));
+      [...corpo[2].matchAll(/function\s*[A-Za-z_]*\s*\(([^)]*)\)/g)].forEach((m) => {
+        m[1].split(',').map((p) => p.trim()).filter(Boolean).forEach((p) => parametros.add(p));
+      });
+      const chamadas = new Set([...corpo[2].matchAll(/(?<![.\w$])([A-Za-z_]\w*)\s*\(/g)].map((m) => m[1]));
+      for (const chamada of chamadas) {
+        if (daLinguagem.has(chamada) || parametros.has(chamada)) continue;
+        /* Declarada DENTRO da própria função (em qualquer profundidade)…
+         *
+         * O `=` da declaração não é enfeite no regex: com `[=(]` no lugar
+         * dele, um `, fatia(` numa lista de argumentos passava por
+         * "declaração com vírgula" e o teste dava o erro por bom. */
+        if (new RegExp('(?:var|,)\\s*' + chamada + '\\s*=|function\\s+' + chamada + '\\s*\\(').test(corpo[2])) continue;
+        /* …ou no NÍVEL DO ARQUIVO, que é a indentação de dois espaços dentro
+         * do IIFE — inclusive num `var M = window.MESA, h = M.h;`. O nível é
+         * o que importa: uma função declarada dentro de OUTRA função não se
+         * alcança daqui, e era exatamente esse o erro de 22/09. */
+        if (new RegExp('\\n  var\\s+' + chamada + '\\s*=|\\n  function\\s+' + chamada + '\\s*\\(|\\n  var [^\\n]*,\\s*' + chamada + '\\s*=').test(codigo)) continue;
+        assert.fail(arquivo + ': ' + nome + '() chama ' + chamada + '(), que não existe no arquivo');
+      }
+    }
+  }
+});
+
 /* O cartão da prateleira NÃO vira texto editável: ele mostra o título curto
  * ("Bombeiro militar"), que não existe no catálogo, e digitar ali editaria
  * outro texto. Só o título e a sinopse da ficha são editáveis no lugar. */
@@ -6527,7 +7155,7 @@ test('na mesa, só o título e a sinopse da ficha são editáveis no lugar', () 
   assert.ok(campo, 'não achei campoDaFicha em app.js');
   assert.match(campo[1], /if \(!mesa\.ligada\) return no;/, 'a ficha do site virou editável fora da mesa');
   assert.match(campo[1], /campo === 'titulo' \|\| campo === 'sinopse'/);
-  for (const nome of ['cartao\\(item\\)', 'cartaoPrateleira\\(item, mostrarSerie\\)']) {
+  for (const nome of ['cartao\\(item, porSentido\\)', 'cartaoPrateleira\\(item, mostrarSerie\\)']) {
     const fn = app.match(new RegExp('function ' + nome + ' \\{([\\s\\S]*?)\\n  \\}'));
     assert.ok(fn, 'não achei ' + nome);
     assert.ok(!/contentEditable/.test(fn[1]), nome + ' virou editável');
@@ -7559,4 +8187,428 @@ test('restaurar não deixa marca no catálogo — a marca fica no histórico', a
   const seguinte = JSON.parse(env.CATALOGO.dados[GTM.chaveHistorico(depois.corpo.rev)]);
   assert.equal(seguinte.restaurou, undefined);
   assert.equal(seguinte.total, 1, 'a publicação depois da volta trouxe diferença de brinde');
+});
+
+/* ============================ as rotas da busca (PLANO-BUSCA) =========== */
+
+/* Um catálogo com um título no ar e um fora, cada um com o seu vídeo. */
+const catalogoDaBusca = () => ({
+  rev: 7,
+  itens: [
+    { id: 'no-ar', titulo: 'No ar', publicar: true, fonte: { videoId: 'video-no-ar-0001' } },
+    { id: 'fora', titulo: 'Fora', publicar: false, fonte: { videoId: 'video-fora-0002' } }
+  ]
+});
+
+/* A §6 da fase 3: "o _middleware.js abre só os GET novos, com teste". */
+test('o middleware abre só o GET da fala; escrever na busca exige conta', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) }));
+  assert.equal((await pedir(env, { caminho: '/api/busca/fala' })).status, 200, 'o GET da fala não abriu');
+  assert.equal((await pedir(env, { metodo: 'POST', caminho: '/api/busca/fala', corpo: {} })).status, 401,
+    'abriu mais que o GET da fala');
+  assert.equal((await pedir(env, { caminho: '/api/busca/indexar' })).status, 401, 'o manifesto ficou público');
+  assert.equal((await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar',
+    corpo: { videoId: 'video-no-ar-0001', fim: true, fala: [] } })).status, 401, 'a escrita no índice ficou pública');
+  assert.equal((await pedir(env, { caminho: '/api/busca/outra' })).status, 401,
+    'uma rota nova em /api/busca nasceu aberta — a lista pública é escrita à mão');
+});
+
+test('a fala sai só dos vídeos no ar, com ETag, e o 304 não baixa de novo', async () => {
+  const kv = kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) });
+  const env = ambiente(kv);
+  const sup = await entrar(env, '', 'senha-do-super');
+  for (const [videoId, texto] of [['video-no-ar-0001', 'fala do que está no ar'], ['video-fora-0002', 'fala do que está fora']]) {
+    const r = await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+      corpo: { videoId, fala: [[0, texto]], fim: true } });
+    assert.equal(r.status, 200, JSON.stringify(r.corpo));
+  }
+
+  const um = await pedir(env, { caminho: '/api/busca/fala' });
+  assert.deepEqual(Object.keys(GTMB.lerFala(um.texto)), ['video-no-ar-0001'], 'o fora do ar vazou pela fala');
+  assert.equal(um.cabecalhos.get('cache-control'), 'no-cache', 'o middleware pôs no-store por cima — adeus 304');
+  const etag = um.cabecalhos.get('etag');
+  assert.ok(etag, 'a fala saiu sem ETag');
+
+  const dois = await pedir(env, { caminho: '/api/busca/fala', cabecalhos: { 'if-none-match': etag } });
+  assert.equal(dois.status, 304);
+  assert.equal(dois.texto, '');
+
+  /* O título que vai ao ar leva a fala junto, SEM RODAR NADA: a rev do
+   * catálogo muda, o ETag muda, e a linha que estava guardada aparece. */
+  const cat = catalogoDaBusca();
+  cat.rev = 8;
+  cat.itens[1].publicar = true;
+  kv.dados.catalogo = JSON.stringify(cat);
+  const tres = await pedir(env, { caminho: '/api/busca/fala', cabecalhos: { 'if-none-match': etag } });
+  assert.equal(tres.status, 200, 'o ETag não mudou com o catálogo');
+  assert.deepEqual(Object.keys(GTMB.lerFala(tres.texto)).sort(), ['video-fora-0002', 'video-no-ar-0001']);
+
+  /* As outras rotas continuam no-store. */
+  assert.equal((await pedir(env, { caminho: '/api/catalogo' })).cabecalhos.get('cache-control'), 'no-store');
+});
+
+/* O CPU MEDIDO NO AR (22/09, fase 5): a primeira versão da rota lia a fala
+ * inteira e o catálogo antes de tudo, até para o 304, e mediu 6, 13 e 16 ms
+ * — numa conta de 10 ms, numa rota pública. O ETag passou a sair do
+ * manifesto, com a versão DA FALA, e a resposta montada vai para o cache. */
+test('a fala responde 304 sem ler a fala, e do cache sem remontar; a sinopse não muda o ETag', async () => {
+  const kv = kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) });
+  const env = ambiente(kv);
+  const sup = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+    corpo: { videoId: 'video-no-ar-0001', fala: [[0, 'a fala']], fim: true } });
+  const etag = (await pedir(env, { caminho: '/api/busca/fala' })).cabecalhos.get('etag');
+
+  await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+    corpo: { videoId: 'video-no-ar-0001', sinopse: 'Título. Sinopse revisada.', fim: true } });
+  assert.equal((await pedir(env, { caminho: '/api/busca/fala' })).cabecalhos.get('etag'), etag,
+    'uma sinopse revisada mudou o ETag da fala — toda visita baixaria os 430 KB de novo');
+
+  const lidas = [];
+  const get = kv.get;
+  kv.get = async (chave, tipo) => { lidas.push(chave); return get(chave, tipo); };
+  const guardado = new Map();
+  const antes = globalThis.caches;
+  globalThis.caches = { default: {
+    match: async (req) => (guardado.has(req.url) ? new Response(guardado.get(req.url)) : undefined),
+    put: async (req, res) => { guardado.set(req.url, await res.text()); }
+  } };
+  try {
+    const nao = await pedir(env, { caminho: '/api/busca/fala', cabecalhos: { 'if-none-match': etag } });
+    assert.equal(nao.status, 304);
+    assert.ok(!lidas.includes(GTMI.CHAVES.fala), 'o 304 leu a fala inteira');
+
+    const primeira = await pedir(env, { caminho: '/api/busca/fala' });
+    lidas.length = 0;
+    const segunda = await pedir(env, { caminho: '/api/busca/fala' });
+    assert.equal(segunda.texto, primeira.texto);
+    assert.ok(!lidas.includes(GTMI.CHAVES.fala), 'a segunda leitura remontou a fala em vez de vir do cache');
+  } finally {
+    kv.get = get;
+    if (antes === undefined) delete globalThis.caches; else globalThis.caches = antes;
+  }
+});
+
+/* A chamada que fecha o vídeo mediu 8 a 17 ms com a fala reescrita (22/09).
+ * Reindexar a MESMA legenda não tem o que mudar nela — e não a reescreve. */
+test('a mesma fala mandada de novo não reescreve a chave, nem muda a versão da fala', async () => {
+  const kv = kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) });
+  const env = ambiente(kv);
+  const sup = await entrar(env, '', 'senha-do-super');
+  const corpo = { videoId: 'video-no-ar-0001', fala: [[0, 'a mesma fala']], fim: true };
+  await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token, corpo });
+  const antes = JSON.parse(kv.dados[GTMI.CHAVES.estado]).versaoDaFala;
+
+  const escritas = [];
+  const put = kv.put;
+  kv.put = async (chave, valor, opcoes) => { escritas.push(chave); return put(chave, valor, opcoes); };
+  try {
+    await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token, corpo });
+    assert.deepEqual(escritas, [GTMI.CHAVES.estado], 'a mesma fala reescreveu os ~500 KB do índice');
+    assert.equal(JSON.parse(kv.dados[GTMI.CHAVES.estado]).versaoDaFala, antes, 'a versão da fala andou sem a fala mudar');
+
+    escritas.length = 0;
+    await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+      corpo: { videoId: 'video-no-ar-0001', fala: [[0, 'a fala nova']], fim: true } });
+    assert.deepEqual(escritas, [GTMI.CHAVES.fala, GTMI.CHAVES.estado], 'a fala nova não foi gravada');
+  } finally {
+    kv.put = put;
+  }
+});
+
+test('indexar grava a linha e o manifesto, pede a permissão da legenda, e recusa vetor sem o sentido', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'ana', nome: 'Ana', senha: 'senha-bem-comprida', permissoes: ['no-ar'] } });
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'bia', nome: 'Bia', senha: 'senha-bem-comprida', permissoes: ['enviar'] } });
+  const ana = await entrar(env, 'ana', 'senha-bem-comprida');
+  const bia = await entrar(env, 'bia', 'senha-bem-comprida');
+  const pedido = { videoId: 'video-no-ar-0001', fala: [[0, 'um'], [31, 'dois']], fim: true };
+
+  assert.equal((await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: ana.token, corpo: pedido })).status, 403,
+    'quem só põe no ar escreveu no índice');
+  const r = await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: bia.token, corpo: pedido });
+  assert.equal(r.status, 200, 'quem envia vídeo manda a legenda — e a fala dela');
+  assert.equal(r.corpo.sentido, false);
+
+  const manifesto = (await pedir(env, { caminho: '/api/busca/indexar', token: ana.token })).corpo;
+  assert.deepEqual(manifesto.videos['video-no-ar-0001'].fala.inicios, [0, 31], 'todo admin vê o manifesto');
+  assert.equal(manifesto.sentido, false);
+  assert.equal(env.CATALOGO.metas[GTMI.CHAVES.fala].versao, manifesto.versao, 'a versão da fala não acompanhou o manifesto');
+
+  const torto = await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token, corpo: { videoId: 'x', fim: true } });
+  assert.equal(torto.status, 400);
+  const vetor = await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+    corpo: { videoId: 'video-no-ar-0001', vetores: [['f', 0, 'um']] } });
+  assert.equal(vetor.status, 503, 'sem Workers AI e Vectorize, o pedido de vetor tem de ser recusado');
+});
+
+/* O script é a reserva da mesa, e escreve pela mesma rota: um vídeo por vez,
+ * com um segundo entre um e o seguinte — cada chave do KV aceita uma escrita
+ * por segundo. */
+test('o script da busca usa o código do site e espera um segundo entre os vídeos', () => {
+  const script = semComentarios(lerTexto(path.join(__dirname, '..', 'scripts', 'indice-busca.mjs')));
+  assert.match(script, /import GTMI from '\.\.\/site\/indice-core\.js'/);
+  assert.match(script, /GTMI\.blocosDaLegenda\(/, 'o script condensa de outro jeito que a mesa');
+  assert.match(script, /await esperar\(1[0-9]{3}\)/, 'sem a espera, o KV recusa a segunda escrita na mesma chave');
+  assert.match(script, /'\/api\/busca\/indexar'/);
+  assert.ok(!/gravarCatalogo/.test(script), 'o script da busca não escreve no catálogo');
+});
+
+/* ---------------------------------------------- o sentido (fase 4) */
+
+/* O Workers AI e o Vectorize de mentira. O modelo devolve um vetor de 1.024
+ * por texto, como o `bge-m3` (conferido num `pages dev` em 21/09); o índice
+ * guarda o que recebe e responde com o que o teste manda. */
+const aiDeMentira = (chamadas) => ({
+  run: async (modelo, entrada) => {
+    chamadas.push({ modelo, textos: entrada.text });
+    return { shape: [entrada.text.length, 1024], data: entrada.text.map(() => new Array(1024).fill(0.01)), pooling: 'cls' };
+  }
+});
+const vectorizeDeMentira = (resposta) => {
+  const estado = { upserts: [], apagados: [], consultas: [] };
+  return {
+    estado,
+    upsert: async (vetores) => { estado.upserts.push(...vetores); return { mutationId: 'm1' }; },
+    deleteByIds: async (ids) => { estado.apagados.push(...ids); return { mutationId: 'm2' }; },
+    query: async (vetor, opcoes) => { estado.consultas.push(opcoes); return { count: resposta.length, matches: resposta }; }
+  };
+};
+const casa = (videoId, tipo, inicio, score) => ({ id: tipo + ':' + videoId + ':' + inicio, score, metadata: { videoId, tipo, inicio } });
+
+test('o sentido sem Workers AI e Vectorize responde vazio, em 200, e a pergunta curta nem chega ao modelo', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) }));
+  const sem = await pedir(env, { caminho: '/api/busca/sentido?q=' + encodeURIComponent('fração') });
+  assert.equal(sem.status, 200, 'sem o binding a busca por sentido derrubou a resposta');
+  assert.deepEqual(sem.corpo, { resultados: [], indisponivel: true });
+
+  const chamadas = [];
+  env.AI = aiDeMentira(chamadas);
+  env.VETORES = vectorizeDeMentira([]);
+  assert.deepEqual((await pedir(env, { caminho: '/api/busca/sentido?q=ab' })).corpo, { resultados: [] });
+  assert.equal(chamadas.length, 0, 'duas letras foram ao modelo');
+  assert.equal((await pedir(env, { metodo: 'POST', caminho: '/api/busca/sentido?q=fracao', corpo: {} })).status, 401,
+    'o sentido abriu mais que o GET');
+});
+
+test('o sentido devolve só o que está no ar e acima do corte, sem texto, e a pergunta repetida vem do cache', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) }));
+  const chamadas = [];
+  env.AI = aiDeMentira(chamadas);
+  /* As notas saem arredondadas em 4 casas pela rota — o `0,52 + 0,05` do
+   * ponto flutuante não bate com o que ela devolve. */
+  const nota = (d) => Number((GTMI.CORTE + d).toFixed(4));
+  env.VETORES = vectorizeDeMentira([
+    casa('video-fora-0002', 'f', 30, 0.9),
+    casa('video-no-ar-0001', 'f', 60, nota(0.1)),
+    casa('video-no-ar-0001', 's', 0, nota(0.05)),
+    casa('video-no-ar-0001', 'c', 120, nota(-0.01))
+  ]);
+  const guardado = new Map();
+  const antes = globalThis.caches;
+  globalThis.caches = { default: {
+    match: async (req) => (guardado.has(req.url) ? new Response(guardado.get(req.url)) : undefined),
+    put: async (req, res) => { guardado.set(req.url, await res.text()); }
+  } };
+  try {
+    const um = await pedir(env, { caminho: '/api/busca/sentido?q=' + encodeURIComponent('Profissão de risco') });
+    assert.equal(um.status, 200);
+    assert.deepEqual(um.corpo.resultados, [
+      { videoId: 'video-no-ar-0001', tipo: 'f', inicio: 60, nota: nota(0.1) },
+      { videoId: 'video-no-ar-0001', tipo: 's', inicio: 0, nota: nota(0.05) }
+    ], 'vazou o fora do ar, ou passou o que ficou abaixo do corte');
+    assert.ok(!('texto' in um.corpo.resultados[0]), 'o sentido mandou texto — o navegador já o tem');
+    assert.equal(chamadas[0].modelo, GTMI.MODELO);
+    assert.deepEqual(chamadas[0].textos, ['profissão de risco'], 'a pergunta foi ao modelo sem a forma do servidor');
+
+    await pedir(env, { caminho: '/api/busca/sentido?q=' + encodeURIComponent('profissão  de risco ') });
+    assert.equal(chamadas.length, 1, 'a mesma pergunta passou de novo pelo modelo');
+
+    /* O título que sai do ar some da resposta que veio do cache. */
+    const cat = catalogoDaBusca();
+    cat.itens[0].publicar = false;
+    env.CATALOGO.dados.catalogo = JSON.stringify(cat);
+    const tres = await pedir(env, { caminho: '/api/busca/sentido?q=' + encodeURIComponent('profissão de risco') });
+    assert.deepEqual(tres.corpo.resultados, [], 'o cache devolveu título tirado do ar');
+  } finally {
+    if (antes === undefined) delete globalThis.caches; else globalThis.caches = antes;
+  }
+});
+
+test('o sentido cru — o da prova — é só de quem tem conta, e filtra pelo tipo', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) }));
+  env.AI = aiDeMentira([]);
+  env.VETORES = vectorizeDeMentira([casa('video-fora-0002', 'f', 30, 0.2)]);
+  assert.equal((await pedir(env, { caminho: '/api/busca/sentido?cru=1&q=bombeiro' })).status, 401,
+    'o modo cru mostra o que está fora do ar, e ficou público');
+  const sup = await entrar(env, '', 'senha-do-super');
+  const cru = await pedir(env, { caminho: '/api/busca/sentido?cru=1&tipo=f&k=5&q=bombeiro', token: sup.token });
+  assert.deepEqual(cru.corpo.brutos, [['video-fora-0002', 'f', 30, 0.2]], 'o cru passou pelo corte ou pelo no ar');
+  assert.deepEqual(env.VETORES.estado.consultas[0], { topK: 5, returnMetadata: 'all', filter: { tipo: 'f' } });
+});
+
+test('indexar grava os vetores com id e metadado, e apaga os que sumiram', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDaBusca()) }));
+  const chamadas = [];
+  env.AI = aiDeMentira(chamadas);
+  env.VETORES = vectorizeDeMentira([]);
+  const sup = await entrar(env, '', 'senha-do-super');
+  const vetores = await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+    corpo: { videoId: 'video-no-ar-0001', vetores: [['f', 0, 'um'], ['f', 31, 'dois'], ['s', 0, 'Título. Sinopse.']] } });
+  assert.equal(vetores.status, 200, JSON.stringify(vetores.corpo));
+  assert.equal(vetores.corpo.vetores, 3);
+  assert.deepEqual(chamadas[0].textos, ['um', 'dois', 'Título. Sinopse.'], 'os textos foram ao modelo num lote só');
+  assert.deepEqual(env.VETORES.estado.upserts.map(v => [v.id, v.metadata.tipo, v.metadata.inicio, v.values.length]),
+    [['f:video-no-ar-0001:0', 'f', 0, 1024], ['f:video-no-ar-0001:31', 'f', 31, 1024], ['s:video-no-ar-0001', 's', 0, 1024]]);
+
+  await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+    corpo: { videoId: 'video-no-ar-0001', fala: [[0, 'um'], [31, 'dois']], fim: true, sentido: true } });
+  const troca = await pedir(env, { metodo: 'POST', caminho: '/api/busca/indexar', token: sup.token,
+    corpo: { videoId: 'video-no-ar-0001', fala: [[0, 'um']], fim: true, sentido: true } });
+  assert.equal(troca.corpo.apagados, 1);
+  assert.deepEqual(env.VETORES.estado.apagados, ['f:video-no-ar-0001:31'], 'o bloco que sumiu da legenda ficou no índice');
+  assert.throws(() => GTMI.vetoresDaResposta({ data: [[1, 2, 3]] }, 1), /dimensões/, 'um vetor de tamanho errado seria gravado');
+});
+
+/* A JUNÇÃO (§5.3): o que casou por palavra vem primeiro; o que só casou por
+ * sentido, depois, marcado; e sem sentido a resposta é a de palavra, igual. */
+test('a junção: palavra primeiro, sentido depois, e sem sentido a busca literal é idêntica', () => {
+  const ind = GTMB.indice(comCapitulosEVideo, comFala);
+  const literal = GTMB.procurar(ind, 'escada');
+  assert.equal(GTMB.juntar(ind, literal, []), literal, 'sem sentido a resposta mudou — o binding desligado mexeria na busca');
+  assert.equal(GTMB.juntar(ind, literal, null), literal);
+
+  const sentido = [
+    { videoId: 'video-agro-0002', tipo: 's', inicio: 0, nota: 0.7 },
+    { videoId: 'video-bomb-0001', tipo: 'f', inicio: 300, nota: 0.65 },
+    { videoId: 'video-bomb-0001', tipo: 'c', inicio: 125, nota: 0.6 }
+  ];
+  const junto = GTMB.juntar(ind, literal, sentido);
+  assert.deepEqual(junto.titulos.map(t => [t.item.id, !!t.porSentido]),
+    literal.titulos.map(t => [t.item.id, false]).concat(
+      literal.titulos.some(t => t.item.id === 'agro') ? [] : [['agro', true]]),
+    'o que casou por palavra não veio primeiro');
+  const doSentido = junto.trechos.filter(t => t.porSentido);
+  assert.deepEqual(doSentido.map(t => [t.item.id, t.tipo, t.inicio]), [['bombeiro', 'fala', 300]],
+    'o trecho do sentido no mesmo momento de um por palavra virou outra linha — ou o novo não entrou');
+  assert.ok(junto.trechos.indexOf(doSentido[0]) >= literal.trechos.length, 'o do sentido passou na frente do de palavra');
+
+  /* Sem a fala carregada o bloco do sentido não tem texto, e fica de fora. */
+  const semFala = GTMB.indice(comCapitulosEVideo);
+  assert.equal(GTMB.juntar(semFala, GTMB.procurar(semFala, 'escada'), sentido).trechos.filter(t => t.porSentido).length, 0);
+});
+
+/* "previsão do tempo para amanhã" passou do corte com 0,583 num bloco que
+ * dizia só "no futuro." (22/09). O bloco curto demais não diz assunto. */
+test('o sentido ignora o bloco curto demais, que não diz assunto', () => {
+  const itens = [{ id: 'q', titulo: 'Professor de Química', serie: 'A', publicar: true, fonte: { videoId: 'video-quim-0001' } }];
+  const fala = { 'video-quim-0001': [[480, 'A cristalografia estuda como os átomos se arrumam dentro de um cristal.'], [510, 'no futuro.']] };
+  const ind = GTMB.indice(itens, fala);
+  const literal = GTMB.procurar(ind, 'previsão do tempo');
+  const junto = GTMB.juntar(ind, literal, [{ videoId: 'video-quim-0001', tipo: 'f', inicio: 510, nota: 0.583 }]);
+  assert.deepEqual(junto.titulos, [], 'o bloco "no futuro." pôs o título na resposta');
+  assert.deepEqual(junto.trechos, []);
+  const comConteudo = GTMB.juntar(ind, literal, [{ videoId: 'video-quim-0001', tipo: 'f', inicio: 480, nota: 0.6 }]);
+  assert.equal(comConteudo.trechos.length, 1, 'o bloco de verdade deixou de valer');
+});
+
+test('a pergunta ao sentido é a mesma no navegador e no servidor', () => {
+  for (const q of ['Fração', '  mercado   de TRABALHO ', 'Profissão de risco', 'x'.repeat(200)]) {
+    assert.equal(GTMB.perguntaDoSentido(q), GTMI.consultaDoSentido(q), q.slice(0, 20));
+  }
+  assert.equal(GTMB.perguntaDoSentido('ab'), null, 'duas letras foram perguntadas');
+  assert.equal(GTMI.consultaValida('ab'), false);
+  /* 400 ms depois da última tecla, só a última vale, e a falha fica calada. */
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const pedir = app.match(/function pedirSentidoDepois\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.match(pedir, /clearTimeout\(busca\.esperaSentido\)/);
+  assert.match(pedir, /\}, 400\);/);
+  assert.match(pedir, /busca\.pedidoSentido\.abort\(\)/, 'a pergunta anterior não é cancelada');
+  assert.match(pedir, /q in busca\.sentido/, 'a pergunta repetida volta ao servidor');
+  assert.match(pedir, /\.catch\(function \(\) \{\s*\}\)/, 'a falha do sentido aparece na tela');
+});
+
+/* ---------------------------------------------- a mesa e a busca (fase 5) */
+
+test('a conta de quem ficou fora da busca olha o no ar, a fala e o texto dos vetores', () => {
+  const itens = [
+    { id: 'dentro', titulo: 'Dentro', sinopse: 'Uma sinopse.', publicar: true, fonte: { videoId: 'video-dentro-001' } },
+    { id: 'semfala', titulo: 'Sem fala', publicar: true, fonte: { videoId: 'video-semfala-02' } },
+    { id: 'fora', titulo: 'Fora do ar', publicar: false, fonte: { videoId: 'video-fora-000003' } },
+    { id: 'semvideo', titulo: 'Sem vídeo', publicar: true, fonte: { videoId: null } }
+  ];
+  const conj = GTMI.conjuntosDoItem(itens[0]);
+  const manifesto = { versao: 3, videos: { 'video-dentro-001': {
+    fala: { hash: 'x', n: 0, inicios: [], sentido: true },
+    capitulos: { hash: GTMI.hashConjunto(conj.capitulos), n: 0, inicios: [], sentido: true },
+    sinopse: { hash: GTMI.hash(conj.sinopse), sentido: true }
+  } } };
+  let conta = GTMI.foraDaBusca(itens, manifesto, true);
+  assert.deepEqual(conta.semFala.map(i => i.id), ['semfala'], 'o fora do ar ou o sem vídeo entrou na conta');
+  assert.deepEqual(conta.desatualizados.map(i => i.id), []);
+
+  /* A sinopse revisada deixa o vetor da ficha velho. */
+  const revisado = itens.map(i => (i.id === 'dentro' ? Object.assign({}, i, { sinopse: 'Outra sinopse, revisada.' }) : i));
+  assert.deepEqual(GTMI.foraDaBusca(revisado, manifesto, true).desatualizados.map(i => i.id), ['dentro']);
+  /* Sem o sentido ligado, o que conta é só a fala. */
+  assert.deepEqual(GTMI.foraDaBusca(revisado, manifesto, false).desatualizados, []);
+  /* Vídeo sem legenda tem linha com zero bloco, e está DENTRO da busca. */
+  assert.equal(manifesto.videos['video-dentro-001'].fala.n, 0);
+  assert.ok(!conta.semFala.some(i => i.id === 'dentro'));
+});
+
+test('a mesa põe na busca no envio, depois do Publicar, e pelo botão da visão geral', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  const painel = semComentarios(lerTexto(path.join(SITE, 'mesa-painel.js')));
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+
+  /* O ENVIO: a legenda que a mesa leu vira a fala do título, condensada aqui
+   * — a função tem 10 ms de CPU. */
+  assert.match(telas, /blocosDaFala = GTMI\.blocosDaLegenda\(srt\)/, 'a mesa parou de condensar a legenda do envio');
+  assert.match(telas, /M\.indexarBusca\(videoId, \{/, 'o envio não põe o título na busca');
+  assert.match(telas, /fala: blocosDaFala \|\| \[\]/);
+
+  /* O PUBLICAR: só o texto que o sentido compara — título e sinopse. */
+  const publicado = base.match(/function atualizarBuscaDoPublicado\(mexidos\) \{([\s\S]*?)\n  \}/);
+  assert.ok(publicado, 'não achei atualizarBuscaDoPublicado em mesa-base.js');
+  assert.match(publicado[1], /M\.indexarBusca\(item\.fonte\.videoId, \{ capitulos: conj\.capitulos, sinopse: conj\.sinopse \}\)/,
+    'o Publicar passou a mandar a fala também — ela vem da legenda, que ele não toca');
+  assert.match(base, /m\.campo !== 'titulo' && m\.campo !== 'sinopse'/, 'o Publicar deixou de olhar quem mudou de texto');
+
+  /* A FILA: um vídeo por vez, com um segundo entre eles (o KV). */
+  const fila = base.match(/M\.indexarBusca = function \(videoId, conjuntos\) \{([\s\S]*?)\n  \};/);
+  assert.match(fila[1], /GTMI\.lotes\(GTMI\.vetoresDosConjuntos\(conjuntos\), GTMI\.LIMITES\.vetores\)/,
+    'os vetores deixaram de ir no lote que a medida decidiu');
+  /* O lote é a alavanca do CPU (§5.4), e o número é MEDIDO: 4 a 12 ms por
+   * chamada de 20 vetores no ar, 4 a 7 com 10, contra os 10 ms do gratuito.
+   * Subir o lote sem medir de novo é voltar a estourar. */
+  assert.equal(GTMI.LIMITES.vetores, 10, 'o lote mudou sem medida nova — veja o §9 do PLANO-BUSCA');
+  assert.match(fila[1], /setTimeout\(pronto, 1100\)/, 'a fila não espera o segundo entre um vídeo e o seguinte');
+
+  /* A LEGENDA VEM DA PULL ZONE, que responde a qualquer origem. */
+  assert.match(base, /\/captions\/pt\.vtt/);
+  assert.match(base, /if \(r\.status === 404\) return null;/, 'vídeo sem legenda tem de ser caso previsto');
+
+  /* A VISÃO GERAL mostra quem ficou fora, e o botão só aparece para quem pode. */
+  assert.match(painel, /GTMI\.foraDaBusca\(cat\.itens, b\.manifesto, b\.sentido\)/);
+  assert.match(painel, /M\.pode\('conteudo'\) \|\| M\.pode\('enviar'\)/, 'o botão de pôr na busca ignorou a permissão');
+  assert.match(mesa, /if \(a === 'busca-por'\) return M\.porNaBusca\(\)/, 'o botão da visão geral não está ligado');
+  assert.match(mesa, /M\.carregarBusca\(\)/, 'a mesa não lê o índice da busca ao abrir');
+
+  /* E a mesa carrega o mesmo indice-core.js do script. */
+  assert.match(lerTexto(path.join(SITE, 'admin.html')), /<script src="indice-core\.js"><\/script>/);
+});
+
+/* A fala desce na primeira busca, e nunca na chegada (§5.2). */
+test('a chegada não pede a fala: ela desce junto com o arquivo da busca', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const preparar = app.match(/function prepararBusca\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.match(preparar, /fetch\('\/api\/busca\/fala'/, 'quem pede a fala não é o prepararBusca');
+  assert.equal((app.match(/\/api\/busca\/fala/g) || []).length, 1, 'a fala é pedida de mais de um lugar');
+  const carregar = app.match(/function carregar\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.ok(!/busca/.test(carregar), 'a carga do catálogo pede a busca junto');
 });

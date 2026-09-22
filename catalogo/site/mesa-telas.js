@@ -356,9 +356,14 @@
       return M.api('/api/midia?tipo=capa&videoId=' + encodeURIComponent(e.videoId), { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes })
         .then(function (r) { if (r.capa_arquivo) { campos.capa_arquivo = r.capa_arquivo; campos.capa_versao = String(Date.now()); } registrar('capa enviada'); });
     }));
+    /* A legenda que a mesa acabou de ler serve duas vezes: vai ao Bunny, e
+     * vira a fala do título na busca (PLANO-BUSCA §5.4, decisão 6). Os blocos
+     * são condensados AQUI — a função recebe prontos. */
+    var blocosDaFala = null;
     if (legenda) tarefas.push(lerTexto(legenda).then(function (srt) {
+      blocosDaFala = GTMI.blocosDaLegenda(srt);
       return M.api('/api/midia?tipo=legenda&videoId=' + encodeURIComponent(e.videoId), { method: 'POST', body: JSON.stringify({ srt: srt, srclang: 'pt', label: 'Português' }) })
-        .then(function () { registrar('legenda enviada'); });
+        .then(function () { registrar('legenda enviada · ' + blocosDaFala.length + ' blocos de fala'); });
     }));
     Promise.all(tarefas).then(function () {
       return M.api('/api/catalogo?completo=1');
@@ -371,7 +376,18 @@
       copia.itens.push(novo);
       return M.api('/api/catalogo', { method: 'PUT', body: JSON.stringify(copia) }).then(function () { return novo; });
     }).then(function (novo) {
+      var videoId = e.videoId;
       M.envio = { upload: null, videoId: null, arquivo: null, titulo: '', fase: 'parado', enviados: 0, total: 0, registro: [], encoding: '', erro: '', pedidoId: null, duracaoEstimadaSeg: null };
+      /* A BUSCA, no mesmo envio: ninguém aperta nada. Se falhar, o título
+       * entra no catálogo do mesmo jeito — e a visão geral mostra que ele
+       * ficou fora da busca pela fala (§5.4). */
+      M.indexarBusca(videoId, {
+        fala: blocosDaFala || [],
+        capitulos: [],
+        sinopse: GTMI.textoDaFicha(novo)
+      }).then(function () { return M.carregarBusca(); }, function (erro) {
+        M.toast('“' + novo.titulo + '” entrou no catálogo, mas ficou fora da busca: ' + erro.message);
+      });
       return M.carregarServidor().then(function () {
         M.toast('“' + novo.titulo + '” entrou no catálogo, fora do ar.');
         M.escolher('item:' + novo.id, { tela: 'catalogo' });

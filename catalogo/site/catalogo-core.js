@@ -214,6 +214,42 @@
     return achado;
   }
 
+  /* ------------------------------------------------------------ a ficha */
+
+  /* A ROTA DA FICHA: `#/ep/<id>`, e desde a fase 2 da busca (PLANO-BUSCA
+   * §5.5) `#/ep/<id>?t=<segundos>` — o link de um TRECHO, que abre o vídeo
+   * naquele momento.
+   *
+   * O `?t=` é separado ANTES de decodificar o id: o id vai codificado na URL,
+   * e um `?` dentro dele chegaria como `%3F`, nunca como separador. `t` que
+   * não é número inteiro é IGNORADO — `?t=abc`, `?t=1.5`, `?t=-3` abrem a
+   * ficha do começo, como um link sem `t`. E o que a URL não leva é o pedido
+   * de tocar: quem abre um link colado vê o vídeo PARADO no momento, com o
+   * play à mão (a regra de 04/09: um link não toca sozinho).
+   *
+   * Um `%` solto no id — colado de um aplicativo de mensagem — faria o
+   * `decodeURIComponent` lançar; o id segue como veio e cai no "não
+   * encontrado" da ficha. Devolve { id, t } — `t` null quando não há — ou
+   * null quando o endereço não é de ficha. */
+  function rotaDaFicha(hash) {
+    var m = /^#\/ep\/([^?]+)(?:\?(.*))?$/.exec(String(hash || ''));
+    if (!m) return null;
+    var id;
+    try { id = decodeURIComponent(m[1]); } catch (e) { id = m[1]; }
+    var t = null;
+    String(m[2] || '').split('&').forEach(function (par) {
+      var kv = par.split('=');
+      if (kv[0] === 't' && /^\d{1,6}$/.test(kv[1] || '')) t = Number(kv[1]);
+    });
+    return { id: id, t: t };
+  }
+
+  /* O link de um título — e de um momento dele, com `segundos`. */
+  function linkDaFicha(id, segundos) {
+    var t = Math.floor(Number(segundos));
+    return '#/ep/' + encodeURIComponent(id) + (segundos != null && isFinite(t) && t >= 0 ? '?t=' + t : '');
+  }
+
   /* --------------------------------------------------------------- player */
 
   /* O libraryId do item manda; o da config é só a rede de segurança para
@@ -1480,6 +1516,8 @@
     formatarTempo: formatarTempo,
     capitulos: capitulos,
     capituloEm: capituloEm,
+    rotaDaFicha: rotaDaFicha,
+    linkDaFicha: linkDaFicha,
     resolverFonte: resolverFonte,
     urlEmbed: urlEmbed,
     urlCapa: urlCapa,

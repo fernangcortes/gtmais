@@ -67,6 +67,10 @@
 
 <script src="https://cdn.jsdelivr.net/npm/tus-js-client@4/dist/tus.min.js"></script>
 <script src="catalogo-core.js"></script>
+<!-- A leitura da legenda e as contas do índice da busca: é a mesa que lê o
+     .srt do envio e condensa em blocos de 30 s, porque a função tem 10 ms de
+     CPU (design/PLANO-BUSCA.md §5.4). O mesmo arquivo que o script usa. -->
+<script src="indice-core.js"></script>
 <script src="mesa-base.js"></script>
 <script src="mesa-painel.js"></script>
 <script src="mesa-telas.js"></script>

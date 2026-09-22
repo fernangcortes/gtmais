@@ -396,6 +396,10 @@ main { padding: 24px 0 64px; }
   align-self: flex-start;
 }
 .selo-erro { background: var(--erro-fundo); color: var(--erro); }
+/* "Sobre o assunto" (PLANO-BUSCA, fase 4): o título ou o trecho que a busca
+ * achou só pelo SENTIDO. Não é alerta, e por isso não é o amarelo do `.selo`:
+ * é o verde da marca sobre o verde fraco, o par do "Você está aqui" — 6,93:1. */
+.selo-sentido { background: var(--marca-fraca); color: var(--marca); }
 
 /* Quem pediu menos movimento não recebe nem o trecho animado (barrado em
  * app.js) nem as transições do cartão. */
@@ -805,6 +809,83 @@ a.ep:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
   .ep { gap: var(--esp-3); padding: var(--esp-2); margin: 0 calc(-1 * var(--esp-2)); }
   .ep-capa { flex-basis: 40%; max-width: 160px; }
   .ep-titulo { font-size: var(--tipo-corpo); }
+}
+
+/* ------------------------------------------------ os trechos da busca
+ *
+ * PLANO-BUSCA §5.6: embaixo da grade da resposta, os pedaços do vídeo que
+ * respondem à pergunta, agrupados por vídeo. A cabeça do grupo veste a linha
+ * da "Episódios da série" (D6) — a capa pequena, a série e o número, o nome
+ * curto —, e no lugar da sinopse vêm os trechos: o minuto, o capítulo e a
+ * frase. Cada trecho é um link de 44 px, porque é nele que se clica.
+ *
+ * O teto de largura é o da lista de episódios, e pelo mesmo motivo: a frase
+ * não pode correr 1100 px numa janela de 1400. */
+.trechos { max-width: 960px; margin: var(--esp-7) 0 var(--esp-6); }
+
+.trechos-lista { list-style: none; margin: 0; padding: 0; }
+
+/* Uma GRADE, e não o flex da `.ep`: no computador a capa fica à esquerda e a
+ * cabeça, os trechos e o "mais" descem ao lado dela; no celular os trechos
+ * vão para baixo da capa, na largura inteira. Ao lado de uma capa de 40% a
+ * frase teria 170 px em 375. */
+.trecho-grupo {
+  display: grid; column-gap: var(--esp-4); align-items: start;
+  grid-template-columns: 224px minmax(0, 1fr);
+  grid-template-areas: "capa cabeca" "capa trechos" "capa mais";
+  grid-template-rows: auto auto 1fr;
+  padding: var(--esp-4) 0;
+}
+.trecho-grupo + .trecho-grupo { border-top: 1px solid var(--borda); }
+.trecho-grupo > .ep-capa { grid-area: capa; }
+.trecho-cabeca { grid-area: cabeca; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.trechos-do-video { grid-area: trechos; list-style: none; margin: var(--esp-2) 0 0; padding: 0; }
+
+/* A margem negativa devolve o minuto ao alinhamento do nome, e deixa o fundo
+ * do hover sobrar para fora — o mesmo truque da `.ep`. */
+.trecho {
+  display: flex; gap: var(--esp-3); align-items: baseline;
+  min-height: 44px; padding: var(--esp-2);
+  margin: 0 calc(-1 * var(--esp-2));
+  border-radius: 8px; color: inherit; text-decoration: none;
+}
+.trecho:hover { background: var(--superficie); }
+.trecho:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
+
+/* O minuto em --marca: 8,0:1 sobre o fundo. Números de largura fixa, para
+ * "2:05" e "12:40" alinharem o que vem depois. */
+.trecho-tempo {
+  flex: 0 0 auto; min-width: 3.4em; color: var(--marca); font-weight: 600;
+  font-size: var(--tipo-menor); font-variant-numeric: tabular-nums;
+}
+
+.trecho-corpo { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+
+.trecho-capitulo { font-size: var(--tipo-menor); line-height: 1.4; }
+
+/* A palavra que a consulta achou: o amarelo do rótulo da série no destaque,
+ * sem fundo — 12,2:1 sobre o fundo e 11,1:1 sobre o hover. Um fundo amarelo
+ * com texto escuro gritaria mais do que o minuto, que é o que se clica. */
+.trechos mark { background: none; color: var(--marca-ouro); font-weight: 600; }
+
+.trecho-mais {
+  grid-area: mais; justify-self: start;
+  min-height: 44px; padding: 0 var(--esp-2); margin: var(--esp-1) calc(-1 * var(--esp-2)) 0;
+  background: none; border: 0; border-radius: 8px; cursor: pointer;
+  font: inherit; font-size: var(--tipo-menor); color: var(--texto-fraco);
+}
+.trecho-mais:hover { color: var(--marca); }
+.trecho-mais:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
+
+@media (max-width: 560px) {
+  .trecho-grupo {
+    column-gap: var(--esp-3);
+    grid-template-columns: minmax(0, 40%) minmax(0, 1fr);
+    grid-template-areas: "capa cabeca" "trechos trechos" "mais mais";
+    grid-template-rows: auto;
+  }
+  .trecho-grupo > .ep-capa { max-width: 160px; }
+  .trecho-cabeca .ep-titulo { font-size: var(--tipo-corpo); }
 }
 
 /* ------------------------------------------------------------------ ficha */

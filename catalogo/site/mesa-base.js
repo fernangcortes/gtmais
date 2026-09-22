@@ -285,6 +285,129 @@
     });
   };
 
+  /* ----------------------------------------------------------------- busca
+   *
+   * A MESA PÕE OS TÍTULOS NA BUSCA SOZINHA (design/PLANO-BUSCA.md §5.4,
+   * decisão 6): no envio de um título novo, com o `.srt` que ela acabou de
+   * ler, e depois do Publicar, para o título cuja sinopse ou cujo nome
+   * mudaram — é a sinopse que o sentido compara. Ninguém aperta nada.
+   *
+   * Quem condensa é AQUI, e não a função: ler e condensar a legenda mais
+   * longa custa metade dos 10 ms de CPU que ela tem. O código é o mesmo do
+   * script (`indice-core.js`).
+   *
+   * UM VÍDEO POR VEZ, com um segundo entre um e o seguinte: a chamada que
+   * fecha um vídeo grava duas chaves do KV, e cada chave aceita uma escrita
+   * por segundo. Por isso a fila. */
+  M.busca = {
+    manifesto: null,   /* o que o GET /api/busca/indexar devolveu */
+    sentido: false,    /* o Workers AI e o Vectorize estão ligados neste ambiente? */
+    lendo: false,
+    erro: '',
+    fila: Promise.resolve(),
+    andando: ''        /* o que a fila está fazendo, para a tela dizer */
+  };
+
+  M.carregarBusca = function () {
+    if (M.busca.lendo) return Promise.resolve(M.busca.manifesto);
+    M.busca.lendo = true;
+    return M.api('/api/busca/indexar').then(function (r) {
+      M.busca.manifesto = r;
+      M.busca.sentido = r.sentido === true;
+      M.busca.erro = '';
+    }).catch(function (e) {
+      M.busca.manifesto = null;
+      M.busca.erro = e.message;
+    }).then(function () {
+      M.busca.lendo = false;
+      if (M.aoMudar) M.aoMudar({ semCentro: true });
+      return M.busca.manifesto;
+    });
+  };
+
+  /* A legenda de um vídeo, lida DIRETO da pull zone: ela responde
+   * `Access-Control-Allow-Origin: *`, e a mesa está no domínio permitido —
+   * é o mesmo caminho do MP4 do seletor de capa. `null` quando o vídeo não
+   * tem legenda (404), que é caso previsto. */
+  M.legendaDoVideo = function (videoId) {
+    var pz = (M.st.servidor.config || {}).pullzone;
+    if (!pz) return Promise.reject(new Error('o catálogo não trouxe a pull zone'));
+    var host = String(pz).replace(/^https?:\/\//, '').replace(/\/+$/, '');
+    return fetch('https://' + host + '/' + encodeURIComponent(videoId) + '/captions/pt.vtt').then(function (r) {
+      if (r.status === 404) return null;
+      if (!r.ok) throw new Error('a legenda respondeu ' + r.status);
+      return r.text();
+    });
+  };
+
+  /* Põe um vídeo na busca: os vetores em lotes de `GTMI.LIMITES.vetores` (10,
+   * medido no ar) e, por fim, a chamada
+   * que grava a fala e o manifesto. Entra na fila; devolve a promessa deste
+   * vídeo, e a fila continua mesmo se ele falhar. */
+  M.indexarBusca = function (videoId, conjuntos) {
+    var fazer = function () {
+      var passo = Promise.resolve();
+      if (M.busca.sentido) {
+        GTMI.lotes(GTMI.vetoresDosConjuntos(conjuntos), GTMI.LIMITES.vetores).forEach(function (lote) {
+          passo = passo.then(function () {
+            return M.api('/api/busca/indexar', { method: 'POST', body: JSON.stringify({ videoId: videoId, vetores: lote }) });
+          });
+        });
+      }
+      return passo.then(function () {
+        var corpo = { videoId: videoId, fim: true, sentido: M.busca.sentido };
+        ['fala', 'capitulos', 'sinopse'].forEach(function (k) {
+          if (conjuntos[k] !== undefined) corpo[k] = conjuntos[k];
+        });
+        return M.api('/api/busca/indexar', { method: 'POST', body: JSON.stringify(corpo) });
+      });
+    };
+    var meu = M.busca.fila.then(fazer, fazer);
+    M.busca.fila = meu.catch(function () { /* o próximo da fila não paga pelo erro deste */ })
+      .then(function () { return new Promise(function (pronto) { setTimeout(pronto, 1100); }); });
+    return meu;
+  };
+
+  /* O botão da visão geral: põe na busca quem ficou fora, e refaz os vetores
+   * de quem mudou. A legenda vem da pull zone; a sinopse e os capítulos, do
+   * catálogo no ar. */
+  M.porNaBusca = function () {
+    if (M.busca.andando) return Promise.resolve(null);
+    var conta = GTMI.foraDaBusca(M.st.servidor.itens, M.busca.manifesto, M.busca.sentido);
+    var lista = conta.semFala.concat(conta.desatualizados);
+    if (!lista.length) { M.toast('Nada fora da busca.'); return Promise.resolve(null); }
+
+    var feitos = 0;
+    var falhas = [];
+    var andar = function (i) {
+      if (i >= lista.length) return Promise.resolve();
+      var item = lista[i];
+      var videoId = item.fonte.videoId;
+      M.busca.andando = 'Pondo na busca: ' + (i + 1) + ' de ' + lista.length;
+      if (M.aoMudar) M.aoMudar({ semCentro: true });
+      var guardado = ((M.busca.manifesto && M.busca.manifesto.videos) || {})[videoId] || {};
+      /* A fala só é relida quando falta, ou quando os vetores dela não
+       * existem: baixar 67 legendas para trocar uma sinopse seria absurdo. */
+      var precisaDaFala = !guardado.fala || (M.busca.sentido && guardado.fala.sentido !== true);
+      return (precisaDaFala ? M.legendaDoVideo(videoId) : Promise.resolve(undefined))
+        .then(function (legenda) {
+          var conjuntos = GTMI.conjuntosDoItem(item);
+          if (precisaDaFala) conjuntos.fala = legenda ? GTMI.blocosDaLegenda(legenda) : [];
+          return M.indexarBusca(videoId, conjuntos);
+        })
+        .then(function () { feitos++; }, function (e) { falhas.push(item.titulo + ': ' + e.message); })
+        .then(function () { return andar(i + 1); });
+    };
+
+    return andar(0).then(function () {
+      M.busca.andando = '';
+      return M.carregarBusca();
+    }).then(function () {
+      M.toast(feitos + (feitos === 1 ? ' título entrou' : ' títulos entraram') + ' na busca' +
+        (falhas.length ? ' · ' + falhas.length + ' falharam: ' + falhas[0] : '.'));
+    });
+  };
+
   /* -------------------------------------------------------------- rascunho
    *
    * Guardado no navegador, por usuário: fechar a aba não perde nada, e o KV
@@ -513,11 +636,36 @@
     });
   };
 
+  /* DEPOIS DO PUBLICAR, a busca por sentido do que mudou de TEXTO (a decisão
+   * 6 estendida, §5.4): o vetor da ficha é o título mais a sinopse, e a fila
+   * de revisão de sinopses é a mais longa da mesa — cada sinopse revisada
+   * muda o texto que o sentido compara. A fala não: ela vem da legenda, que
+   * o Publicar não toca.
+   *
+   * Em segundo plano e sem barulho: se falhar, a visão geral mostra o título
+   * como desatualizado, e o botão de lá conserta. */
+  function atualizarBuscaDoPublicado(mexidos) {
+    if (!M.busca.sentido || !mexidos.length) return;
+    mexidos.forEach(function (id) {
+      var item = M.item(id, true);
+      if (!item || !(item.fonte && item.fonte.videoId)) return;
+      var conj = GTMI.conjuntosDoItem(item);
+      M.indexarBusca(item.fonte.videoId, { capitulos: conj.capitulos, sinopse: conj.sinopse })
+        .then(function () { return M.carregarBusca(); }, function () { /* a visão geral mostra */ });
+    });
+  }
+
   M.publicar = function () {
     if (!M.st.rascunho.length || M.st.publicando) return Promise.resolve(null);
     M.st.publicando = true;
     if (M.aoMudar) M.aoMudar({ soBarra: true });
     var quantas = M.contarAlteracoes();
+    /* Quem mexeu no texto que o sentido compara, antes de o rascunho sumir. */
+    var mexidos = [];
+    M.st.rascunho.forEach(function (m) {
+      if ((m.campo !== 'titulo' && m.campo !== 'sinopse') || m.alvo === 'site' || m.alvo === 'ajustes') return;
+      if (mexidos.indexOf(m.alvo) < 0) mexidos.push(m.alvo);
+    });
 
     function volta(n) {
       return M.api('/api/catalogo?completo=1').then(function (atual) {
@@ -550,6 +698,7 @@
       M.guardarRascunho();
       return M.carregarServidor().then(function () {
         M.toast('Publicado no site · rev ' + M.st.servidor.rev + ' · ' + quantas + (quantas === 1 ? ' alteração' : ' alterações'));
+        atualizarBuscaDoPublicado(mexidos);
         return r;
       });
     }).catch(function (e) {

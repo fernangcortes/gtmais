@@ -1254,6 +1254,43 @@
    * apara é `proximoVolume`. */
   var ARRASTO_VOLUME = 1;
 
+  /* O ímã dos 100%. Com o reforço disponível o volume não acaba em 100%: o
+   * teto é 200%, e por isso o dedo que sobe passa de "normal" para "reforço"
+   * sem nada que avise — quem queria parar em 100% erra por um dedo, e
+   * voltar exatamente para lá é pior. Nenhum controle de volume no celular
+   * tem essa faixa de sobra, e é ela que pede o ímã.
+   *
+   * São 10% da ALTURA do quadro de arrasto além dos 100%: o volume fica em
+   * 100% enquanto o dedo anda essa faixa, e só depois o reforço começa —
+   * SEM salto, porque a faixa é descontada do que vem depois. O ímã é de UM
+   * lado só: abaixo de 100% o volume segue o dedo do primeiro pixel, e quem
+   * está em 100% e quer baixar não encontra zona morta. */
+  var IMA_VOLUME = 0.1;
+
+  /* O volume a que o arrasto chega, dado o de PARTIDA e o quanto o dedo
+   * andou (`valor`, em pontos de volume).
+   *
+   * A régua é mapeada em dois pedaços: até 100% ela é a de sempre; acima, a
+   * faixa do ímã é um degrau. A partida é levada para o espaço "com degrau"
+   * antes de somar, e é isso que impede o salto de um vídeo que já começa em
+   * 150%: ele sai de 150% e só encontra o degrau ao descer.
+   *
+   * Sem reforço (teto 1) não há nada para atravessar, e o resultado é o que
+   * `proximoVolume` sempre deu. */
+  function volumeDoArrasto(partida, valor, maximo) {
+    var teto = Number(maximo);
+    if (!isFinite(teto) || teto < 1) teto = 1;
+    var v = Number(partida);
+    if (!isFinite(v)) v = 1;
+    var passo = Number(valor) || 0;
+    if (teto <= 1) return proximoVolume(v, passo, teto);
+
+    var base = v > 1 ? v + IMA_VOLUME : v;
+    var alvo = base + passo;
+    if (alvo > 1) alvo = alvo <= 1 + IMA_VOLUME ? 1 : alvo - IMA_VOLUME;
+    return proximoVolume(alvo, 0, teto);
+  }
+
   /* ------------------------------- os dois deslizes (itens 4 e 5, fase 7)
    *
    * Decididos em 09/09/2026, e eles são **duas metades de um gesto só**: ↑ é
@@ -2175,6 +2212,8 @@
     CANCELAR_MIN_PX: CANCELAR_MIN_PX,
     limiarDeCancelar: limiarDeCancelar,
     ARRASTO_VOLUME: ARRASTO_VOLUME,
+    IMA_VOLUME: IMA_VOLUME,
+    volumeDoArrasto: volumeDoArrasto,
     ZOOM_MIN: ZOOM_MIN,
     ZOOM_MAX: ZOOM_MAX,
     limitarZoom: limitarZoom,

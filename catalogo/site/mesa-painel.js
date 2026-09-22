@@ -67,6 +67,47 @@
     return c;
   }
 
+  /* A seção da busca na visão geral. Sem o manifesto lido — a rota falhou, ou
+   * ainda está vindo —, diz isso em vez de inventar um número. */
+  function secaoDaBusca(cat, c) {
+    var b = M.busca;
+    if (!b.manifesto) {
+      return secao('Busca', h('p', { class: 'p-nota', text: b.erro ? 'Não deu para ler o índice da busca: ' + b.erro : 'Lendo o índice da busca…' }));
+    }
+    var conta = GTMI.foraDaBusca(cat.itens, b.manifesto, b.sentido);
+    var comFala = c.no.length - conta.semFala.length;
+    /* O medidor, com a mesma conta do resto da visão geral. `fatia` mora
+     * dentro de `visao`, e daqui não se alcança. */
+    var total = c.no.length || 1;
+    var fatiaDaBusca = function (qtd, classe) {
+      return h('i', { class: classe, style: 'flex-basis:' + (qtd / total * 100) + '%' + (qtd ? ';min-width:4px' : '') });
+    };
+    var partes = [
+      h('div', { class: 'medidor medidor-fino' }, fatiaDaBusca(comFala, 'm-rev'), fatiaDaBusca(conta.semFala.length, 'm-nada')),
+      h('p', { class: 'p-nota', text: comFala + ' de ' + c.no.length + ' títulos no ar estão na busca pela fala' +
+        (b.sentido ? '; o sentido está ligado.' : '. A busca por sentido não está ligada neste ambiente.') })
+    ];
+    if (conta.semFala.length) {
+      partes.push(h('p', { class: 'p-nota p-nota-alerta', text: conta.semFala.length +
+        (conta.semFala.length === 1 ? ' título no ar está fora da busca pela fala.' : ' títulos no ar estão fora da busca pela fala.') }));
+    }
+    if (conta.desatualizados.length) {
+      partes.push(h('p', { class: 'p-nota p-nota-alerta', text: conta.desatualizados.length +
+        (conta.desatualizados.length === 1 ? ' título tem a busca por sentido desatualizada.' : ' títulos têm a busca por sentido desatualizada.') }));
+    }
+    if (b.andando) {
+      partes.push(h('p', { class: 'estado', text: b.andando }));
+    } else if (conta.semFala.length || conta.desatualizados.length) {
+      if (M.pode('conteudo') || M.pode('enviar')) {
+        partes.push(h('button', { type: 'button', class: 'botao', 'data-acao': 'busca-por' }, h('span', { text: 'Pôr na busca' })));
+      } else {
+        partes.push(h('p', { class: 'p-nota', text: 'Quem tem a permissão de conteúdo ou de envio põe na busca.' }));
+      }
+    }
+    /* `secao` recebe os pedaços soltos, e não uma lista. */
+    return secao.apply(null, ['Busca'].concat(partes));
+  }
+
   function visao(cat) {
     var c = contasDoSite(cat), n = M.st.rascunho.length;
     var corpo = h('div', { class: 'p-corpo-in' });
@@ -108,6 +149,12 @@
     corpo.appendChild(secao('Capítulos',
       h('div', { class: 'medidor medidor-fino' }, fatia(c.comCapitulos, 'm-rev'), fatia(c.no.length - c.comCapitulos, 'm-nada')),
       h('p', { class: 'p-nota', text: c.comCapitulos + ' de ' + c.no.length + ' títulos no ar têm capítulos.' })));
+
+    /* A BUSCA (PLANO-BUSCA §5.4): a rede de segurança dos três caminhos que
+     * escrevem no índice — o envio, o Publicar e o script. Quem ficou fora
+     * aparece aqui, e o botão o põe na busca: a legenda vem da pull zone, e a
+     * sinopse e os capítulos, do catálogo no ar. */
+    corpo.appendChild(secaoDaBusca(cat, c));
 
     var atencao = [];
     if (c.vazias) atencao.push(['erro', c.vazias === 1 ? '1 título no ar sem sinopse' : c.vazias + ' títulos no ar sem sinopse', 'vazia']);
