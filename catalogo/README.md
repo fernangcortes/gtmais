@@ -34,20 +34,25 @@ catalogo/
 │   │                          mesa, nas funções, nos scripts e nos testes
 │   ├── style.css
 │   ├── robots.txt
-│   └── functions/api/
-│       ├── _middleware.js     autenticação + acesso ao Bunny (a AccessKey mora aqui)
-│       ├── login.js           POST /api/login
-│       ├── catalogo.js        GET público / GET completo / PUT autenticado
-│       ├── historico.js       linha do tempo, cópias e a restauração
-│       ├── contas.js          contas de admin (só o superadmin)
-│       ├── conta.js           a própria conta e a própria senha
-│       ├── autorizacoes.js    pedidos de envio que esperam aprovação
-│       ├── upload-token.js    cria o vídeo e assina o upload TUS
-│       ├── midia.js           status do encoding, capa e legenda
-│       └── busca/
-│           ├── fala.js        GET público: o que é falado nos vídeos no ar
-│           ├── sentido.js     GET público: a busca por sentido (Workers AI + Vectorize)
-│           └── indexar.js     o único caminho de escrita no índice da busca
+│   ├── manifest.webmanifest   a tela inicial do celular — sem service worker, nada offline
+│   ├── icone-192.png · icone-512.png · icone.svg   o ícone dela, com a margem do recorte
+│   └── functions/
+│       ├── index.js           a página inicial: o index.html com a capa do destaque em
+│       │                      <link rel="preload">, lida da chave `capa-destaque` do KV
+│       └── api/
+│           ├── _middleware.js     autenticação + acesso ao Bunny (a AccessKey mora aqui)
+│           ├── login.js           POST /api/login
+│           ├── catalogo.js        GET público / GET completo / PUT autenticado
+│           ├── historico.js       linha do tempo, cópias e a restauração
+│           ├── contas.js          contas de admin (só o superadmin)
+│           ├── conta.js           a própria conta e a própria senha
+│           ├── autorizacoes.js    pedidos de envio que esperam aprovação
+│           ├── upload-token.js    cria o vídeo e assina o upload TUS
+│           ├── midia.js           status do encoding, capa e legenda
+│           └── busca/
+│               ├── fala.js        GET público: o que é falado nos vídeos no ar
+│               ├── sentido.js     GET público: a busca por sentido (Workers AI + Vectorize)
+│               └── indexar.js     o único caminho de escrita no índice da busca
 ├── scripts/                   ferramentas de carga — NÃO são publicadas
 ├── tests/catalogo.test.js     node --test
 └── capitulos.json             os cortes, escritos à mão
@@ -72,7 +77,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test tests/catalogo.test.js   # 481 testes, sem rede nem credenciais
+node --test tests/catalogo.test.js   # 500 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **mesa de curadoria** (`/admin.html`), não por
@@ -217,6 +222,10 @@ some da fala e do sentido sem rodar nada; o lote de vetores não sobe sem medir 
 - Qualquer rota nova em `functions/api/` nasce exigindo admin: o `_middleware.js` libera apenas
   `/api/login`, o `GET /api/catalogo` e os dois GET da busca — `/api/busca/fala`, que devolve
   só a fala dos vídeos no ar, e `/api/busca/sentido`.
+- A função da página inicial (`functions/index.js`) lê só a chave `capa-destaque` — uma URL —,
+  nunca o catálogo, e só a escreve no HTML se ela for uma capa da pull zone. Quem grava a chave
+  é o `GET /api/catalogo`, a partir do que já é público, e só quando ela muda. Em qualquer erro,
+  a página sai como o arquivo estático.
 - A busca por sentido é o único caminho em que o termo digitado sai do navegador. A rota não o
   grava em lugar nenhum; o cache guarda a resposta, não quem perguntou.
 - O login devolve um token HMAC com 8 h de validade, guardado em `sessionStorage`. A senha não

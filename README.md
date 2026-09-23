@@ -5,7 +5,8 @@ estadual de Goiás — 69 títulos produzidos pelo **CriaLab UEG** para o **Goi�
 
 Página estática — HTML, CSS e JavaScript, **sem framework e sem etapa de build** — lendo um
 catálogo em JSON, com os vídeos no **Bunny Stream**, o catálogo no **KV** e onze rotas
-serverless no **Cloudflare Pages**, atrás de um middleware. Três delas são da busca, que acha
+serverless no **Cloudflare Pages**, atrás de um middleware — mais uma função só para a página
+inicial, que põe a capa do destaque no HTML para ela chegar mais cedo. Três delas são da busca, que acha
 também o que é falado nos vídeos e, pelo **Workers AI** e pelo **Vectorize**, o que fala do
 assunto sem usar a palavra. Nenhum `node_modules` no que vai para o ar.
 
@@ -18,7 +19,8 @@ assunto sem usar a palavra. Nenhum `node_modules` no que vai para o ar.
 gtmais/
 ├── catalogo/                a aplicação
 │   ├── site/                o que é publicado no Pages
-│   │   └── functions/api/   login, catálogo, contas, histórico, token de upload, mídia, busca
+│   │   └── functions/       a página inicial (index.js) e a api/: login, catálogo, contas,
+│   │                        histórico, token de upload, mídia, busca
 │   ├── scripts/             carga: upload, encoding, capas, legendas, sinopses, capítulos
 │   ├── tests/               node --test
 │   └── capitulos.json
@@ -59,7 +61,7 @@ aberta e depender de alguém lembrar de protegê-la.
 
 ## Rodar os testes
 
-481 testes, sem rede e sem credenciais — cobrem as regras do produto, não a infraestrutura. A maior
+500 testes, sem rede e sem credenciais — cobrem as regras do produto, não a infraestrutura. A maior
 parte deles chegou com o player próprio, e boa parte prova SEQUÊNCIAS de gesto — dois dedos que
 abrem, um toque duplo, um arrasto que é cancelado no meio — sem navegador e sem dedo, porque a
 decisão de cada gesto mora numa camada sem DOM. A busca segue a mesma regra: a relevância, o
