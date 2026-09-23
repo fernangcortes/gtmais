@@ -9207,3 +9207,26 @@ test('a página inicial ganha o preload da capa, e sai intacta em todo erro', as
   assert.equal(naoOk.status, 304, 'uma resposta que não é 200 deve passar como veio');
   assert.equal(idx.comPreload('<html></html>', capa), null);
 });
+
+/* §15.1 do PLANO-DESIGN: nenhuma barra de rolagem nas pistas, nunca. O `thin`
+ * que havia não segurava o Android, cuja barra sobreposta só obedece ao
+ * `none`; e o Safari só obedece ao pseudo-elemento. Toda caixa que rola de
+ * lado no site entra na conta — uma pista nova que nascer com `thin` cai
+ * aqui. */
+test('as pistas que rolam de lado não mostram barra de rolagem', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  for (const sel of ['.prateleira-pista', '.chips']) {
+    const esc = sel.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regra = css.match(new RegExp('\\n' + esc + '\\s*\\{([^}]*)\\}'));
+    assert.ok(regra, 'não achei a regra de ' + sel);
+    assert.match(regra[1], /overflow-x:\s*auto/, sel + ' deixou de rolar de lado');
+    assert.match(regra[1], /scrollbar-width:\s*none/, sel + ' voltou a mostrar a barra no Chrome e no Firefox');
+    assert.match(css, new RegExp(esc + '::-webkit-scrollbar\\s*\\{[^}]*display:\\s*none'),
+      sel + ' voltou a mostrar a barra no Safari e nos Chrome antigos');
+  }
+  const rolantes = [...css.matchAll(/\n([^{}\n]+)\{([^}]*overflow-x:\s*auto[^}]*)\}/g)];
+  assert.ok(rolantes.length >= 2, 'esperava ao menos as duas pistas');
+  for (const [, sel, corpo] of rolantes) {
+    assert.ok(!/scrollbar-width:\s*thin/.test(corpo), sel.trim() + ' rola de lado com barra fina');
+  }
+});

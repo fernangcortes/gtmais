@@ -298,8 +298,11 @@ img { max-width: 100%; display: block; }
 .chips {
   display: flex; gap: 8px; overflow-x: auto;
   padding: 4px 4px 12px; margin: 0 -4px var(--esp-1);
-  scrollbar-width: thin;
+  scrollbar-width: none;
 }
+/* Sem barra, nunca (§15.1 do PLANO-DESIGN) — a mesma regra da pista, logo
+ * abaixo, e o porquê está lá. */
+.chips::-webkit-scrollbar { display: none; }
 
 /* 44 px, como todo alvo de toque — era 29, e nunca tinha sido medido. */
 .chip {
@@ -573,10 +576,21 @@ main { padding: 24px 0 64px; }
   overflow-x: auto; overflow-y: hidden;
   padding: 6px 0;
   scroll-snap-type: x mandatory;
-  scrollbar-width: thin;
+  scrollbar-width: none;
   scroll-padding-left: 2px;
   scroll-behavior: smooth;
 }
+/* SEM BARRA, nem no computador nem no celular (§15.1 do PLANO-DESIGN, pedido
+ * de 23/09). O `thin` de antes não segurava o Android: lá a barra é a
+ * SOBREPOSTA do Chrome, desenhada por cima dos cartões a cada arrasto, e ela
+ * não obedece ao `thin` — só ao `none`. São duas regras porque são dois
+ * navegadores: `scrollbar-width` para o Chrome 121+ e o Firefox, e o
+ * pseudo-elemento para o Safari e os Chrome antigos.
+ *
+ * A rolagem é a mesma — dedo, roda, trackpad, Tab. Quem diz que há mais à
+ * direita é o pedaço do próximo cartão na borda e, com ponteiro fino, as
+ * setas do palco; o mouse sem roda horizontal só anda por elas. */
+.prateleira-pista::-webkit-scrollbar { display: none; }
 
 .prateleira-lista {
   display: flex; gap: var(--esp-3); list-style: none; margin: 0; padding: 0;
