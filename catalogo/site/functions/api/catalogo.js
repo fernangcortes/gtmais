@@ -120,12 +120,44 @@ function site(guardado) {
   return GTM.siteSaneado(guardado && guardado.site);
 }
 
+/* A CAPA DO DESTAQUE, numa chave própria (o LCP da §7 do PLANO-DESIGN,
+ * 23/09). A capa do destaque é o LCP da chegada, e ela só era descoberta
+ * depois de o app.js baixar, rodar e ler este catálogo. O `functions/index.js`
+ * põe um <link rel="preload"> dela no HTML, e lê ESTA chave — uma string
+ * curta — em vez do catálogo: a página inicial não pode depender de ler e
+ * desmontar o catálogo inteiro dentro dos 10 ms de CPU do plano gratuito,
+ * porque o corte ali derruba o site, e não só uma imagem.
+ *
+ * Quem grava é este GET, e só ele: toda visita pede o catálogo, e aqui ele já
+ * está lido. O catálogo é gravado por muitos caminhos — o PUT da mesa, o
+ * histórico, oito scripts direto no KV —, e escrever a chave em cada um
+ * deixaria sempre um esquecido. Assim, qualquer escrita é corrigida na visita
+ * seguinte. A regravação só acontece quando a URL muda, e fora do caminho da
+ * resposta (`waitUntil`).
+ *
+ * A URL sai das MESMAS funções que o app.js usa (`GTM.destaque` e
+ * `GTM.urlCapa`, sobre os itens públicos): o preload é a capa que a chegada
+ * vai pedir. Se ficar velha, o custo é um preload desperdiçado, não uma capa
+ * errada na tela. */
+export const CHAVE_CAPA_DESTAQUE = 'capa-destaque';
+
+async function guardarCapaDoDestaque(env, url) {
+  try {
+    const atual = await env.CATALOGO.get(CHAVE_CAPA_DESTAQUE);
+    if ((atual || '') === (url || '')) return;
+    if (url) await env.CATALOGO.put(CHAVE_CAPA_DESTAQUE, url);
+    else await env.CATALOGO.delete(CHAVE_CAPA_DESTAQUE);
+  } catch (e) {
+    /* KV fora ou limite de escrita: a próxima visita tenta de novo. */
+  }
+}
+
 async function lerCatalogo(env) {
   if (!env.CATALOGO) return null;
   return await env.CATALOGO.get(CHAVE, 'json');
 }
 
-export async function onRequestGet({ env, request, data }) {
+export async function onRequestGet({ env, request, data, waitUntil }) {
   if (!env.CATALOGO) {
     return json(500, { erro: 'namespace KV CATALOGO não vinculado ao projeto' });
   }
@@ -151,15 +183,22 @@ export async function onRequestGet({ env, request, data }) {
   const itens = (guardado.itens || [])
     .filter(i => i && i.publicar === true)
     .map(paraPublico);
+  const configPublica = config(env);
+  const sitePublico = site(guardado);
+
+  const emDestaque = GTM.destaque(itens, sitePublico);
+  const capa = emDestaque ? GTM.urlCapa(emDestaque, configPublica) : null;
+  const guardar = guardarCapaDoDestaque(env, capa);
+  if (waitUntil) waitUntil(guardar);
 
   return json(200, {
     versao: guardado.versao || 1,
     rev: guardado.rev || 0,
     atualizado_em: guardado.atualizado_em || null,
     total: itens.length,
-    config: config(env),
+    config: configPublica,
     ajustes: ajustes(guardado),
-    site: site(guardado),
+    site: sitePublico,
     itens
   });
 }

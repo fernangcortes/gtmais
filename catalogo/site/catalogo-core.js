@@ -290,13 +290,19 @@
   /* Capa servida pela pull zone do Bunny — evita carregar 55 JPGs no repositório.
    *
    * ARMADILHA: o nome do arquivo NÃO é sempre `thumbnail.jpg`. Ao receber uma capa
-   * enviada por nós, o Bunny grava com um hash no nome (`thumbnail_2c504259.jpg`) e
-   * MANTÉM o `thumbnail.jpg` antigo, gerado automaticamente, no lugar. Quem monta o
-   * caminho fixo continua servindo a capa velha para sempre — e nem percebe, porque
-   * a requisição responde 200.
+   * enviada por nós, o Bunny grava com um hash no nome (`thumbnail_2c504259.jpg`),
+   * e quem monta o caminho fixo pede um arquivo que não é a capa escolhida.
    *
    * Por isso `capa_arquivo` guarda o `thumbnailFileName` que o Bunny informa.
-   * `capa_versao` fica como reforço contra cache do navegador. */
+   * `capa_versao` fica como reforço contra cache do navegador — a pull zone
+   * ignora a query no cache DELA, medido em 22/09.
+   *
+   * E O ARQUIVO ANTERIOR SOME DA ORIGEM depois de uma troca (22/09: a capa do
+   * *Bernardo Élis 2* e a capa antiga do piloto de 08/09, as duas em 404 com
+   * `CDN-Cache: MISS`). A borda da CDN ainda o serve do cache por um tempo, e
+   * por isso a falha aparece para uns e não para outros. Um `capa_arquivo`
+   * atrasado não mostra a capa velha: mostra NENHUMA. É a razão de a capa
+   * enviada pela mesa ir para o catálogo na mesma chamada (`comCapa`). */
   function urlCapa(item, config) {
     var fonte = resolverFonte(item, config);
     var host = hostPullzone(config);
@@ -304,6 +310,24 @@
     var arquivo = (item && item.capa_arquivo) || 'thumbnail.jpg';
     var url = 'https://' + host + '/' + fonte.videoId + '/' + arquivo;
     return item && item.capa_versao ? url + '?v=' + encodeURIComponent(item.capa_versao) : url;
+  }
+
+  /* O catálogo com a capa nova de UM vídeo — a gravação que `/api/midia` faz
+   * logo depois de o Bunny aceitar a capa (22/09). Todo título com aquele
+   * `videoId` leva os dois campos, e só eles: é uma publicação de dois campos,
+   * e vai pela mesma porta do PUT, com a mesma conferência e o mesmo rastro.
+   *
+   * Devolve null quando nenhum título do catálogo usa o vídeo — o título novo,
+   * que ainda nem foi gravado, e cuja capa continua indo pelo rascunho. */
+  function comCapa(catalogo, videoId, arquivo, versao) {
+    var itens = (catalogo && Array.isArray(catalogo.itens)) ? catalogo.itens : [];
+    var achou = false;
+    var novos = itens.map(function (i) {
+      if (!i || !i.fonte || i.fonte.videoId !== videoId) return i;
+      achou = true;
+      return Object.assign({}, i, { capa_arquivo: arquivo, capa_versao: versao });
+    });
+    return achou ? Object.assign({}, catalogo, { itens: novos }) : null;
   }
 
   /* Trecho animado que o Bunny gera amostrando o vídeo inteiro (WebP animado).
@@ -467,21 +491,31 @@
 
   /* O rodapé e os cinco estados do B8 do briefing — "sem capa", a busca vazia,
    * o selo de vídeo indisponível, a ficha que não existe e a falha de rede.
-   * Dois deles têm título e ajuda, e por isso são oito chaves.
+   * Três deles têm título e ajuda, e por isso são nove chaves.
    *
-   * A mensagem técnica do erro (`erro.message`) NÃO mora aqui: ela é colada no
-   * fim pelo `app.js`. Um texto editável com um buraco no meio é um texto que
-   * a próxima pessoa reescreve sem o buraco, e aí o detalhe some. */
+   * OS TEXTOS FORAM REESCRITOS NA D7 (23/09) — o B8 dizia que os de antes "são
+   * de programador". A regra da reescrita: dizer o que aconteceu na língua de
+   * quem está na sala, e o que fazer em seguida. "Remova o filtro de série"
+   * saiu porque o filtro só oferece série que ESTÁ na resposta (D8): com ele
+   * ligado a busca nunca fica vazia, e a frase mandava fazer o impossível.
+   *
+   * O termo buscado, a mensagem técnica do erro (`erro.message`) e os botões
+   * NÃO moram aqui: o `app.js` os põe em linha própria. Um texto editável com
+   * um buraco no meio é um texto que a próxima pessoa reescreve sem o buraco,
+   * e aí o detalhe some. */
   var TEXTOS_PADRAO = {
     rodape: 'Uso interno da rede. Não divulgar o endereço.',
-    semCapa: 'sem capa',
-    videoIndisponivel: 'vídeo indisponível',
-    buscaVazia: 'Nada encontrado',
-    buscaVaziaAjuda: 'Tente outro termo ou remova o filtro de série.',
-    fichaAusente: 'Título não encontrado ou ainda não publicado.',
-    erroCatalogo: 'Não foi possível carregar o catálogo',
-    erroCatalogoAjuda: 'A página está no ar, mas o catálogo não respondeu. ' +
-      'Recarregue em alguns instantes; se persistir, avise a equipe técnica.'
+    semCapa: 'Sem imagem',
+    videoIndisponivel: 'Vídeo indisponível',
+    buscaVazia: 'Nenhum vídeo encontrado',
+    buscaVaziaAjuda: 'Confira a grafia ou tente uma palavra só. ' +
+      'A busca também procura no que é falado nos vídeos.',
+    fichaAusente: 'Este vídeo não está no catálogo',
+    fichaAusenteAjuda: 'O link pode estar incompleto, ou o vídeo saiu do ar. ' +
+      'Procure pelo nome na busca.',
+    erroCatalogo: 'O catálogo não carregou',
+    erroCatalogoAjuda: 'Pode ser a conexão. Tente de novo em alguns instantes; ' +
+      'se continuar, avise a equipe técnica.'
   };
 
   /* Texto de tela, não de artigo: o maior padrão tem 118 caracteres. O limite
@@ -1521,6 +1555,7 @@
     resolverFonte: resolverFonte,
     urlEmbed: urlEmbed,
     urlCapa: urlCapa,
+    comCapa: comCapa,
     urlPreview: urlPreview,
     urlMp4: urlMp4,
     publicaveis: publicaveis,

@@ -474,6 +474,39 @@ test('o erro de digitação: de 4 letras para cima, uma letra — duas a partir 
   assert.equal(GTMB.distancia('casa', 'carreta', 1), 2, 'com teto, a conta desiste e devolve teto + 1');
 });
 
+/* A palavra de 3 letras com erro (23/09, relatado por quem usa: "carro de boj"
+ * vinha vazio, e "carro de boi" respondia). Sozinha ela continua sem correção
+ * — no acervo, um erro de uma letra numa palavra de 3 fica a uma letra de 3
+ * palavras em média, e só 24% têm candidato único: "boj" está a 1 de "bom",
+ * "boa" e "boi". Com um VIZINHO que casou, o candidato tem de aparecer no mesmo
+ * trecho que ele — campo, capítulo ou bloco da fala. No acervo, "boi" aparece
+ * junto de "carro" em 3 trechos; "bom" e "boa", em nenhum. */
+test('a palavra de 3 letras com erro só é corrigida pelo trecho que ela divide com a vizinha', () => {
+  const itens = [
+    { id: 'boi', titulo: 'O carro de boi na festa', serie: 'A', publicar: true },
+    { id: 'bom', titulo: 'Bom começo', serie: 'A', sinopse: 'Uma aula boa.', publicar: true },
+    { id: 'velho', titulo: 'Carro velho', serie: 'A', sinopse: 'Um bom conserto.', publicar: true }
+  ];
+  assert.deepEqual(procurar(itens, 'carro de boj'), ['boi'], 'não corrigiu "boj" pelo vizinho, ou corrigiu para bom/boa');
+  assert.deepEqual(procurar(itens, 'boj carro'), ['boi'], 'a ordem dos termos mudou a resposta');
+  assert.deepEqual(procurar(itens, 'boj'), [], 'sem vizinho, a palavra de 3 letras não pode ser corrigida');
+  assert.deepEqual(procurar(itens, 'carro de bxj'), [], 'corrigiu duas letras numa palavra de 3');
+  assert.deepEqual(procurar(itens, 'festa bpi'), ['boi'], 'o vizinho que acha pelo começo da palavra não valeu');
+  /* "Carro" está no título do terceiro e "bom" na sinopse dele: campos
+   * diferentes não são o mesmo trecho. */
+  assert.deepEqual(procurar(itens, 'carro bpm'), [], 'o candidato valeu por estar em outro campo do mesmo título');
+  /* E a contraprova: com os dois no MESMO campo, o candidato vale. Aceito, a
+   * busca segue como se "bom" tivesse sido digitado — e aí o *Carro velho*,
+   * com "bom" na sinopse, entra atrás, como entraria em "carro bom". O trecho
+   * decide a PALAVRA; quem responde continua sendo a busca de sempre. */
+  const juntos = itens.concat({ id: 'junto', titulo: 'Um carro bom', serie: 'A', publicar: true });
+  assert.deepEqual(procurar(juntos, 'carro bpm'), procurar(juntos, 'carro bom'), 'a correção não deu a resposta da palavra certa');
+  assert.deepEqual(procurar(juntos, 'carro bpm'), ['junto', 'velho'], 'o candidato no mesmo campo que o vizinho não valeu');
+  const r = GTMB.procurar(GTMB.indice(itens), 'carro de boj');
+  assert.equal(r.casadas[1].corrigido, true, 'a correção pelo vizinho não ficou marcada como corrigida');
+  assert.deepEqual(r.casadas[1].lista, ['boi']);
+});
+
 /* A §5.6 do plano: nenhum PEDIDO a mais na chegada. (Ela prometia "0 byte a
  * mais", e os arquivos que já desciam cresceram 7,0 KB comprimidos — medido,
  * §9 de lá.) A busca nova mora num arquivo que a chegada não pede — ele desce
@@ -581,7 +614,10 @@ test('a marca da busca sai em pedaços de texto, com a palavra como o texto a es
 test('a resposta conta os trechos, e o vazio só aparece quando nada responde', () => {
   const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
   const grade = app.match(/function renderGrade\(\) \{([\s\S]*?)\n  \}/)[1];
-  assert.match(grade, /if \(!lista\.length && !trechos\.length\) \{/, 'o vazio aparece com trecho na tela');
+  assert.match(grade, /var vazia = !lista\.length && !trechos\.length;/, 'o vazio aparece com trecho na tela');
+  /* D7: com o vazio na tela, a contagem sai — "0 títulos de 69" repetia o
+   * título do estado, em língua de programador. */
+  assert.match(grade, /if \(!vazia\) el\.grade\.appendChild\(criar\('p', 'contagem', contagem\)\);/);
   assert.match(grade, /' · ' \+ trechos\.length \+ \(trechos\.length === 1 \? ' trecho' : ' trechos'\)/);
   assert.match(grade, /secaoTrechos\(trechos, resposta\.casadas\)/);
   /* O anúncio: um nó que nasce na partida, antes de haver o que anunciar. */
@@ -1814,9 +1850,71 @@ test('o <video> nasce com playsinline e crossorigin — as duas travas do iOS', 
 test('o hls.js é carregado sob demanda, nunca junto com a página', () => {
   const html = lerTexto(path.join(SITE, 'index.html'));
   assert.ok(!/<script[^>]+hls/i.test(html), 'index.html carrega o hls.js de saída');
-  assert.match(html, /<script src="player-core\.js"><\/script>/);
-  assert.match(html, /<script src="player\.js"><\/script>/);
   assert.match(PLAYER_JS, /function carregarHls\(\)/);
+});
+
+/* O PLAYER FORA DO CAMINHO DA CHEGADA (o LCP da §7 do PLANO-DESIGN, 23/09).
+ * O player-core.js e o player.js eram <script> do index.html, e baixavam antes
+ * do app.js, na frente da capa do destaque. Tirá-los valeu −450 ms de LCP.
+ *
+ * O que NÃO pode se perder no caminho é a queda automática para o iframe, e
+ * ela tem quatro peças. Cada uma é cobrada aqui. */
+test('o player desce depois da chegada, e a queda para o iframe continua', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.ok(!/<script src="player(-core)?\.js"/.test(html),
+    'o player voltou ao index.html — 77 KB na frente da capa do destaque, que é o LCP');
+  const scripts = [...html.matchAll(/<script src="([^"]+)"/g)].map(m => m[1]);
+  assert.deepEqual(scripts, ['catalogo-core.js', 'app.js']);
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+
+  /* 1. Os dois descem juntos e rodam NA ORDEM, e a falha não rejeita: a
+   *    ficha precisa ver `GTMPlayer` indefinido, e não uma promessa quebrada. */
+  const carregar = app.match(/function carregarPlayer\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(carregar, 'não achei carregarPlayer em app.js');
+  assert.match(carregar[1], /\['player-core\.js', 'player\.js'\]/, 'a ordem dos dois arquivos mudou');
+  assert.match(carregar[1], /tag\.async = false/, 'sem async = false o player.js pode rodar antes do core');
+  assert.ok(!/reject/.test(carregar[1]), 'o carregamento do player rejeita — a ficha não cai no iframe');
+  assert.match(carregar[1], /carregandoPlayer = null/, 'uma falha de rede prende o player fora para sempre');
+
+  /* 2. A espera tem PRAZO, e `?player=embed` não espera nada. */
+  const aTempo = app.match(/function playerATempo\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(aTempo, 'não achei playerATempo em app.js');
+  assert.match(aTempo[1], /Promise\.race/, 'a ficha espera o player sem prazo');
+  assert.match(aTempo[1], /setTimeout\(resolve, ESPERA_PLAYER_MS\)/);
+  assert.match(aTempo[1], /get\('player'\) === 'embed'/, 'o ?player=embed passou a esperar o player');
+  const prazo = Number(app.match(/var ESPERA_PLAYER_MS = (\d+);/)[1]);
+  assert.ok(prazo >= 3000 && prazo <= 10000, 'o prazo do player saiu de 3 a 10 s: ' + prazo);
+
+  /* 3. A ficha que esperou se desenha uma vez, sem esperar de novo, e só se
+   *    ainda for a ficha do endereço. */
+  const ficha = app.match(/function renderFicha\(id, tocar, momento, jaEsperou\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(ficha[1], /var espera = jaEsperou \? null : playerATempo\(\);/,
+    'a ficha que já esperou espera outro prazo inteiro');
+  assert.match(ficha[1], /vez === vezDaFicha && rota && rota\.id === id/,
+    'a ficha atrasada cai por cima de outra tela');
+  assert.ok(ficha[1].indexOf('playerATempo') < ficha[1].indexOf('playerNovoLigado'),
+    'a ficha decide entre player e iframe antes de esperar o player');
+
+  /* 4. Os gatilhos: link de ficha pede já; o resto, depois da capa principal
+   *    da primeira tela. NÃO no `load` da janela: ele sai antes de o app.js
+   *    pôr a capa na página, e o player voltava a disputar a banda com ela
+   *    (medido: −150 ms em vez de −450). */
+  const iniciar = app.match(/function iniciar\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.match(iniciar[1], /var comecaNaFicha = !!GTM\.rotaDaFicha\(hash \|\| ''\);\s*if \(comecaNaFicha\) carregarPlayer\(\);/,
+    'o link direto de uma ficha deixou de pedir o player junto com o catálogo');
+  assert.match(iniciar[1], /if \(!comecaNaFicha\) depoisDaCapaPrincipal\(carregarPlayer\);/,
+    'a chegada deixou de pedir o player depois da capa do destaque');
+  assert.ok(!/addEventListener\('load'/.test(iniciar[1]),
+    'o player voltou a ser pedido no load da janela — antes da capa do destaque');
+  const capa = app.match(/function depoisDaCapaPrincipal\(fn\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(capa, 'não achei depoisDaCapaPrincipal em app.js');
+  assert.match(capa[1], /\.destaque-capa img/);
+  assert.match(capa[1], /addEventListener\('error', depois\)/, 'a capa que falha prende o player fora');
+  assert.match(capa[1], /setTimeout\(fn, ESPERA_DEPOIS_DA_CAPA_MS\)/,
+    'o player voltou a ser pedido logo no load da capa — antes de ela ser pintada');
+  const folga = Number(app.match(/var ESPERA_DEPOIS_DA_CAPA_MS = (\d+);/)[1]);
+  assert.ok(folga >= 500 && folga <= 3000, 'a folga depois da capa saiu de 0,5 a 3 s: ' + folga);
 });
 
 /* A única dependência de terceiros do projeto. Se a versão do arquivo e a do
@@ -5622,12 +5720,15 @@ test('o "Assistir" pede o play por clique, e o pedido não viaja na URL nem sobr
 
   /* Quem toca é o player, uma vez, no fim da ficha montada — e só o roteador
    * passa o pedido: o deslize ↓ e a mesa remontam a ficha com o vídeo parado. */
-  const ficha = app.match(/function renderFicha\(id, tocar, momento\)\s*\{([\s\S]*?)\n  \}/);
+  const ficha = app.match(/function renderFicha\(id, tocar, momento, jaEsperou\)\s*\{([\s\S]*?)\n  \}/);
   assert.match(ficha[1], /if \(tocar && playerAtivo\) playerAtivo\.tocar\(\);\s*$/,
     'o play do "Assistir" saiu do fim da ficha, ou deixou de depender do pedido');
   assert.equal((app.match(/\.tocar\(\)/g) || []).length, 1, 'apareceu outro lugar que manda o player tocar');
+  /* A segunda chamada é a própria ficha voltando da espera pelo player (LCP,
+   * 23/09): ela repassa o MESMO pedido que o roteador lhe deu, não cria um. */
   const chamadas = [...app.matchAll(/(?<!function )renderFicha\(([^)]*)\)/g)].map(m => m[1]);
-  assert.deepEqual(chamadas.filter(a => a.includes(',')), ['ficha.id, pedido === ficha.id, ficha.t'],
+  assert.deepEqual(chamadas.filter(a => a.includes(',')),
+    ['id, tocar, momento, true', 'ficha.id, pedido === ficha.id, ficha.t'],
     'outro caminho passou a remontar a ficha tocando');
 
   /* O TRECHO DA BUSCA (PLANO-BUSCA, fase 2) pede o play pelo mesmo caminho:
@@ -5903,8 +6004,9 @@ function bunnyDeMentira() {
   return () => { globalThis.fetch = original; };
 }
 
-/* Sobe o pedido pela mesma porta do Pages: middleware primeiro, rota depois. */
-async function pedir(env, { metodo = 'GET', caminho, corpo, token, cabecalhos }) {
+/* Sobe o pedido pela mesma porta do Pages: middleware primeiro, rota depois.
+ * `bruto` é o corpo que não é JSON — a capa que a mesa manda à /api/midia. */
+async function pedir(env, { metodo = 'GET', caminho, corpo, bruto, token, cabecalhos }) {
   const mid = await import('../site/functions/api/_middleware.js');
   const rota = caminho.split('?')[0];
   const modulos = {
@@ -5915,6 +6017,7 @@ async function pedir(env, { metodo = 'GET', caminho, corpo, token, cabecalhos })
     '/api/upload-token': '../site/functions/api/upload-token.js',
     '/api/autorizacoes': '../site/functions/api/autorizacoes.js',
     '/api/historico': '../site/functions/api/historico.js',
+    '/api/midia': '../site/functions/api/midia.js',
     '/api/busca/fala': '../site/functions/api/busca/fala.js',
     '/api/busca/indexar': '../site/functions/api/busca/indexar.js',
     '/api/busca/sentido': '../site/functions/api/busca/sentido.js'
@@ -5922,7 +6025,7 @@ async function pedir(env, { metodo = 'GET', caminho, corpo, token, cabecalhos })
   const request = new Request('https://exemplo.test' + caminho, {
     method: metodo,
     headers: Object.assign({ 'content-type': 'application/json' }, token ? { authorization: 'Bearer ' + token } : {}, cabecalhos || {}),
-    body: corpo === undefined ? undefined : JSON.stringify(corpo)
+    body: bruto !== undefined ? bruto : (corpo === undefined ? undefined : JSON.stringify(corpo))
   });
   const data = {};
   const promessas = [];
@@ -6673,7 +6776,7 @@ test('o alto da série veste o destaque: capa com prioridade alta, sem lazy, sem
  * função, com o mesmo alvo — só mudou de coluna. */
 test('a ficha troca os botões ← → pela lista da série, e o Shift+N continua', () => {
   const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
-  const ficha = app.match(/function renderFicha\(id, tocar, momento\)\s*\{([\s\S]*?)\n  \}/);
+  const ficha = app.match(/function renderFicha\(id, tocar, momento, jaEsperou\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(ficha, 'não achei renderFicha em app.js');
   assert.ok(!/navegacao|viz\.anterior\.titulo|viz\.proximo\.titulo/.test(ficha[1]),
     'os botões ← → voltaram para a ficha');
@@ -6918,6 +7021,128 @@ test('a imagem de compartilhamento tem 1200×630 e até 100 KB', () => {
   const arquivo = path.join(SITE, og[1]);
   assert.deepEqual(tamanhoPng(arquivo), [1200, 630]);
   assert.ok(fs.statSync(arquivo).size <= 100 * 1024, og[1] + ' passou de 100 KB');
+});
+
+/* A TELA INICIAL (D8, e o E8 do briefing). O manifest é o que faz o Android
+ * oferecer "Instalar"; os ícones, o que aparece na tela do celular. */
+const lerManifest = () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const link = html.match(/<link rel="manifest" href="([^"]+)">/);
+  assert.ok(link, 'o index.html perdeu o <link rel="manifest">');
+  return JSON.parse(lerTexto(path.join(SITE, link[1])));
+};
+
+test('o manifest abre a chegada, sozinho, na cor do --fundo', () => {
+  const m = lerManifest();
+  assert.equal(m.start_url, '/');
+  assert.equal(m.scope, '/');
+  assert.equal(m.display, 'standalone');
+  assert.ok(m.short_name && m.short_name.length <= 12,
+    'o short_name passou de 12 letras — o Android corta o nome embaixo do ícone');
+
+  /* A cor da barra e da tela de abertura é a do fundo da chegada: outra cor
+   * pisca antes do primeiro quadro. */
+  const css = semComentarios(lerTexto(path.join(SITE, 'style.css')));
+  const fundo = css.match(/--fundo:\s*(#[0-9a-f]{6})/i)[1].toLowerCase();
+  assert.equal(m.background_color.toLowerCase(), fundo, 'background_color não é o --fundo');
+  assert.equal(m.theme_color.toLowerCase(), fundo, 'theme_color não é o --fundo');
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const meta = html.match(/<meta name="theme-color" content="([^"]+)">/);
+  assert.ok(meta, 'o index.html perdeu o <meta name="theme-color">');
+  assert.equal(meta[1].toLowerCase(), fundo, 'o <meta name="theme-color"> não é o --fundo');
+});
+
+test('o manifest tem os ícones de 192 e 512, "any" e "maskable", do tamanho que declaram', () => {
+  const { icons } = lerManifest();
+  for (const lado of [192, 512]) {
+    for (const uso of ['any', 'maskable']) {
+      assert.ok(icons.some(i => i.sizes === lado + 'x' + lado && i.purpose === uso),
+        'falta o ícone ' + lado + ' com purpose ' + uso);
+    }
+  }
+  for (const i of icons) {
+    const [l, a] = i.sizes.split('x').map(Number);
+    assert.deepEqual(tamanhoPng(path.join(SITE, i.src.replace(/^\//, ''))), [l, a],
+      i.src + ' não tem o tamanho que o manifest declara');
+  }
+});
+
+/* A D8 é SEM offline (§5.9): um service worker guardaria catálogo e site
+ * velhos no aparelho, e o deploy deixaria de chegar a quem instalou. */
+test('nenhum service worker — a tela inicial não faz nada offline', () => {
+  for (const nome of fs.readdirSync(SITE).filter(n => /\.(js|html)$/.test(n))) {
+    assert.ok(!/serviceWorker/.test(semComentarios(lerTexto(path.join(SITE, nome)))),
+      nome + ' registra um service worker');
+  }
+});
+
+/* "Margem interna maior que a do favicon — o Android recorta em círculo" (E8).
+ * O recorte só garante o círculo de 40% do lado a partir do centro, e o
+ * favicon vai a 41%: posto como está, o Android corta a ponta das ondas. O
+ * teste LÊ o PNG e confere que todo pixel fora desse círculo é o verde do
+ * fundo — é a próxima exportação que esquece a margem que ele pega. */
+const pixelsPng = (arquivo) => {
+  const zlib = require('node:zlib');
+  /* Binário, como o tamanhoPng: não é texto e não passa pelo lerTexto. */
+  const buf = Buffer.alloc(fs.statSync(arquivo).size);
+  const fd = fs.openSync(arquivo, 'r');
+  try { fs.readSync(fd, buf, 0, buf.length, 0); } finally { fs.closeSync(fd); }
+  let pos = 8, largura, altura, profundidade, tipo, entrelacado;
+  const dados = [];
+  while (pos < buf.length) {
+    const tam = buf.readUInt32BE(pos);
+    const nome = buf.toString('latin1', pos + 4, pos + 8);
+    const corpo = buf.subarray(pos + 8, pos + 8 + tam);
+    if (nome === 'IHDR') {
+      largura = corpo.readUInt32BE(0); altura = corpo.readUInt32BE(4);
+      profundidade = corpo[8]; tipo = corpo[9]; entrelacado = corpo[12];
+    } else if (nome === 'IDAT') dados.push(corpo);
+    pos += 12 + tam;
+  }
+  assert.equal(profundidade, 8, path.basename(arquivo) + ': só sei ler 8 bits por canal');
+  assert.ok(tipo === 2 || tipo === 6, path.basename(arquivo) + ': só sei ler RGB e RGBA (PNG24/PNG32)');
+  assert.equal(entrelacado, 0, path.basename(arquivo) + ': entrelaçado');
+  const bpp = tipo === 6 ? 4 : 3, linha = largura * bpp;
+  const cru = zlib.inflateSync(Buffer.concat(dados));
+  const px = Buffer.alloc(linha * altura);
+  for (let y = 0; y < altura; y++) {
+    const filtro = cru[y * (linha + 1)];
+    for (let x = 0; x < linha; x++) {
+      const v = cru[y * (linha + 1) + 1 + x];
+      const a = x >= bpp ? px[y * linha + x - bpp] : 0;
+      const b = y > 0 ? px[(y - 1) * linha + x] : 0;
+      const c = x >= bpp && y > 0 ? px[(y - 1) * linha + x - bpp] : 0;
+      let p = 0;
+      if (filtro === 1) p = a;
+      else if (filtro === 2) p = b;
+      else if (filtro === 3) p = (a + b) >> 1;
+      else if (filtro === 4) {
+        const t = a + b - c, pa = Math.abs(t - a), pb = Math.abs(t - b), pc = Math.abs(t - c);
+        p = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+      }
+      px[y * linha + x] = (v + p) & 255;
+    }
+  }
+  return { largura, altura, bpp, px };
+};
+
+test('o ícone de tela inicial cabe no círculo que o Android recorta', () => {
+  const verde = [0x30, 0x9c, 0x47];
+  for (const nome of ['icone-192.png', 'icone-512.png']) {
+    const { largura, altura, bpp, px } = pixelsPng(path.join(SITE, nome));
+    const r = 0.40 * largura, cx = largura / 2, cy = altura / 2;
+    let fora = 0, dentroNaoVerde = 0;
+    for (let y = 0; y < altura; y++) {
+      for (let x = 0; x < largura; x++) {
+        const i = (y * largura + x) * bpp;
+        const eVerde = [0, 1, 2].every(k => Math.abs(px[i + k] - verde[k]) <= 2) && (bpp === 3 || px[i + 3] === 255);
+        if (Math.hypot(x + 0.5 - cx, y + 0.5 - cy) > r) { if (!eVerde) fora++; }
+        else if (!eVerde) dentroNaoVerde++;
+      }
+    }
+    assert.equal(fora, 0, nome + ': ' + fora + ' pixels do desenho fora do círculo de 40% — o Android corta');
+    assert.ok(dentroNaoVerde > largura * altura * 0.05, nome + ': o desenho sumiu');
+  }
 });
 
 /* Texto de SVG vira contorno, e não é capricho do briefing: o "Cabeçalho" da
@@ -7365,21 +7590,22 @@ test('o destaque sai do id no site; a marca no título é o legado', () => {
 });
 
 test('os textos do site têm padrão no código, e o dado só troca o que preencheu', () => {
-  assert.equal(GTM.textoDoSite(null, 'semCapa'), 'sem capa');
-  assert.equal(GTM.textoDoSite({ textos: { semCapa: 'sem imagem' } }, 'semCapa'), 'sem imagem');
-  assert.equal(GTM.textoDoSite({ textos: { semCapa: 'sem imagem' } }, 'buscaVazia'), 'Nada encontrado',
+  assert.equal(GTM.textoDoSite(null, 'semCapa'), GTM.TEXTOS_PADRAO.semCapa);
+  assert.equal(GTM.textoDoSite({ textos: { semCapa: 'capa a caminho' } }, 'semCapa'), 'capa a caminho');
+  assert.equal(GTM.textoDoSite({ textos: { semCapa: 'capa a caminho' } }, 'buscaVazia'), GTM.TEXTOS_PADRAO.buscaVazia,
     'trocar um texto apagou o padrão dos outros');
   /* Texto vazio é o padrão, não o silêncio: um campo limpo sem querer não pode
    * apagar da tela o aviso que explica o que houve. Quem quiser nada na tela
    * muda o desenho, não o texto. */
-  assert.equal(GTM.textoDoSite({ textos: { semCapa: '   ' } }, 'semCapa'), 'sem capa');
+  assert.equal(GTM.textoDoSite({ textos: { semCapa: '   ' } }, 'semCapa'), GTM.TEXTOS_PADRAO.semCapa);
   assert.equal(GTM.textoDoSite(null, 'chave-que-nao-existe'), '');
 
-  /* Os seis do plano: o rodapé e os cinco estados do B8 do briefing — dois
-   * deles com título e ajuda, que é o que faz oito chaves. */
+  /* Os seis do plano: o rodapé e os cinco estados do B8 do briefing — três
+   * deles com título e ajuda, que é o que faz nove chaves (a ajuda da ficha
+   * ausente entrou na D7). */
   assert.deepEqual(Object.keys(GTM.TEXTOS_PADRAO).sort(), [
     'buscaVazia', 'buscaVaziaAjuda', 'erroCatalogo', 'erroCatalogoAjuda',
-    'fichaAusente', 'rodape', 'semCapa', 'videoIndisponivel'
+    'fichaAusente', 'fichaAusenteAjuda', 'rodape', 'semCapa', 'videoIndisponivel'
   ]);
 });
 
@@ -8611,4 +8837,373 @@ test('a chegada não pede a fala: ela desce junto com o arquivo da busca', () =>
   assert.equal((app.match(/\/api\/busca\/fala/g) || []).length, 1, 'a fala é pedida de mais de um lugar');
   const carregar = app.match(/function carregar\(\) \{([\s\S]*?)\n  \}/)[1];
   assert.ok(!/busca/.test(carregar), 'a carga do catálogo pede a busca junto');
+});
+
+/* ================= o orçamento da chegada (22/09) ================= */
+
+/* O `loading="lazy"` antecipa pela distância que o navegador escolhe, e ela
+ * cresce com a rede ruim: num Chrome sem janela em 412×823, com o catálogo de
+ * produção, a chegada pedia 34 capas numa rede rápida e 61 numa lenta. Com o
+ * observador do site, 12 nas duas. */
+test('as capas da prateleira descem pelo observador do site, e a janela anda com o dedo', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const corpo = app.match(/function cartaoPrateleira\(item, mostrarSerie\)\s*\{([\s\S]*?)\n  \}/)[1];
+  assert.match(corpo, /capaPerto\(img, url\)/, 'a capa da prateleira voltou a ser pedida na hora');
+  assert.ok(!/img\.src = url/.test(corpo), 'a capa da prateleira voltou a ter src na criação');
+
+  const perto = app.match(/function capaPerto\(img, url\) \{([\s\S]*?)\n  \}/);
+  assert.ok(perto, 'não achei capaPerto em app.js');
+  assert.match(perto[1], /rootMargin: '0px 0px 50% 0px'/, 'a distância da chegada mudou sem medida nova');
+  /* Só sai da observação quem APARECEU: o vizinho pedido adiantado continua
+   * observado, senão a janela para no primeiro passo do arrasto. */
+  assert.match(perto[1], /capasPendentes\.unobserve\(e\.target\)/);
+  const pedir = app.match(/function pedirCapa\(img\) \{([\s\S]*?)\n  \}/)[1];
+  assert.ok(!/unobserve/.test(pedir), 'pedirCapa solta o vizinho adiantado da observação');
+
+  const grade = app.match(/function renderGrade\(\) \{([\s\S]*?)\n  \}/)[1];
+  assert.ok(grade.indexOf('soltarCapas()') >= 0 && grade.indexOf('soltarCapas()') < grade.indexOf('limpar(el.grade)'),
+    'trocar de tela não solta as capas da tela de antes');
+});
+
+/* O LCP é a capa do destaque, e duas esperas iam em fila: a conexão com a pull
+ * zone e o catálogo, pedido só depois de o app.js baixar e rodar. */
+test('a chegada abre a pull zone e pede o catálogo já no HTML', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.match(html, /<link rel="preconnect" href="https:\/\/vz-b62046eb-e25\.b-cdn\.net">/);
+  /* `crossorigin` é o que faz o fetch do app.js reaproveitar o pedido: sem
+   * ele o modo não bate, e o catálogo seria baixado duas vezes. */
+  assert.match(html, /<link rel="preload" href="\/api\/catalogo" as="fetch" crossorigin>/);
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  assert.match(app, /fetch\('\/api\/catalogo', \{ headers: \{ Accept: 'application\/json' \} \}\)/,
+    'o pedido do app.js mudou, e o preload pode ter deixado de valer');
+});
+
+/* ================= a capa não é rascunho (22/09) ================= */
+
+/* O Bunny apaga a capa anterior quando recebe uma nova, e o catálogo que
+ * continua apontando para ela mostra o cartão SEM capa. Um teste feito pela
+ * mesa, sem publicar, deixou o *Bernardo Élis 2* assim no site no ar. A capa
+ * de um título que já está no catálogo passou a ser gravada na mesma chamada
+ * que a manda ao Bunny. */
+test('comCapa troca os dois campos de todo título do vídeo, e só deles', () => {
+  const cat = { rev: 3, site: { destaque: 'a' }, itens: [
+    { id: 'a', capa_arquivo: 'x.jpg', capa_versao: '1', fonte: { videoId: 'v1' } },
+    { id: 'b', capa_arquivo: 'y.jpg', fonte: { videoId: 'v2' } },
+    { id: 'c', fonte: { videoId: 'v1' } }
+  ] };
+  const novo = GTM.comCapa(cat, 'v1', 'thumbnail_novo.jpg', '99');
+  assert.equal(novo.rev, 3, 'a rev é do PUT, não daqui');
+  assert.deepEqual(novo.site, cat.site, 'o resto do documento não voltou como veio');
+  assert.deepEqual(novo.itens.map(i => i.capa_arquivo), ['thumbnail_novo.jpg', 'y.jpg', 'thumbnail_novo.jpg'],
+    'todo título daquele vídeo leva a capa — e só ele');
+  assert.deepEqual(novo.itens.map(i => i.capa_versao), ['99', undefined, '99']);
+  assert.equal(novo.itens[1], cat.itens[1], 'o título de outro vídeo foi copiado à toa');
+  assert.equal(cat.itens[0].capa_arquivo, 'x.jpg', 'comCapa mexeu no catálogo que recebeu');
+  assert.equal(GTM.comCapa(cat, 'v9', 'z.jpg', '1'), null, 'vídeo sem título no catálogo não é gravação');
+  assert.equal(GTM.comCapa(null, 'v1', 'z.jpg', '1'), null);
+});
+
+/* Troca o fetch global por um Bunny que recebe capa e diz o nome dela. Guarda
+ * as capas recebidas: é por elas que se confere se a capa foi ao Bunny ANTES
+ * de uma recusa. */
+function bunnyDeCapas(nome) {
+  const original = globalThis.fetch;
+  const capas = [];
+  globalThis.fetch = async (url, init) => {
+    const u = String(url);
+    if (/\/videos\/[^/]+\/thumbnail$/.test(u) && init && init.method === 'POST') {
+      capas.push(u);
+      return new Response('{}', { status: 200 });
+    }
+    if (/\/videos\/[^/?]+$/.test(u) && !(init && init.method)) {
+      return new Response(JSON.stringify({ thumbnailFileName: nome }), { status: 200 });
+    }
+    return original(url, init);
+  };
+  return { capas, desfazer: () => { globalThis.fetch = original; } };
+}
+
+const enviarCapa = (env, token, videoId) => pedir(env, {
+  metodo: 'POST', caminho: '/api/midia?tipo=capa&videoId=' + videoId, token,
+  bruto: new Uint8Array([0xff, 0xd8, 0xff, 0xe0]), cabecalhos: { 'content-type': 'application/octet-stream' }
+});
+
+test('a capa de um título do catálogo vai para o catálogo na mesma chamada, com rastro', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  const bunny = bunnyDeCapas('thumbnail_novo.jpg');
+  try {
+    const r = await enviarCapa(env, sup.token, fonte.videoId);
+    assert.equal(r.status, 200, r.texto);
+    assert.equal(bunny.capas.length, 1, 'a capa não foi ao Bunny');
+    assert.equal(r.corpo.capa_arquivo, 'thumbnail_novo.jpg');
+    assert.equal(r.corpo.rev, 1, 'a capa não foi gravada no catálogo');
+    assert.equal(r.corpo.historico, true);
+
+    const gravado = JSON.parse(env.CATALOGO.dados.catalogo);
+    assert.equal(gravado.rev, 1);
+    /* Os dois títulos de teste usam o MESMO vídeo: os dois levam a capa. */
+    assert.ok(gravado.itens.every(i => i.capa_arquivo === 'thumbnail_novo.jpg' && i.capa_versao),
+      'um título do vídeo ficou com a capa de antes');
+    assert.equal(gravado.itens[0].sinopse, 'Primeira', 'a gravação da capa mexeu em outro campo');
+
+    /* Pela porta do PUT: o histórico diz exatamente o que mudou. */
+    const registro = JSON.parse(env.CATALOGO.dados[GTM.chaveHistorico(1)]);
+    assert.deepEqual([...new Set(registro.mudancas.map(m => m.campo))].sort(), ['capa_arquivo', 'capa_versao']);
+    assert.equal(registro.quem, 'superadmin');
+  } finally {
+    bunny.desfazer();
+  }
+});
+
+/* A ORDEM É A COISA TODA: recusar DEPOIS do Bunny deixaria o título sem capa,
+ * com o catálogo apontando para o arquivo que acabou de sumir. */
+test('quem só envia vídeo não troca a capa de título do catálogo — e o Bunny nem é tocado', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'joao', senha: 'senha-bem-comprida', permissoes: ['enviar'] } });
+  const joao = await entrar(env, 'joao', 'senha-bem-comprida');
+  const bunny = bunnyDeCapas('thumbnail_novo.jpg');
+  try {
+    const recusa = await enviarCapa(env, joao.token, fonte.videoId);
+    assert.equal(recusa.status, 403, recusa.texto);
+    assert.equal(recusa.corpo.barradas[0].campo, 'capa_arquivo');
+    assert.equal(bunny.capas.length, 0, 'a capa foi ao Bunny ANTES da recusa: o site ficaria sem ela');
+    assert.equal(JSON.parse(env.CATALOGO.dados.catalogo).rev, 0);
+
+    /* O TÍTULO NOVO, que ainda não está no catálogo: quem envia vídeo manda a
+     * capa dele, e ela segue pelo rascunho — não há o que gravar. */
+    const novo = await enviarCapa(env, joao.token, 'ffffffff-0000-1111-2222-333333333333');
+    assert.equal(novo.status, 200, novo.texto);
+    assert.equal(bunny.capas.length, 1);
+    assert.equal(novo.corpo.capa_arquivo, 'thumbnail_novo.jpg');
+    assert.equal(novo.corpo.rev, undefined, 'título fora do catálogo não é gravação');
+    assert.equal(novo.corpo.pendente, false);
+    assert.equal(JSON.parse(env.CATALOGO.dados.catalogo).rev, 0);
+  } finally {
+    bunny.desfazer();
+  }
+});
+
+test('o Bunny que não diz o nome deixa a capa pendente, e o catálogo como estava', async () => {
+  const env = ambiente(kvDeMentira({ catalogo: JSON.stringify(catalogoDeTeste(0)) }));
+  const sup = await entrar(env, '', 'senha-do-super');
+  const bunny = bunnyDeCapas(null);
+  try {
+    const r = await enviarCapa(env, sup.token, fonte.videoId);
+    assert.equal(r.status, 200, r.texto);
+    assert.equal(r.corpo.pendente, true, 'o site ficou sem a capa, e a resposta não avisa');
+    assert.equal(r.corpo.rev, undefined);
+    assert.equal(JSON.parse(env.CATALOGO.dados.catalogo).rev, 0);
+  } finally {
+    bunny.desfazer();
+  }
+});
+
+/* A mesa respeita a resposta: com `rev`, a capa está no site, e ela não pode
+ * voltar ao rascunho — senão o Publicar gravaria de novo um nome que o Bunny
+ * pode já ter apagado. E toda capa passa pela redução a 640 px. */
+test('a mesa reduz a capa a 640 px, e não guarda no rascunho a capa que o servidor gravou', () => {
+  const telas = semComentarios(lerTexto(path.join(SITE, 'mesa-telas.js')));
+  assert.match(telas, /var LARGURA_CAPA = 640;/, 'a largura da capa não é a do capas-menores.mjs');
+
+  const enviar = telas.match(/M\.enviarCapa = function \(item, arquivo\) \{([\s\S]*?)\n  \};/);
+  assert.ok(enviar, 'não achei M.enviarCapa em mesa-telas.js');
+  assert.match(enviar[1], /M\.capaParaEnvio\(arquivo\)/, 'a capa sobe sem passar pela redução');
+  const comRev = enviar[1].indexOf('if (resposta.rev)');
+  const rascunho = enviar[1].indexOf('M.mudarVarios(');
+  assert.ok(comRev > 0 && rascunho > comRev, 'a capa vai para o rascunho antes de olhar se o servidor já gravou');
+  assert.match(enviar[1].slice(comRev, rascunho), /M\.desfazerMudanca\(item\.id, 'capa_arquivo'\)/,
+    'a capa gravada pelo servidor deixa para trás a do rascunho');
+  assert.match(enviar[1], /resposta\.pendente/, 'a capa que não entrou no catálogo não avisa ninguém');
+
+  /* O título novo também passa pela redução. */
+  const novo = telas.match(/M\.salvarTituloNovo = function \(\) \{([\s\S]*?)\n  \};/);
+  assert.match(novo[1], /M\.capaParaEnvio\(capa\)/, 'a capa do título novo sobe sem redução');
+  /* E o quadro capturado já sai na largura da capa. */
+  assert.match(telas, /function capturarQuadro\(video\) \{[\s\S]*?desenharCapa\(video,/);
+});
+
+/* O script que conserta a capa trocada no Bunny tem de ler e gravar o KV. Até
+ * 22/09 ele gravava no seed e mandava levar o valor ao KV "pela tela de
+ * admin" — para a falha que ele existe para consertar, o caminho errado. */
+test('o sincronizar-capas.mjs lê o KV e grava no KV, e só grava capa que a pull zone serve', () => {
+  const src = lerTexto(path.join(__dirname, '..', 'scripts', 'sincronizar-capas.mjs'));
+  assert.match(src, /completo=1/, 'sincronizar-capas.mjs precisa ler o KV por ?completo=1');
+  assert.match(src, /method:\s*'PUT'/, 'sincronizar-capas.mjs precisa gravar o KV por PUT');
+  assert.doesNotMatch(src, /^\s*import[^\n]*semear/m);
+  assert.match(src, /if \(depois !== 200\) \{/, 'o script grava um nome sem conferir que a pull zone o serve');
+});
+
+/* O capas-menores gravava o KV uma vez, no fim do lote — com o Bunny guardando
+ * a capa anterior, era seguro. Ele apaga: entre o envio e a gravação, o
+ * cartão fica sem capa, e com o lote inteiro no meio eram minutos. */
+test('o capas-menores.mjs grava o KV depois de CADA envio, e guarda o original antes', () => {
+  const src = lerTexto(path.join(__dirname, '..', 'scripts', 'capas-menores.mjs'));
+  assert.equal((src.match(/method:\s*'PUT'/g) || []).length, 1, 'uma gravação só no arquivo, a do gravarKV');
+  const laco = src.slice(src.indexOf('for (const item of alvos)'), src.indexOf('} finally {'));
+  const envio = laco.indexOf('bunny.enviarCapa(');
+  assert.ok(envio > 0, 'não achei o envio da capa dentro do laço');
+  assert.ok(laco.indexOf('await gravarKV()', envio) > envio, 'o KV não é gravado logo depois de cada envio');
+  assert.ok(laco.indexOf('writeFile(original, antes)') < envio, 'o original não é guardado antes do envio');
+  const conferencia = laco.indexOf("!== (item.capa_arquivo || 'thumbnail.jpg')");
+  assert.ok(conferencia > 0 && conferencia < laco.indexOf('baixar('),
+    'o script reduz uma capa que o Bunny já trocou — e a devolveria POR CIMA da escolha nova');
+});
+
+/* D7 (§5.8 do PLANO-DESIGN): o esqueleto da chegada. Ele mora no HTML para ser
+ * pintado antes de qualquer script, e é por isso que o teste lê o index.html.
+ * Três regras: quem ouve a tela sabe que está carregando (e não ouve vinte
+ * retângulos), quem pediu menos movimento o vê PARADO, e uma rota que não é a
+ * chegada não o mostra — ele prometeria uma tela que não vem. */
+test('o esqueleto da chegada está no HTML, fala uma frase só e para com menos movimento', () => {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const grade = html.match(/<div id="conteudo-grade">([\s\S]*?)<\/main>/);
+  assert.ok(grade, 'não achei o #conteudo-grade no index.html');
+  assert.match(grade[1], /class="esqueleto" role="status"/, 'o esqueleto saiu do #conteudo-grade, ou perdeu o role="status"');
+  assert.match(grade[1], /<span class="pular">Carregando[^<]*<\/span><div aria-hidden="true">/,
+    'o esqueleto não diz "carregando" a quem ouve, ou os retângulos deixaram de ser escondidos do leitor de tela');
+  assert.ok(!/<img\b/.test(grade[1]), 'o esqueleto ganhou imagem — ela viraria o LCP e um pedido a mais');
+
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\.esq-destaque, \.esq-prateleira \{ animation: esq-pulsar/);
+  const reduzido = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g)].map(m => m[1]).join('\n');
+  assert.match(reduzido, /\.esq-destaque, \.esq-prateleira \{ animation: none; \}/,
+    'o esqueleto continua pulsando para quem pediu menos movimento');
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const iniciar = app.slice(app.indexOf('function iniciar()'));
+  assert.match(iniciar, /if \(hash && hash !== '#\/' && hash !== '#'\) limpar\(el\.grade\);/,
+    'o esqueleto da chegada aparece também na ficha e nas outras rotas');
+  assert.ok(iniciar.indexOf('limpar(el.grade)') < iniciar.indexOf('carregar()'),
+    'o esqueleto só é tirado depois de o catálogo chegar — tarde demais para a rota errada');
+});
+
+/* D7: os cinco estados do B8 são UM desenho — ícone, título, ajuda, ação —, e
+ * não mais a faixa vermelha do `.aviso` num caso e o `.vazio` cinza no outro. */
+test('os estados vazios e de erro passam todos pela mesma peça, com saída à mão', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  for (const chave of ['buscaVazia', 'fichaAusente', 'erroCatalogo']) {
+    assert.ok(app.includes("titulo: frase('" + chave + "')"),
+      'o estado ' + chave + ' não passa pelo estadoVazio');
+  }
+  assert.ok(!/aviso\([^)]*,\s*true\)/.test(app), 'um estado voltou a ser a faixa vermelha do aviso');
+  assert.ok(!/criar\('div', 'card-capa-vazia', /.test(app), 'uma capa vazia foi desenhada fora do capaVazia()');
+
+  /* Toda saída de estado tem para onde ir. */
+  const fatia = (marca) => {
+    const i = app.indexOf(marca);
+    return app.slice(app.lastIndexOf('estadoVazio({', i), app.indexOf('}));', i));
+  };
+  assert.match(fatia("titulo: frase('buscaVazia')"), /rotulo: 'Limpar a busca'/);
+  assert.match(fatia("titulo: frase('fichaAusente')"), /rotulo: 'Voltar ao início'/);
+  const erro = fatia("titulo: frase('erroCatalogo')");
+  assert.match(erro, /rotulo: 'Tentar de novo'[\s\S]*window\.location\.reload\(\)/);
+  assert.match(erro, /erro: true/, 'a falha de rede deixou de ser role="alert"');
+  assert.match(erro, /detalhe: 'Detalhe técnico: ' \+ erro\.message/,
+    'a mensagem técnica sumiu, ou voltou para dentro da frase editável');
+
+  /* O filtro de série só oferece série que está na resposta (D8): com ele
+   * ligado, a busca nunca fica vazia. Mandar "remover o filtro" é mandar fazer
+   * o que não existe. */
+  assert.ok(!/filtro/i.test(GTM.TEXTOS_PADRAO.buscaVaziaAjuda), 'a ajuda da busca vazia voltou a falar do filtro');
+  /* Nenhum padrão com buraco: o termo, o detalhe e os botões vêm em linha própria. */
+  for (const [chave, texto] of Object.entries(GTM.TEXTOS_PADRAO)) {
+    assert.ok(!/[{}%]|\(\s*\)/.test(texto), 'o texto ' + chave + ' tem um buraco para preencher');
+  }
+});
+
+/* ======================= o LCP: a capa do destaque no HTML ================ */
+
+/* A parte 2 do LCP (§7 do PLANO-DESIGN, 23/09). O `GET /api/catalogo` guarda a
+ * URL da capa do destaque numa chave curta, e o `functions/index.js` a põe
+ * num <link rel="preload"> do HTML. Estes testes RODAM as duas funções, com o
+ * KV de mentira. */
+const ambienteComPullzone = (kv) => Object.assign(ambiente(kv), { BUNNY_PULLZONE: 'vz-teste.b-cdn.net' });
+
+test('o GET do catálogo guarda a capa do destaque, e só regrava quando ela muda', async () => {
+  const cat = catalogoDeTeste(3);
+  cat.itens[1].capa_arquivo = 'thumbnail_ab12.jpg';
+  cat.itens[1].capa_versao = 1788898362784;
+  cat.site = { destaque: 'b' };
+  const kv = kvDeMentira({ catalogo: JSON.stringify(cat) });
+  const env = ambienteComPullzone(kv);
+  let escritas = 0;
+  const put = kv.put;
+  kv.put = async (...a) => { if (a[0] === 'capa-destaque') escritas++; return put(...a); };
+
+  const r = await pedir(env, { caminho: '/api/catalogo' });
+  assert.equal(r.status, 200);
+  const esperada = GTM.urlCapa(GTM.destaque(r.corpo.itens, r.corpo.site), r.corpo.config);
+  assert.equal(esperada, 'https://vz-teste.b-cdn.net/' + fonte.videoId + '/thumbnail_ab12.jpg?v=1788898362784');
+  assert.equal(kv.dados['capa-destaque'], esperada, 'a chave não é a capa que a chegada vai pedir');
+  assert.equal(escritas, 1);
+
+  await pedir(env, { caminho: '/api/catalogo' });
+  assert.equal(escritas, 1, 'o GET regrava a chave a cada visita — o KV gratuito tem 1.000 escritas por dia');
+
+  /* Qualquer caminho que grave o catálogo é corrigido na visita seguinte —
+   * aqui, um script que escreveu direto no KV e tirou o destaque do ar. */
+  cat.itens[1].publicar = false;
+  kv.dados.catalogo = JSON.stringify(cat);
+  await pedir(env, { caminho: '/api/catalogo' });
+  const agora = GTM.urlCapa(GTM.destaque([Object.assign({}, cat.itens[0])], {}), { pullzone: 'vz-teste.b-cdn.net', libraryId: '1' });
+  assert.equal(kv.dados['capa-destaque'], agora, 'a chave não acompanhou o catálogo gravado por fora');
+  assert.equal(escritas, 2);
+
+  /* O GET completo, da mesa, não mexe na chave: ele devolve o que não está no ar. */
+  const get = semComentarios(lerTexto(path.join(SITE, 'functions', 'api', 'catalogo.js')))
+    .match(/export async function onRequestGet[\s\S]*?\n\}/)[0];
+  assert.ok(get.indexOf('guardarCapaDoDestaque(') > get.indexOf('if (completo)'),
+    'a chave é gravada antes de separar o pedido da mesa — sairia a capa de um título fora do ar');
+});
+
+test('a página inicial ganha o preload da capa, e sai intacta em todo erro', async () => {
+  const idx = await import('../site/functions/index.js');
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  assert.equal(html.split(idx.MARCA).length - 1, 1, 'o index.html perdeu a linha da folha de estilo onde o preload entra');
+
+  const capa = 'https://vz-teste.b-cdn.net/94a19a6d-f4c2-41e9-aa74-4183a7ca75cb/thumbnail_db94da65.jpg?v=1788898362784';
+  const pedidos = [];
+  const assets = (status = 200) => ({
+    fetch: async (req) => {
+      pedidos.push(req);
+      return new Response(status === 200 ? html : null, { status, headers: { etag: '"estatico"', 'content-type': 'text/html' } });
+    }
+  });
+  const chamar = (valor, opcoes = {}) => idx.onRequestGet({
+    request: new Request('https://exemplo.test/', { headers: { 'if-none-match': '"estatico"' } }),
+    env: {
+      ASSETS: assets(opcoes.status),
+      CATALOGO: { get: async () => { if (opcoes.falha) throw new Error('KV fora'); return valor; } }
+    }
+  });
+
+  const r = await chamar(capa);
+  const corpo = await r.text();
+  assert.equal(r.status, 200);
+  assert.ok(corpo.includes('<link rel="preload" as="image" href="' + capa + '" fetchpriority="high">\n' + idx.MARCA),
+    'o preload não entrou logo antes da folha de estilo');
+  assert.equal(r.headers.get('etag'), null, 'a página com a capa do dia saiu com o ETag do arquivo estático');
+  assert.equal(pedidos[pedidos.length - 1].headers.get('if-none-match'), null,
+    'o pedido ao arquivo estático levou a condição — um 304 devolveria a página com a capa velha');
+  assert.equal(corpo.replace(/<link rel="preload" as="image"[^>]*>\n/, ''), html, 'a função mudou mais que uma linha');
+
+  /* O pior caso é não ajudar: a página sai como o arquivo estático. */
+  for (const [caso, valor, opcoes] of [
+    ['sem chave', null, {}],
+    ['chave vazia', '', {}],
+    ['KV fora', capa, { falha: true }],
+    ['aspas', 'https://vz-teste.b-cdn.net/x.jpg"><script>alert(1)</script>', {}],
+    ['outro domínio', 'https://exemplo.com/x.jpg', {}],
+    ['http', capa.replace('https', 'http'), {}]
+  ]) {
+    const s = await chamar(valor, opcoes);
+    assert.equal(await s.text(), html, caso + ': a página não saiu intacta');
+    assert.equal(s.headers.get('etag'), '"estatico"', caso + ': a página intacta perdeu o ETag');
+  }
+  const naoOk = await chamar(capa, { status: 304 });
+  assert.equal(naoOk.status, 304, 'uma resposta que não é 200 deve passar como veio');
+  assert.equal(idx.comPreload('<html></html>', capa), null);
 });

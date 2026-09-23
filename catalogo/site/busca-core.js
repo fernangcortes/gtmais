@@ -292,6 +292,67 @@
     return { termo: termo, lista: lista, mapa: mapa, corrigido: corrigido };
   }
 
+  /* A PALAVRA DE 3 LETRAS COM ERRO, corrigida pela VIZINHA (23/09).
+   *
+   * Quem usa buscou "carro de boj" e não veio nada, com "carro de boi"
+   * respondendo. O `tetoDaCorrecao` não corrige palavra de 3 letras, e está
+   * certo SOZINHO: medido no acervo (rev 122, 8.027 palavras), um erro de uma
+   * letra numa palavra de 3 fica a uma letra de 3,0 palavras em média, e só 24%
+   * têm um candidato único. "boj" está a 1 de "bom", "boa" e "boi" — e "bom"
+   * está em 70 trechos do acervo.
+   *
+   * O que separa o certo é o vizinho: dos candidatos, fica só quem aparece NO
+   * MESMO TRECHO — um campo, um capítulo, um bloco da fala — que uma palavra
+   * que outro termo da consulta achou. "boi" aparece junto de "carro" em 3
+   * trechos; "bom" e "boa", em nenhum. Sem vizinho que casou, nada muda: "boj"
+   * sozinho continua sem resposta, porque não há como saber qual das três.
+   *
+   * Só roda quando um termo curto não achou nada, e só percorre os trechos: é
+   * o caminho raro, e a consulta comum não paga por ele. */
+  function trechosDoDoc(d) {
+    var lista = CAMPOS_DO_TITULO.map(function (k) { return d.campos[k]; });
+    d.capitulos.forEach(function (c) { lista.push(c.palavras); });
+    d.falas.forEach(function (b) { lista.push(b.palavras); });
+    return lista;
+  }
+
+  function corrigirPelaVizinha(ind, casadas) {
+    casadas.forEach(function (c) {
+      if (c.lista.length || c.termo.length !== 3 || /\d/.test(c.termo)) return;
+      var vizinhas = casadas.filter(function (o) { return o !== c && o.lista.length; });
+      if (!vizinhas.length) return;
+
+      /* Os candidatos, pela raiz: "boi" traz "bois" junto, como no `casar`. */
+      var candidatas = Object.create(null);
+      var algum = false;
+      ind.vocabulario.forEach(function (p) {
+        if (distancia(c.termo, p, 1) <= 1) { candidatas[ind.raizes[p]] = true; algum = true; }
+      });
+      if (!algum) return;
+
+      var aceitas = Object.create(null);
+      ind.docs.forEach(function (d) {
+        trechosDoDoc(d).forEach(function (t) {
+          var comVizinha = t.lista.some(function (p) {
+            return vizinhas.some(function (o) { return p in o.mapa; });
+          });
+          if (!comVizinha) return;
+          t.lista.forEach(function (p) {
+            if (candidatas[ind.raizes[p]]) aceitas[ind.raizes[p]] = true;
+          });
+        });
+      });
+
+      ind.vocabulario.forEach(function (p) {
+        if (!aceitas[ind.raizes[p]] || p in c.mapa) return;
+        c.lista.push(p);
+        c.mapa[p] = CORRIGIDA;
+      });
+      c.corrigido = c.lista.length > 0;
+    });
+    return casadas;
+  }
+
   /* O quanto o termo vale NESTE campo: a melhor das palavras dele que estão
    * aqui. Percorre o menor dos dois lados. */
   function qualidade(campo, casadas) {
@@ -389,7 +450,7 @@
    * achou — é com elas que a tela marca a palavra no trecho. */
   function procurar(ind, consulta) {
     var ts = termos(consulta);
-    var casadas = ts.map(function (t) { return casar(ind, t); });
+    var casadas = corrigirPelaVizinha(ind, ts.map(function (t) { return casar(ind, t); }));
     var titulos = [];
     var achados = [];
 

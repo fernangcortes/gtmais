@@ -351,10 +351,19 @@ main { padding: 24px 0 64px; }
 }
 .card-capa img { width: 100%; height: 100%; object-fit: cover; }
 
+/* O "sem capa" do B8 (D7): um ícone de imagem e a frase, no meio da caixa
+ * 16:9 que continua do mesmo tamanho. Em --texto-fraco sobre --marca-fraca:
+ * a caixa da capa já tinha esse fundo antes de a imagem chegar.
+ *
+ * O `padding-bottom` é o lugar do selo de duração: sem ele, no cartão de 150
+ * px do celular (84 de altura), a frase caía na mesma linha do "19:12" e os
+ * dois se atropelavam — visto na conferência da D7. */
 .card-capa-vazia {
-  width: 100%; height: 100%; display: flex; align-items: center;
-  justify-content: center; color: var(--texto-fraco); font-size: 12px;
+  width: 100%; height: 100%; display: flex; flex-direction: column; gap: var(--esp-1);
+  align-items: center; justify-content: center; padding-bottom: 28px;
+  color: var(--texto-fraco); font-size: var(--tipo-micro); text-align: center;
 }
+.card-capa-vazia-icone { width: 24px; height: 24px; opacity: .8; }
 
 /* Trecho animado (preview.webp do Bunny) por cima da capa. O <img> só existe
  * no DOM enquanto o ponteiro está sobre o cartão — quem cria e destrói é
@@ -1616,12 +1625,83 @@ body.gtm-teatro .player { border-radius: 0; border-left: 0; border-right: 0; }
   background: var(--alerta-fundo); color: var(--alerta);
   padding: 10px 14px; border-radius: var(--raio); font-size: 14px; margin: 0 0 18px;
 }
-.aviso-erro { border-left-color: var(--erro); background: var(--erro-fundo); color: var(--erro); }
 
+/* OS ESTADOS VAZIOS E DE ERRO (D7, o B8 do briefing): ícone, título, a
+ * explicação, e o que fazer — nesta ordem, centrados, com espaço. Um desenho
+ * só para todos; o de erro muda só a cor do ícone. O `.aviso` continua sendo
+ * a faixa de dentro da ficha (a pendência), e não é mais usado para estado.
+ *
+ * O texto tem teto de largura (46ch) porque a ajuda passa de uma linha: em
+ * 1400 px ela correria de ponta a ponta, sem o olho achar a volta. */
 .vazio {
-  text-align: center; padding: 64px 16px; color: var(--texto-fraco);
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center; padding: var(--esp-8) var(--esp-4);
+  color: var(--texto-fraco);
 }
-.vazio h2 { color: var(--texto); font-size: 18px; margin: 0 0 8px; }
+.vazio-icone { width: 48px; height: 48px; color: var(--texto-fraco); margin-bottom: var(--esp-4); }
+.vazio-erro .vazio-icone { color: var(--erro); }
+.vazio-titulo { color: var(--texto); font-size: var(--tipo-titulo); font-weight: 650; margin: 0; }
+.vazio-termo {
+  color: var(--texto); font-size: var(--tipo-base); margin: var(--esp-1) 0 0;
+  max-width: 46ch; overflow-wrap: anywhere;
+}
+.vazio-texto { max-width: 46ch; margin: var(--esp-3) 0 0; font-size: var(--tipo-corpo); }
+.vazio-acoes {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: var(--esp-3);
+  margin-top: var(--esp-5);
+}
+/* 44 px de alvo de toque, como os botões do destaque. */
+.vazio-acoes .botao {
+  display: inline-flex; align-items: center; min-height: 44px;
+  padding: 0 var(--esp-5); font-size: var(--tipo-corpo); font-weight: 600;
+  text-decoration: none;
+}
+.vazio-detalhe { margin: var(--esp-5) 0 0; font-size: var(--tipo-micro); overflow-wrap: anywhere; }
+
+/* O ESQUELETO (D7, §5.8): a forma da chegada enquanto a API não responde. O
+ * HTML dele mora no index.html. As medidas são as do destaque e da prateleira
+ * — a mesma grade de duas colunas, o mesmo cartão de --pcard —, para que a
+ * troca pelo conteúdo de verdade não pareça um salto. Não precisa ser exato:
+ * ele sai INTEIRO, e nada que estava na tela é deslocado (CLS 0).
+ *
+ * As capas no --marca-fraca, que é o fundo da caixa da capa de verdade antes
+ * de a imagem chegar; as linhas de texto no --superficie. Pulsa devagar; para
+ * quem pediu menos movimento, fica PARADO (§6). */
+.esqueleto { overflow: hidden; }
+.esq-destaque {
+  display: grid; align-items: center;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 640px);
+  gap: var(--esp-6); margin: 0 0 var(--esp-7); padding-top: var(--esp-4);
+}
+.esq-texto { display: flex; flex-direction: column; gap: var(--esp-3); }
+.esq-linha { display: block; height: 14px; border-radius: 4px; background: var(--superficie); }
+.esq-l1 { width: 30%; height: 12px; }
+.esq-l2 { width: 75%; height: 36px; }
+.esq-l3 { width: 40%; }
+.esq-botao { display: block; width: 140px; height: 44px; margin-top: var(--esp-3); border-radius: var(--raio); background: var(--superficie); }
+.esq-capa, .esq-pista > span {
+  display: block; aspect-ratio: 16 / 9; border-radius: var(--raio);
+  background: var(--marca-fraca); border: 1px solid var(--borda);
+}
+.esq-prateleira { margin: 0 0 var(--esp-6); }
+.esq-rotulo { width: 180px; height: 20px; margin: 12px 0 var(--esp-4); }
+.esq-pista { display: flex; gap: var(--esp-3); padding: 6px 0; }
+.esq-pista > span { flex: 0 0 var(--pcard); }
+
+.esq-destaque, .esq-prateleira { animation: esq-pulsar 1.6s ease-in-out infinite; }
+@keyframes esq-pulsar { 50% { opacity: .55; } }
+@media (prefers-reduced-motion: reduce) {
+  .esq-destaque, .esq-prateleira { animation: none; }
+}
+
+@media (max-width: 900px) {
+  .esq-destaque { grid-template-columns: 1fr; gap: var(--esp-4); padding-top: var(--esp-2); }
+  .esq-capa { order: -1; }
+}
+@media (max-width: 560px) {
+  .esq-pista { padding: 0; }
+  .esq-rotulo { width: 140px; }
+}
 
 .rodape {
   border-top: 1px solid var(--borda); padding: 20px 0 40px;

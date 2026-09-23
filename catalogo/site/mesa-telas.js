@@ -352,7 +352,9 @@
     var tarefas = [];
     var capa = M.$('n-capa') && M.$('n-capa').files[0];
     var legenda = M.$('n-legenda') && M.$('n-legenda').files[0];
-    if (capa) tarefas.push(capa.arrayBuffer().then(function (bytes) {
+    if (capa) tarefas.push(M.capaParaEnvio(capa).then(function (reduzida) {
+      return reduzida.arrayBuffer();
+    }).then(function (bytes) {
       return M.api('/api/midia?tipo=capa&videoId=' + encodeURIComponent(e.videoId), { method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes })
         .then(function (r) { if (r.capa_arquivo) { campos.capa_arquivo = r.capa_arquivo; campos.capa_versao = String(Date.now()); } registrar('capa enviada'); });
     }));
@@ -604,37 +606,96 @@
 
   /* ----------------------------------------------------------------- capa */
 
-  /* Captura o quadro exato que está na tela do <video>. Só funciona porque a
-   * pull zone do Bunny devolve Access-Control-Allow-Origin: * e o vídeo é
-   * carregado com crossOrigin — sem isso o canvas fica "tainted" e toBlob
-   * lança SecurityError. */
-  function capturarQuadro(video) {
+  /* A CAPA SOBE COM NO MÁXIMO 640 px DE LARGURA — a régua do capas-menores.mjs
+   * (08/09), que serve os dois fregueses da mesma URL: o cartão (321 px no
+   * computador, o dobro numa tela 2×) e o `poster` do player. Até 22/09 a mesa
+   * mandava a imagem inteira, e as duas capas trocadas por ela em 15 e 16/09
+   * estavam no ar com 1280 px e até 221 KB, contra a mediana de 27 KB.
+   *
+   * Imagem que já cabe sobe como veio: reduzir o que já é pequeno só a
+   * recomprimiria. Sem `createImageBitmap`, ou com uma imagem que ele não lê,
+   * ela também sobe como veio — o capas-menores.mjs acha depois, e o Bunny é
+   * quem diz se aceita. */
+  var LARGURA_CAPA = 640;
+  var QUALIDADE_CAPA = 0.85;
+
+  function desenharCapa(fonte, largura, altura) {
     return new Promise(function (resolve, reject) {
-      if (!video.videoWidth) return reject(new Error('o vídeo ainda não carregou'));
+      var escala = Math.min(1, LARGURA_CAPA / largura);
       var canvas = document.createElement('canvas');
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      try { canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height); }
-      catch (e) { return reject(new Error('não foi possível ler o quadro: ' + e.message)); }
-      canvas.toBlob(function (blob) { blob ? resolve(blob) : reject(new Error('a captura do quadro falhou')); }, 'image/jpeg', 0.92);
+      canvas.width = Math.round(largura * escala);
+      canvas.height = Math.round(altura * escala);
+      var ctx = canvas.getContext('2d');
+      ctx.imageSmoothingQuality = 'high';
+      /* PNG com transparência: o fundo é o preto do player, e não o que o
+       * JPEG inventaria no lugar. */
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      try { ctx.drawImage(fonte, 0, 0, canvas.width, canvas.height); }
+      catch (e) { return reject(new Error('não foi possível ler a imagem: ' + e.message)); }
+      canvas.toBlob(function (blob) { blob ? resolve(blob) : reject(new Error('a capa não pôde ser gerada')); }, 'image/jpeg', QUALIDADE_CAPA);
     });
   }
 
-  /* A capa sobe ao Bunny na hora — bytes não cabem num rascunho —, e o que vai
-   * para o rascunho é o `capa_arquivo` novo. O Bunny grava a capa com um hash
-   * no nome e mantém a antiga (ESTADO, erro 3): até publicar, o site segue
-   * com a capa de antes. */
-  M.enviarCapa = function (item, blob) {
+  M.capaParaEnvio = function (arquivo) {
+    if (typeof createImageBitmap !== 'function') return Promise.resolve(arquivo);
+    return createImageBitmap(arquivo).then(function (img) {
+      var fechar = function (x) { if (img.close) img.close(); return x; };
+      if (img.width <= LARGURA_CAPA) return fechar(arquivo);
+      return desenharCapa(img, img.width, img.height).then(fechar);
+    }, function () { return arquivo; });
+  };
+
+  /* Captura o quadro exato que está na tela do <video>, já na largura da
+   * capa. Só funciona porque a pull zone do Bunny devolve
+   * Access-Control-Allow-Origin: * e o vídeo é carregado com crossOrigin — sem
+   * isso o canvas fica "tainted" e toBlob lança SecurityError. */
+  function capturarQuadro(video) {
+    if (!video.videoWidth) return Promise.reject(new Error('o vídeo ainda não carregou'));
+    return desenharCapa(video, video.videoWidth, video.videoHeight);
+  }
+
+  /* A CAPA DE UM TÍTULO QUE JÁ ESTÁ NO CATÁLOGO VAI AO SITE NA MESMA CHAMADA
+   * (22/09): a `/api/midia` grava os dois campos pela porta do PUT e devolve a
+   * `rev`. Até ali ela ia para o rascunho, com a promessa de que "até
+   * publicar, o site segue com a capa de antes" — só que o Bunny apaga a capa
+   * anterior, e um teste sem publicar deixou o *Bernardo Élis 2* sem capa no
+   * ar. Bytes não cabem num rascunho, e agora o nome também não.
+   *
+   * Sem `rev` na resposta a capa vai para o rascunho, como antes, em dois
+   * casos: o título não está no catálogo, ou o servidor não conseguiu gravar
+   * (`pendente`) — e aí o aviso é alto, porque o site está sem aquela capa
+   * até alguém publicar. */
+  M.enviarCapa = function (item, arquivo) {
     var fonte = GTM.resolverFonte(item, M.st.servidor.config);
     if (!fonte) return Promise.reject(new Error('Sem vídeo no Bunny: não há onde guardar a capa.'));
-    return blob.arrayBuffer().then(function (bytes) {
+    return M.capaParaEnvio(arquivo).then(function (blob) {
+      return blob.arrayBuffer();
+    }).then(function (bytes) {
       return M.api('/api/midia?tipo=capa&videoId=' + encodeURIComponent(fonte.videoId), {
         method: 'POST', headers: { 'content-type': 'application/octet-stream' }, body: bytes
       });
     }).then(function (resposta) {
-      if (!resposta || !resposta.capa_arquivo) throw new Error('o Bunny não informou o nome da capa nova');
+      if (!resposta || !resposta.capa_arquivo) {
+        throw new Error('o Bunny não informou o nome da capa nova, e o site pode estar sem ela: rode o sincronizar-capas.mjs');
+      }
+      if (resposta.rev) {
+        /* Uma capa deste título que estivesse no rascunho ficou para trás: o
+         * servidor já tem a nova. */
+        M.desfazerMudanca(item.id, 'capa_arquivo');
+        M.desfazerMudanca(item.id, 'capa_versao');
+        return M.carregarServidor().then(function () {
+          M.toast('Capa trocada no site · rev ' + resposta.rev);
+          if (M.aoMudar) M.aoMudar({});
+          return resposta;
+        });
+      }
       M.mudarVarios(item.id, [['capa_arquivo', resposta.capa_arquivo], ['capa_versao', String(Date.now())]]);
-      M.toast('Capa enviada ao Bunny. Entra no site quando você publicar.');
+      M.toast(resposta.pendente
+        ? 'A capa foi ao Bunny, mas o catálogo não foi gravado (' + (resposta.erro || 'sem motivo') +
+          '). Publique agora: até lá o site fica sem esta capa.'
+        : 'Capa enviada ao Bunny. Entra no site quando você publicar.');
+      return resposta;
     });
   };
 
@@ -668,8 +729,8 @@
       previa.hidden = false;
       estado.textContent = 'Enviando a capa (' + Math.round(blob.size / 1024) + ' KB)…';
       return M.enviarCapa(it, blob);
-    }).then(function () {
-      estado.textContent = 'Capa no rascunho.';
+    }).then(function (resposta) {
+      estado.textContent = resposta && resposta.rev ? 'Capa trocada no site.' : 'Capa no rascunho.';
       botao.disabled = false;
     }).catch(function (e) {
       estado.textContent = e.message;
@@ -717,11 +778,12 @@
     rodape: 'O pé de toda página. O link "Administração" fica sempre.',
     semCapa: 'No lugar da imagem, quando o título não tem capa.',
     videoIndisponivel: 'Selo vermelho no cartão de quem está sem vídeo.',
-    buscaVazia: 'Título da busca ou do filtro sem resultado.',
+    buscaVazia: 'Título da busca sem resultado. O termo buscado entra na linha de baixo.',
     buscaVaziaAjuda: 'A linha embaixo dele.',
-    fichaAusente: 'Link de uma ficha que não existe ou saiu do ar.',
+    fichaAusente: 'Título do link de uma ficha que não existe ou saiu do ar.',
+    fichaAusenteAjuda: 'A linha embaixo dele.',
     erroCatalogo: 'Título da falha de rede.',
-    erroCatalogoAjuda: 'A linha embaixo. A mensagem técnica entra no fim, entre parênteses.'
+    erroCatalogoAjuda: 'A linha embaixo. A mensagem técnica entra numa linha menor, depois dela.'
   };
 
   function linhaPrateleira(cat, site, p, pos, total, pode) {

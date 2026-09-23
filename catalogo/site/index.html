@@ -11,6 +11,13 @@
 <link rel="icon" type="image/svg+xml" href="favicon.svg">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="64x64" href="favicon.png">
+<!-- A TELA INICIAL (D8): o manifest põe o site no celular como um app, com o
+     ícone do E8 do briefing. NÃO há service worker, e é de propósito: nada
+     funciona sem rede, e nenhum cache novo guarda catálogo velho. A cor é o
+     --fundo do style.css — a barra do Android e a tela de abertura ficam da
+     cor da chegada, sem clarão. -->
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#101315">
 
 <meta property="og:title" content="Goiás Tec + — catálogo">
 <meta property="og:description" content="Catálogo interno de vídeos do Goiás Tec +.">
@@ -18,6 +25,17 @@
 <meta property="og:url" content="https://goias-tec-mais.pages.dev/">
 <meta property="og:type" content="website">
 
+<!-- O LCP da chegada é a capa do destaque, e ela depende de duas esperas que
+     não precisam ser em fila (Lighthouse em 22/09: 3,0 a 3,2 s no perfil de
+     celular, contra o teto de 2,5 s da §7 do PLANO-DESIGN):
+       - a conexão com a pull zone, que só abria quando a capa era pedida;
+       - o catálogo, que só era pedido depois de o app.js baixar e rodar. O
+         `fetch` do app.js reaproveita este pedido — conferido: um pedido só.
+     Na mesa (`?mesa=1`) o catálogo vem por postMessage e este pedido sobra;
+     é um pedido a mais para quem edita, contra uma espera a menos para todo
+     mundo. -->
+<link rel="preconnect" href="https://vz-b62046eb-e25.b-cdn.net">
+<link rel="preload" href="/api/catalogo" as="fetch" crossorigin>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -77,7 +95,18 @@
      <main> aceita foco pelo script, e não entra na ordem do Tab. -->
 <main id="conteudo" class="limite" tabindex="-1">
   <div id="avisos"></div>
-  <div id="conteudo-grade"></div>
+  <!-- O ESQUELETO (D7): a forma da chegada — destaque e duas prateleiras —
+       enquanto /api/catalogo não responde. Mora AQUI, e não no app.js, para
+       ser pintado com o HTML, antes de qualquer script: é o primeiro quadro
+       de quem abre o site numa rede lenta. O app.js o apaga ao desenhar
+       qualquer tela, e já no início quando a rota não é a chegada.
+       Nenhum retângulo é candidato a LCP (não é imagem nem texto), e ele sai
+       inteiro de uma vez: nada que já estava na tela é deslocado. -->
+  <div id="conteudo-grade"><div class="esqueleto" role="status"><span class="pular">Carregando o catálogo…</span><div aria-hidden="true">
+    <div class="esq-destaque"><div class="esq-texto"><span class="esq-linha esq-l1"></span><span class="esq-linha esq-l2"></span><span class="esq-linha esq-l3"></span><span class="esq-linha"></span><span class="esq-linha"></span><span class="esq-botao"></span></div><div class="esq-capa"></div></div>
+    <div class="esq-prateleira"><span class="esq-linha esq-rotulo"></span><div class="esq-pista"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+    <div class="esq-prateleira"><span class="esq-linha esq-rotulo"></span><div class="esq-pista"><span></span><span></span><span></span><span></span><span></span><span></span></div></div>
+  </div></div></div>
   <div id="conteudo-ficha" hidden></div>
 </main>
 
@@ -88,11 +117,12 @@
   </div>
 </footer>
 
-<!-- O hls.js NÃO entra aqui: player.js o carrega sob demanda, e só na ficha de
-     quem abriu com ?player=novo. A grade não paga 353 KB por ele. -->
+<!-- O PLAYER NÃO entra aqui (23/09): o player-core.js e o player.js são 77 KB
+     comprimidos que a chegada não usa, e baixavam antes do app.js, na frente
+     da capa do destaque — que é o LCP. Quem os pede é o app.js
+     (`carregarPlayer`): depois da capa do destaque, ou já no início quando
+     o link é de uma ficha. O hls.js, o player.js pede só na ficha. -->
 <script src="catalogo-core.js"></script>
-<script src="player-core.js"></script>
-<script src="player.js"></script>
 <script src="app.js"></script>
 </body>
 </html>

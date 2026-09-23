@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- O ÍCONE DE TELA INICIAL (E8 do briefing, D8 do PLANO-DESIGN): o favicon.svg
+     com o fundo ajustado ao quadro e o desenho a 80%, centrado em (16,16). No
+     favicon o desenho vai a 41% do lado a partir do centro; o Android recorta
+     o ícone em círculo e só garante os 40% do meio (a zona segura do
+     "maskable"). A 80%, ele fica em 33%. Os PNGs saem daqui:
+       magick -background none -density 4608 icone.svg -resize 512x512 -strip PNG24:icone-512.png
+       magick -background none -density 1728 icone.svg -resize 192x192 -strip PNG24:icone-192.png -->
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #309c47;
+      }
+
+      .cls-2 {
+        fill: #fff;
+      }
+
+      .cls-3 {
+        fill: #ffca05;
+      }
+    </style>
+  </defs>
+  <rect class="cls-1" width="32" height="32"/>
+  <g transform="translate(16 16) scale(0.8) translate(-16 -16)">
+    <circle class="cls-2" cx="12.95" cy="13.1" r="8.84"/>
+    <path class="cls-2" d="M18.53,24.26l-.42-.69c-.17-.28-.08-.65.2-.82l.35-.21c1.95-1.18,3.46-2.91,4.38-4.99l.16-.37c.13-.3.49-.44.79-.31l.74.33c.3.13.44.49.31.79l-.16.37c-1.08,2.46-2.87,4.5-5.18,5.9l-.35.21c-.28.17-.65.08-.82-.2Z"/>
+    <path class="cls-2" d="M20.62,27.7l-.42-.69c-.17-.28-.08-.65.2-.82l.35-.21c2.68-1.63,4.76-4.01,6.01-6.88l.16-.37c.13-.3.49-.44.79-.31l.74.32c.3.13.44.49.31.79l-.16.37c-1.41,3.26-3.77,5.95-6.81,7.8l-.35.21c-.28.17-.65.08-.82-.2Z"/>
+    <path class="cls-3" d="M17.92,11.92h-3.86v-3.86c0-.61-.5-1.11-1.11-1.11s-1.11.5-1.11,1.11v3.86h-3.86c-.61,0-1.11.5-1.11,1.11s.5,1.11,1.11,1.11h3.86v3.86c0,.61.5,1.11,1.11,1.11s1.11-.5,1.11-1.11v-3.86h3.86c.61,0,1.11-.5,1.11-1.11s-.5-1.11-1.11-1.11Z"/>
+  </g>
+</svg>

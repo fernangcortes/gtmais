@@ -120,6 +120,99 @@
     return typeof GTMPlayer !== 'undefined' && GTMPlayer.pedido();
   }
 
+  /* O PLAYER DESCE DEPOIS DA CHEGADA (o LCP da §7 do PLANO-DESIGN, 23/09).
+   * O `player-core.js` e o `player.js` eram <script> do index.html: 77 KB
+   * comprimidos baixando e rodando antes do `app.js`, disputando a banda com
+   * o catálogo e com a capa do destaque, numa tela que não usa player. Tirá-
+   * -los dali valeu −450 ms de LCP no Lighthouse (mediana de 5, servidor
+   * local com gzip: 2.618 → 2.165 ms); pô-los em `defer`, só −80.
+   *
+   * Agora quem os pede é este arquivo, em dois momentos: depois da capa
+   * principal da primeira tela (`depoisDaCapaPrincipal`) — quando alguém
+   * clica num cartão, eles quase sempre já estão aqui — ou JÁ NO INÍCIO, se o endereço aberto é de uma ficha, em paralelo
+   * com o catálogo.
+   *
+   * Os dois descem juntos e rodam NA ORDEM (`async = false` num script
+   * criado pelo JS): o `player.js` usa o `GTMP` do core.
+   *
+   * A promessa nunca rejeita: falha de rede resolve do mesmo jeito, e a ficha
+   * vê `GTMPlayer` indefinido — é a queda automática para o iframe, a mesma
+   * de quando o <script> do HTML não carregava. Quem falhou pode tentar de
+   * novo na próxima ficha. */
+  var ESPERA_PLAYER_MS = 8000;
+  var carregandoPlayer = null;
+
+  function carregarPlayer() {
+    if (typeof GTMPlayer !== 'undefined') return Promise.resolve();
+    if (carregandoPlayer) return carregandoPlayer;
+    carregandoPlayer = new Promise(function (resolve) {
+      var faltam = 2;
+      var fim = function (ok) {
+        if (!ok) { faltam = 0; carregandoPlayer = null; resolve(); return; }
+        if (--faltam === 0) resolve();
+      };
+      ['player-core.js', 'player.js'].forEach(function (src) {
+        var tag = document.createElement('script');
+        tag.src = src;
+        tag.async = false;
+        tag.addEventListener('load', function () { fim(true); });
+        tag.addEventListener('error', function () { fim(false); });
+        document.head.appendChild(tag);
+      });
+    });
+    return carregandoPlayer;
+  }
+
+  /* O player a tempo para UMA ficha: o carregamento, ou o prazo — o que vier
+   * primeiro. Vencido o prazo a ficha sai com o iframe, como sairia com o
+   * `player.js` fora do ar; o arquivo que chegar depois serve à próxima.
+   * Com `?player=embed` não há o que esperar: o iframe é o pedido. */
+  function playerATempo() {
+    if (typeof GTMPlayer !== 'undefined' ||
+        new URLSearchParams(window.location.search).get('player') === 'embed') {
+      return null;
+    }
+    return Promise.race([
+      carregarPlayer(),
+      new Promise(function (resolve) { setTimeout(resolve, ESPERA_PLAYER_MS); })
+    ]);
+  }
+
+  /* Depois da CAPA PRINCIPAL da tela — a do destaque na chegada, a do alto
+   * na página da série —, que é o LCP. O `load` da janela NÃO serve: ele sai
+   * antes de o app.js pôr a capa na página (medido no Lighthouse: `load` aos
+   * 73 ms, a capa pedida aos 138), e o player voltava a disputar a banda com
+   * ela — o ganho caiu de −450 para −150 ms. Sem capa na tela (a busca, as
+   * Séries), o prazo abaixo conta do desenho.
+   *
+   * E não no `load` da CAPA, mas UM SEGUNDO depois dele. Entre a capa
+   * descer e ser pintada (`decoding = async`) ainda passam quadros, e um
+   * pedido feito aí entra na conta do LCP do Lighthouse, que o simula como se
+   * saísse junto com o app.js — medido: no `load` da capa, 2.646 ms; no
+   * `requestIdleCallback` seguinte, 2.562, porque o ócio chega ANTES da
+   * pintura (pedido aos 148 ms, pintura aos 179). O segundo não custa nada a
+   * ninguém: o player só serve num clique, e o clique que vier antes espera
+   * por ele na ficha (`playerATempo`). */
+  var ESPERA_DEPOIS_DA_CAPA_MS = 1000;
+
+  function depoisDaCapaPrincipal(fn) {
+    var capa = el.grade.querySelector('.destaque-capa img');
+    var feito = false;
+    var depois = function () {
+      if (feito) return;
+      feito = true;
+      setTimeout(fn, ESPERA_DEPOIS_DA_CAPA_MS);
+    };
+    if (!capa || capa.complete) { depois(); return; }
+    capa.addEventListener('load', depois);
+    capa.addEventListener('error', depois);
+  }
+
+  /* A vez da ficha: cada renderFicha tira um número, e a que esperou o player
+   * só se desenha se ninguém tiver passado na frente — voltar, ou abrir outra
+   * ficha, enquanto o arquivo descia. */
+  var vezDaFicha = 0;
+
   /* O PEDIDO DE TOCAR (D6). O "Assistir" do destaque abre a ficha E dá o play
    * — a decisão D5 do PLANO-DESIGN: o toque em "Assistir" é o pedido, e
    * atendê-lo não é "tocar sozinho".
@@ -175,8 +268,95 @@
     while (no.firstChild) no.removeChild(no.firstChild);
   }
 
-  function aviso(texto, tipoErro) {
-    var d = criar('div', 'aviso' + (tipoErro ? ' aviso-erro' : ''), texto);
+  /* A faixa amarela de dentro da ficha — hoje só a pendência. Até a D7 ela
+   * tinha também uma versão vermelha, para os estados de erro; eles passaram
+   * todos para o `estadoVazio`, logo abaixo. */
+  function aviso(texto) {
+    return criar('div', 'aviso', texto);
+  }
+
+  /* ---------------------------------------------- os estados vazios (D7)
+   *
+   * O B8 do briefing: "cinco situações reais que hoje são só uma linha de
+   * texto cinza no meio da tela. Não precisam de ilustração — precisam de
+   * hierarquia, espaço e, onde couber, um ícone." É o que esta peça faz, e ela
+   * é UMA só para todos: a busca vazia, a ficha que não existe, a falha de
+   * rede e os três de texto fixo (catálogo vazio, série e lista que não
+   * existem mais). Até a D7 eram dois desenhos — a faixa `.aviso` vermelha e o
+   * `.vazio` cinza — escolhidos caso a caso.
+   *
+   * Ícone é <path> em currentColor, 24×24, traço de 1,6: sem fonte de ícone,
+   * sem CDN, como todo ícone do site. */
+  var ICONES_ESTADO = {
+    busca: 'M10.5 4 a6.5 6.5 0 1 0 0 13 a6.5 6.5 0 1 0 0 -13 Z M15.2 15.2 L20 20',
+    /* Uma tela com o play, riscada. */
+    ausente: 'M3.5 5.5 H20.5 V18.5 H3.5 Z M10 9 L15 12 L10 15 Z M4 3 L20 21',
+    /* Uma nuvem riscada: a rede. */
+    rede: 'M7.5 18 H17 a3.5 3.5 0 0 0 .6 -6.95 A5.5 5.5 0 0 0 7 10.2 A3.9 3.9 0 0 0 7.5 18 Z M4 3 L20 21',
+    /* Uma pilha de quadros: a lista, a série. */
+    lista: 'M4 7 H20 V19 H4 Z M6.5 4 H17.5',
+    /* Um quadro com montanha e sol: a capa que falta. */
+    imagem: 'M4 5 H20 V19 H4 Z M4 16 L9 11 L13 15 L15.5 12.5 L20 17 M15 8.5 a1.5 1.5 0 1 0 .01 0'
+  };
+
+  function iconeEstado(nome, classe) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 24 24');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.setAttribute('focusable', 'false');
+    svg.setAttribute('class', classe);
+    var p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', ICONES_ESTADO[nome]);
+    p.setAttribute('fill', 'none');
+    p.setAttribute('stroke', 'currentColor');
+    p.setAttribute('stroke-width', '1.6');
+    p.setAttribute('stroke-linecap', 'round');
+    p.setAttribute('stroke-linejoin', 'round');
+    svg.appendChild(p);
+    return svg;
+  }
+
+  /* `o` = { icone, titulo, texto, termo, detalhe, acoes: [{ rotulo, href |
+   * aoClicar, primario }], erro }. Só `titulo` é obrigatório.
+   *
+   * O TERMO e o DETALHE vêm em linha própria, fora da frase editável (ver
+   * `TEXTOS_PADRAO`). A falha de rede é `role="alert"`: ela substitui a página
+   * inteira, e quem ouve a tela precisa saber na hora; os outros são conteúdo
+   * comum, lidos na ordem. */
+  function estadoVazio(o) {
+    var caixa = criar('div', 'vazio' + (o.erro ? ' vazio-erro' : ''));
+    if (o.erro) caixa.setAttribute('role', 'alert');
+    if (o.icone) caixa.appendChild(iconeEstado(o.icone, 'vazio-icone'));
+    caixa.appendChild(criar('h2', 'vazio-titulo', o.titulo));
+    if (o.termo) caixa.appendChild(criar('p', 'vazio-termo', '“' + o.termo + '”'));
+    if (o.texto) caixa.appendChild(criar('p', 'vazio-texto', o.texto));
+    if (o.acoes && o.acoes.length) {
+      var botoes = criar('div', 'vazio-acoes');
+      o.acoes.forEach(function (a) {
+        var b;
+        if (a.href) {
+          b = criar('a', 'botao' + (a.primario ? ' botao-primario' : ''), a.rotulo);
+          b.href = a.href;
+        } else {
+          b = criar('button', 'botao' + (a.primario ? ' botao-primario' : ''), a.rotulo);
+          b.type = 'button';
+          b.addEventListener('click', a.aoClicar);
+        }
+        botoes.appendChild(b);
+      });
+      caixa.appendChild(botoes);
+    }
+    if (o.detalhe) caixa.appendChild(criar('p', 'vazio-detalhe', o.detalhe));
+    return caixa;
+  }
+
+  /* O "sem capa" do B8: a caixa 16:9 continua, com um ícone de imagem e a
+   * frase embaixo dele. Uma função só para os sete lugares que desenham capa —
+   * eram sete cópias da mesma linha. */
+  function capaVazia() {
+    var d = criar('div', 'card-capa-vazia');
+    d.appendChild(iconeEstado('imagem', 'card-capa-vazia-icone'));
+    d.appendChild(criar('span', null, frase('semCapa')));
     return d;
   }
 
@@ -604,11 +784,11 @@
       img.width = 640;
       img.height = 360;
       img.addEventListener('error', function () {
-        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        capa.replaceChild(capaVazia(), img);
       });
       capa.appendChild(img);
     } else {
-      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      capa.appendChild(capaVazia());
     }
     li.appendChild(capa);
 
@@ -811,11 +991,11 @@
       img.decoding = 'async';
       /* Capa ausente na pull zone não pode deixar um ícone quebrado na grade. */
       img.addEventListener('error', function () {
-        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        capa.replaceChild(capaVazia(), img);
       });
       capa.appendChild(img);
     } else {
-      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      capa.appendChild(capaVazia());
     }
 
     var dur = GTM.formatarDuracao(item);
@@ -888,11 +1068,11 @@
        * prateleiras, que são `loading="lazy"`. */
       img.setAttribute('fetchpriority', 'high');
       img.addEventListener('error', function () {
-        molduraCapa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        molduraCapa.replaceChild(capaVazia(), img);
       });
       molduraCapa.appendChild(img);
     } else {
-      molduraCapa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      molduraCapa.appendChild(capaVazia());
     }
     /* NENHUMA prévia aqui, e é de propósito: um preview.webp é 1,13 MB na
      * mediana, então o destaque sozinho custaria mais do que as 66 capas
@@ -961,6 +1141,62 @@
 
   /* ------------------------------------------------------------ prateleiras */
 
+  /* AS CAPAS DA PRATELEIRA DESCEM PERTO DA TELA, e quem decide a distância é o
+   * site, não a rede (22/09). O `loading="lazy"` antecipa pela distância que o
+   * NAVEGADOR escolhe, e ela cresce quando a rede piora: medido com o catálogo
+   * de produção num Chrome sem janela em 412×823, a chegada pedia 34 capas numa
+   * rede rápida e 61 numa lenta — de 87 lugares, com umas oito à vista. É na
+   * rede lenta que a tela inicial foi relatada lenta, em 08/09, e era nela que
+   * o navegador pedia mais.
+   *
+   * Um observador só, com a TELA como raiz. A pista de cada prateleira corta o
+   * que passa da borda dela, então entra só o cartão à vista — e, para quem vai
+   * arrastar a linha, os VIZINHOS_ADIANTE seguintes, pedidos junto. Cada cartão
+   * que aparece pede os seus, e a janela anda com o dedo. Na vertical, meia
+   * tela abaixo da dobra.
+   *
+   * Sem IntersectionObserver a capa desce na hora, com o `lazy` de antes. */
+  var VIZINHOS_ADIANTE = 2;
+  var capasPendentes = null;
+
+  function pedirCapa(img) {
+    var url = img && img.getAttribute('data-capa');
+    if (!url) return;
+    img.removeAttribute('data-capa');
+    img.src = url;
+  }
+
+  /* O cartão pedido ADIANTADO continua observado: é quando ele entra na tela
+   * que a janela anda e os vizinhos DELE são pedidos. Só sai da observação o
+   * cartão que já apareceu. (A primeira versão soltava o vizinho junto, e o
+   * arrasto curto parava de trazer capa depois do primeiro passo.) */
+  function capaPerto(img, url) {
+    if (typeof IntersectionObserver === 'undefined') { img.src = url; return; }
+    if (!capasPendentes) {
+      capasPendentes = new IntersectionObserver(function (entradas) {
+        entradas.forEach(function (e) {
+          if (!e.isIntersecting) return;
+          pedirCapa(e.target);
+          var li = e.target.closest('li');
+          for (var i = 0; li && i < VIZINHOS_ADIANTE; i++) {
+            li = li.nextElementSibling;
+            if (li) pedirCapa(li.querySelector('img'));
+          }
+          capasPendentes.unobserve(e.target);
+        });
+      }, { rootMargin: '0px 0px 50% 0px' });
+    }
+    img.setAttribute('data-capa', url);
+    capasPendentes.observe(img);
+  }
+
+  /* Trocar de tela solta as capas da tela de antes: o observador guarda cada
+   * imagem que observa, e elas sairiam do documento sem sair da memória. */
+  function soltarCapas() {
+    if (capasPendentes) capasPendentes.disconnect();
+    capasPendentes = null;
+  }
+
   /* O cartão da PRATELEIRA. O da grade (`cartao`) continua como está, e os dois
    * existem de propósito: numa linha que rola de lado o cartão é estreito e a
    * capa é quem fala, então a sinopse sai. Na grade da busca ela fica — é lá
@@ -975,10 +1211,10 @@
     var url = GTM.urlCapa(item, estado.config);
     if (url) {
       var img = criar('img');
-      img.src = url;
       img.alt = '';
       img.loading = 'lazy';
       img.decoding = 'async';
+      capaPerto(img, url);
       /* A capa tem 640×360 — 16:9. Declarar o tamanho no <img> reserva a caixa
        * mesmo antes de a folha de estilo aplicar o `aspect-ratio`, e é a mesma
        * proporção dos dois lados.
@@ -990,11 +1226,11 @@
       img.width = 640;
       img.height = 360;
       img.addEventListener('error', function () {
-        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        capa.replaceChild(capaVazia(), img);
       });
       capa.appendChild(img);
     } else {
-      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      capa.appendChild(capaVazia());
     }
 
     var dur = GTM.formatarDuracao(item);
@@ -1174,11 +1410,11 @@
   function renderChegada() {
     var ps = GTM.prateleirasVisiveis(estado.itens, estado.site);
     if (!ps.length) {
-      var v = criar('div', 'vazio');
-      v.appendChild(criar('h2', null, 'Nada para mostrar ainda'));
-      v.appendChild(criar('p', null,
-        'Os títulos aparecem aqui assim que forem marcados como publicados na área de administração.'));
-      el.grade.appendChild(v);
+      el.grade.appendChild(estadoVazio({
+        icone: 'lista',
+        titulo: 'Nada para mostrar ainda',
+        texto: 'Os vídeos aparecem aqui assim que forem publicados pela equipe.'
+      }));
       return;
     }
     var emDestaque = GTM.destaque(estado.itens, estado.site);
@@ -1225,11 +1461,11 @@
       img.width = 640;
       img.height = 360;
       img.addEventListener('error', function () {
-        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        capa.replaceChild(capaVazia(), img);
       });
       capa.appendChild(img);
     } else {
-      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      capa.appendChild(capaVazia());
     }
     a.appendChild(capa);
 
@@ -1316,11 +1552,11 @@
       img.width = 640;
       img.height = 360;
       img.addEventListener('error', function () {
-        capa.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        capa.replaceChild(capaVazia(), img);
       });
       capa.appendChild(img);
     } else {
-      capa.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      capa.appendChild(capaVazia());
     }
     var dur = GTM.formatarDuracao(item);
     if (dur) capa.appendChild(criar('span', 'card-duracao', dur));
@@ -1422,11 +1658,11 @@
       img.decoding = 'async';
       img.setAttribute('fetchpriority', 'high');
       img.addEventListener('error', function () {
-        moldura.replaceChild(criar('div', 'card-capa-vazia', frase('semCapa')), img);
+        moldura.replaceChild(capaVazia(), img);
       });
       moldura.appendChild(img);
     } else {
-      moldura.appendChild(criar('div', 'card-capa-vazia', frase('semCapa')));
+      moldura.appendChild(capaVazia());
     }
     caixa.appendChild(moldura);
     return caixa;
@@ -1441,10 +1677,12 @@
   function renderSerie(nome) {
     var s = GTM.paginaDaSerie(estado.itens, nome, estado.site);
     if (!s) {
-      el.grade.appendChild(aviso('Essa série não existe mais.', true));
-      var todas = criar('a', 'botao', 'Ver todas as séries');
-      todas.href = '#/series';
-      el.grade.appendChild(todas);
+      el.grade.appendChild(estadoVazio({
+        icone: 'lista',
+        titulo: 'Esta série não existe mais',
+        texto: 'Ela pode ter mudado de nome. As séries de hoje estão todas na página Séries.',
+        acoes: [{ rotulo: 'Ver todas as séries', href: '#/series', primario: true }]
+      }));
       return;
     }
     document.title = s.nome + ' — ' + TITULO_BASE;
@@ -1453,6 +1691,7 @@
   }
 
   function renderGrade() {
+    soltarCapas();
     limpar(el.grade);
     limpar(el.avisos);
     /* Esvaziar a ficha é o que PARA o vídeo. Apenas esconder o contêiner com
@@ -1471,11 +1710,11 @@
 
     var publicados = GTM.publicaveis(estado.itens);
     if (!publicados.length) {
-      var v = criar('div', 'vazio');
-      v.appendChild(criar('h2', null, 'Nenhum título publicado ainda'));
-      v.appendChild(criar('p', null,
-        'Os títulos aparecem aqui assim que forem marcados como publicados na área de administração.'));
-      el.grade.appendChild(v);
+      el.grade.appendChild(estadoVazio({
+        icone: 'lista',
+        titulo: 'Nada para mostrar ainda',
+        texto: 'Os vídeos aparecem aqui assim que forem publicados pela equipe.'
+      }));
       return;
     }
 
@@ -1514,10 +1753,12 @@
      * o catálogo inteiro. */
     var prat = estado.prateleira ? GTM.prateleiraPorId(estado.itens, estado.prateleira, estado.site) : null;
     if (estado.prateleira && !prat) {
-      el.grade.appendChild(aviso('Essa lista não existe mais.', true));
-      var volta = criar('a', 'botao', 'Voltar ao início');
-      volta.href = '#/';
-      el.grade.appendChild(volta);
+      el.grade.appendChild(estadoVazio({
+        icone: 'lista',
+        titulo: 'Esta lista não existe mais',
+        texto: 'As listas do início mudam quando a equipe arruma o catálogo.',
+        acoes: [{ rotulo: 'Voltar ao início', href: '#/', primario: true }]
+      }));
       return;
     }
     if (prat) {
@@ -1546,14 +1787,29 @@
     var contagem = lista.length + (lista.length === 1 ? ' título' : ' títulos') +
       (lista.length !== publicados.length ? ' de ' + publicados.length : '') +
       (trechos.length ? ' · ' + trechos.length + (trechos.length === 1 ? ' trecho' : ' trechos') : '');
-    el.grade.appendChild(criar('p', 'contagem', contagem));
+    /* O vazio do B8 só quando nem título nem trecho responde — e aí SEM a
+     * contagem: "0 títulos de 69" logo acima de "Nenhum vídeo encontrado" diz
+     * a mesma coisa duas vezes, a primeira em língua de programador (D7). */
+    var vazia = !lista.length && !trechos.length;
+    if (!vazia) el.grade.appendChild(criar('p', 'contagem', contagem));
 
-    /* O vazio do B8 só quando nem título nem trecho responde. */
-    if (!lista.length && !trechos.length) {
-      var nada = criar('div', 'vazio');
-      nada.appendChild(criar('h2', null, frase('buscaVazia')));
-      nada.appendChild(criar('p', null, frase('buscaVaziaAjuda')));
-      el.grade.appendChild(nada);
+    if (vazia) {
+      /* Duas saídas: apagar a busca e voltar às prateleiras, ou olhar as
+       * séries — quem não achou pelo nome muitas vezes acha pelo lugar. O
+       * termo entra em linha própria, fora da frase editável. */
+      el.grade.appendChild(estadoVazio({
+        icone: 'busca',
+        titulo: frase('buscaVazia'),
+        termo: estado.termo.trim(),
+        texto: frase('buscaVaziaAjuda'),
+        acoes: [
+          { rotulo: 'Limpar a busca', primario: true, aoClicar: function () {
+            fecharBusca();
+            el.busca.focus();
+          } },
+          { rotulo: 'Ver as séries', href: '#/series' }
+        ]
+      }));
       if (estado.termo) anunciar(frase('buscaVazia'));
       return;
     }
@@ -1820,7 +2076,7 @@
    * `momento` é o `?t=` do endereço (PLANO-BUSCA, fase 2): o segundo em que o
    * vídeo abre. O clique num trecho traz os dois — o momento na URL e o
    * pedido de tocar fora dela —, e o link colado traz só o momento. */
-  function renderFicha(id, tocar, momento) {
+  function renderFicha(id, tocar, momento, jaEsperou) {
     /* Trocar de episódio — pela lista da série embaixo do vídeo, ou pelo
      * Shift+N — vem de uma ficha direto para outra, sem passar pela grade: sem
      * isto, o hls.js do título anterior continuaria puxando segmentos enquanto
@@ -1832,14 +2088,41 @@
     el.ficha.hidden = false;
     marcarNav('');
 
+    /* O player ainda descendo (ver `carregarPlayer`): a ficha espera por ele,
+     * com prazo, e se desenha depois — com o pedido de tocar e o momento
+     * intactos. Desenhar já com o iframe trocaria o player de quem abriu um
+     * link direto de ficha. A espera fica vazia, e é curta: numa ficha aberta
+     * pelo link o arquivo desce junto com o catálogo, e na chegada ele desce
+     * logo depois da capa do destaque.
+     *
+     * Na volta, duas conferências: ninguém abriu outra ficha no meio
+     * (`vezDaFicha`), e o endereço ainda é o desta ficha — voltar à chegada
+     * não passa por aqui, e sem isso a ficha atrasada cairia por cima dela.
+     * E `jaEsperou`: vencido o prazo, a ficha sai com o que houver, em vez de
+     * esperar outro prazo inteiro. */
+    var vez = ++vezDaFicha;
+    var espera = jaEsperou ? null : playerATempo();
+    if (espera) {
+      espera.then(function () {
+        var rota = GTM.rotaDaFicha(window.location.hash || '');
+        if (vez === vezDaFicha && rota && rota.id === id) renderFicha(id, tocar, momento, true);
+      });
+      return;
+    }
+
     /* Na mesa a ficha abre também título fora do ar: é nela que se revisa a
      * sinopse de quem ainda não foi publicado. */
     var item = GTM.porId(mesa.ligada ? estado.itens : GTM.publicaveis(estado.itens), id);
     if (!item) {
-      el.ficha.appendChild(aviso(frase('fichaAusente'), true));
-      var volta = criar('a', 'botao', 'Voltar ao catálogo');
-      volta.href = '#/';
-      el.ficha.appendChild(volta);
+      el.ficha.appendChild(estadoVazio({
+        icone: 'ausente',
+        titulo: frase('fichaAusente'),
+        texto: frase('fichaAusenteAjuda'),
+        acoes: [
+          { rotulo: 'Voltar ao início', href: '#/', primario: true },
+          { rotulo: 'Buscar no catálogo', aoClicar: abrirBusca }
+        ]
+      }));
       document.title = 'Não encontrado — ' + TITULO_BASE;
       return;
     }
@@ -2215,19 +2498,41 @@
 
     window.addEventListener('hashchange', rotear);
 
+    /* O esqueleto do index.html tem a forma da CHEGADA. Numa ficha, numa série
+     * ou numa busca ele desenharia uma tela que não vem — melhor o vazio de
+     * antes do que uma promessa errada. */
+    var hash = window.location.hash;
+    if (hash && hash !== '#/' && hash !== '#') limpar(el.grade);
+
+    /* O player (ver `carregarPlayer`): o link de uma ficha o pede JÁ, junto
+     * com o catálogo. O resto, depois do primeiro desenho (abaixo). */
+    var comecaNaFicha = !!GTM.rotaDaFicha(hash || '');
+    if (comecaNaFicha) carregarPlayer();
+
     carregar().then(function () {
       rotear();
+      if (!comecaNaFicha) depoisDaCapaPrincipal(carregarPlayer);
     }).catch(function (erro) {
       estado.carregado = false;
       limpar(el.grade);
       el.ficha.hidden = true;
       el.grade.hidden = false;
-      var v = criar('div', 'vazio');
-      v.appendChild(criar('h2', null, frase('erroCatalogo')));
-      /* A mensagem técnica vai no FIM, e não no meio da frase: o texto é
-       * editável na mesa, e um buraco no meio some na primeira reescrita. */
-      v.appendChild(criar('p', null, frase('erroCatalogoAjuda') + ' (' + erro.message + ')'));
-      el.grade.appendChild(v);
+      /* A mensagem técnica vai numa linha à parte, menor, e não no meio da
+       * frase: o texto é editável na mesa, e um buraco no meio some na
+       * primeira reescrita. Ela continua na tela porque é o que a equipe
+       * técnica vai pedir a quem avisar.
+       *
+       * "Tentar de novo" RECARREGA a página, e não só refaz o pedido: se a
+       * falha foi um deploy no meio do caminho, o app.js desta página pode
+       * ser o velho. */
+      el.grade.appendChild(estadoVazio({
+        icone: 'rede',
+        erro: true,
+        titulo: frase('erroCatalogo'),
+        texto: frase('erroCatalogoAjuda'),
+        acoes: [{ rotulo: 'Tentar de novo', primario: true, aoClicar: function () { window.location.reload(); } }],
+        detalhe: 'Detalhe técnico: ' + erro.message
+      }));
     });
   }
 

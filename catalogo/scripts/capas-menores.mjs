@@ -36,17 +36,28 @@
  * 400 px o poster de 881 subiria 2,2×, e ele é a primeira coisa que se vê
  * antes do play. A 640 a subida é 1,4×.
  *
- * O DESFAZER: o Bunny guarda a capa antiga no nome com hash que ela já tinha e
- * grava a nova com um hash NOVO — a mesma armadilha da §6 vista pelo lado bom.
- * Voltar atrás é devolver o `capa_arquivo` anterior ao KV; este script imprime
- * os dois nomes de cada título, e é para isso que eles servem.
+ * O BUNNY APAGA A CAPA ANTERIOR, e isto mudou três coisas em 22/09. Este
+ * comentário dizia que ele guardava a antiga no nome com hash que ela já
+ * tinha, e que desfazer era devolver o nome anterior ao KV. Em 08/09 guardava
+ * — o piloto conferiu —, mas em 22/09 aquela mesma capa dava 404 em todos os
+ * vídeos. Então:
+ *
+ *   - o catálogo é gravado DEPOIS DE CADA ENVIO, e não uma vez no fim. Entre
+ *     o envio e a gravação, a grade aponta para um arquivo que não existe
+ *     mais: com o lote inteiro no meio, eram minutos de cartões sem capa;
+ *   - o ORIGINAL fica guardado fora do Bunny, em `--guardar` (padrão
+ *     `~/.gtm-capas-originais`), antes de a versão menor subir. Desfazer é
+ *     enviar o original de volta — pela mesa, "Enviar JPG";
+ *   - capa que o Bunny já trocou NÃO é reduzida: o arquivo baixado seria o do
+ *     catálogo, e a versão menor dele voltaria ao ar POR CIMA da escolha nova.
+ *     O script para nesse título e manda rodar o `sincronizar-capas.mjs`.
  *
  * O `preview.webp` NÃO é tocado: ele é pedido só no `mouseenter`, nunca na
  * carga da tela, e é outro problema.
  */
 import { spawn } from 'node:child_process';
-import { readFile, writeFile, unlink, mkdtemp, rmdir } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile, unlink, mkdtemp, mkdir, rmdir } from 'node:fs/promises';
+import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { criarCliente } from './lib/bunny.mjs';
 import { argumentos, lerCatalogo, gravarCatalogo, CATALOGO_PADRAO, agora, erroFatal } from './lib/catalogo.mjs';
@@ -58,6 +69,7 @@ const caminhoCatalogo = typeof op.catalogo === 'string' ? op.catalogo : CATALOGO
 const LARGURA = Number(op.largura) > 0 ? Number(op.largura) : 640;
 const QUALIDADE = Number(op.qualidade) > 0 ? Number(op.qualidade) : 4;
 const ensaio = Boolean(op.simular || op.medir);
+const guardarEm = typeof op.guardar === 'string' ? op.guardar : join(homedir(), '.gtm-capas-originais');
 
 /* Largura e altura lidas do próprio JPEG (marcador SOFn). Sem dependência: o
  * projeto tem uma dependência de terceiros só, e ela é a hls.js. */
@@ -144,11 +156,41 @@ try {
 
   const pasta = await mkdtemp(join(tmpdir(), 'gtm-capas-'));
   const feitos = [];
-  let somaAntes = 0, somaDepois = 0, erros = 0, jaPequenas = 0;
-  const bunny = ensaio ? null : criarCliente();
+  let somaAntes = 0, somaDepois = 0, erros = 0, jaPequenas = 0, jaTrocadas = 0;
+  /* O Bunny é consultado também no ensaio: é a consulta que acha a capa que ele
+   * já trocou, e o ensaio tem de mostrá-la antes de a troca de verdade tropeçar
+   * nela. */
+  const bunny = criarCliente();
+  if (!ensaio) await mkdir(guardarEm, { recursive: true });
+
+  /* UMA GRAVAÇÃO POR CAPA, cada uma com a `rev` que a anterior devolveu. O KV
+   * inteiro volta como veio, com dois campos trocados no título tocado. Nada de
+   * `semear.mjs --sobrescrever`: ele reverteria os títulos e séries editados
+   * pela mesa. O PUT recusa com 409 se alguém tiver gravado no meio do caminho. */
+  async function gravarKV() {
+    const escrita = await fetch(site + '/api/catalogo', {
+      method: 'PUT',
+      headers: { ...auth, 'content-type': 'application/json' },
+      body: JSON.stringify(kv)
+    });
+    const resposta = await escrita.json().catch(() => ({}));
+    if (!escrita.ok) {
+      throw new Error('gravação recusada (' + escrita.status + '): ' + (resposta.erro || JSON.stringify(resposta)));
+    }
+    kv.rev = resposta.rev;
+    return resposta.rev;
+  }
 
   try {
     for (const item of alvos) {
+      const noBunny = (await bunny.consultar(item.fonte.videoId)).thumbnailFileName || 'thumbnail.jpg';
+      if (noBunny !== (item.capa_arquivo || 'thumbnail.jpg')) {
+        jaTrocadas++;
+        console.log(agora() + '  ≠  ' + item.titulo + '  —  o Bunny já tem outra capa (' + noBunny +
+          '): rode o sincronizar-capas.mjs antes');
+        continue;
+      }
+
       const antes = await baixar(urlCapa(item, config));
       const d = dimensoes(antes);
       somaAntes += antes.length;
@@ -173,20 +215,38 @@ try {
         console.log('        ' + d.w + '×' + d.h + ' ' + kb(antes.length) +
           '  ->  ' + dd.w + '×' + dd.h + ' ' + kb(depois.length));
       } else {
+        /* O original sai daqui ANTES do envio: depois dele, o Bunny apaga o
+         * arquivo, e este é o único caminho de volta. */
+        const de = item.capa_arquivo || 'thumbnail.jpg';
+        const original = join(guardarEm, item.id + '--' + de);
+        await writeFile(original, antes);
+
+        let enviada = false;
         try {
           await bunny.enviarCapa(item.fonte.videoId, novo);
-          const v = await bunny.consultar(item.fonte.videoId);
-          const nome = v.thumbnailFileName || 'thumbnail.jpg';
-          feitos.push({ item, de: item.capa_arquivo || '(sem registro)', para: nome });
+          enviada = true;
+          const nome = (await bunny.consultar(item.fonte.videoId)).thumbnailFileName || 'thumbnail.jpg';
           item.capa_arquivo = nome;
           item.capa_versao = String(Date.now());
-          console.log(agora() + '  ✔  ' + item.titulo);
+          const rev = await gravarKV();
+          feitos.push({ item, de, para: nome });
+          console.log(agora() + '  ✔  ' + item.titulo + '   rev ' + rev);
           console.log('        ' + d.w + '×' + d.h + ' ' + kb(antes.length) +
-            '  ->  ' + dd.w + '×' + dd.h + ' ' + kb(depois.length) + '   ' + nome);
+            '  ->  ' + dd.w + '×' + dd.h + ' ' + kb(depois.length) + '   ' + de + ' -> ' + nome);
         } catch (e) {
           erros++;
           somaDepois += antes.length - depois.length;   /* não mudou: desfaz a conta */
           console.error(agora() + '  ✖  ' + item.titulo + ': ' + e.message);
+          if (enviada) {
+            /* Entre o envio e a gravação a capa do catálogo deixou de existir:
+             * o cartão está SEM CAPA no site agora. Parar é o certo — seguir
+             * multiplicaria o estrago —, e o conserto é uma linha. */
+            console.error('\n⚠ A CAPA NOVA ESTÁ NO BUNNY, E O KV NÃO FOI GRAVADO.');
+            console.error('  O Bunny apaga a capa anterior: este título está sem capa no site agora.');
+            console.error('  Conserte com:   node scripts/sincronizar-capas.mjs --item ' + item.id);
+            console.error('  O original ficou em ' + original);
+            throw e;
+          }
         }
       }
 
@@ -201,6 +261,7 @@ try {
     '   ·   poupa ' + mb(somaAntes - somaDepois) +
     ' (' + (100 - somaDepois / somaAntes * 100).toFixed(0) + '%)');
   if (jaPequenas) console.log('já estavam no tamanho: ' + jaPequenas);
+  if (jaTrocadas) console.log('o Bunny já tinha outra capa, e ficaram de fora: ' + jaTrocadas);
   if (erros) console.log('erros: ' + erros);
 
   if (ensaio) {
@@ -209,23 +270,8 @@ try {
   }
   if (!feitos.length) { console.log('\nnada mudou.'); process.exit(0); }
 
-  /* O KV inteiro volta como veio, com dois campos trocados nos títulos
-   * tocados. Nada de `semear.mjs --sobrescrever`: ele reverteria os títulos e
-   * séries editados pela tela de admin. O `rev` é o do GET, e o PUT recusa se
-   * alguém tiver gravado no meio do caminho. */
-  const escrita = await fetch(site + '/api/catalogo', {
-    method: 'PUT',
-    headers: { ...auth, 'content-type': 'application/json' },
-    body: JSON.stringify(kv)
-  });
-  const resposta = await escrita.json().catch(() => ({}));
-  if (!escrita.ok) {
-    console.error('\n⚠ AS CAPAS NOVAS ESTÃO NO BUNNY, MAS O KV NÃO FOI GRAVADO.');
-    console.error('  A grade continua servindo as antigas, que seguem no ar — nada quebrou.');
-    console.error('  Os nomes novos estão listados acima; rode de novo para regravar.');
-    throw new Error('gravação recusada (' + escrita.status + '): ' + (resposta.erro || JSON.stringify(resposta)));
-  }
-  console.log('\n✔ KV gravado  ·  rev ' + resposta.rev + '  ·  ' + feitos.length + ' capa(s) trocada(s)');
+  console.log('\n✔ KV gravado a cada capa  ·  rev ' + kv.rev + '  ·  ' + feitos.length +
+    ' capa(s) trocada(s)  ·  originais em ' + guardarEm);
 
   /* O seed local leva os mesmos dois campos. Ele não serve a grade, mas
    * `acrescentar-ao-kv.mjs` lê dele — e um `capa_arquivo` velho ali é um nome
