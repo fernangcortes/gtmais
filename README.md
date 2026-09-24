@@ -61,7 +61,7 @@ aberta e depender de alguém lembrar de protegê-la.
 
 ## Rodar os testes
 
-501 testes, sem rede e sem credenciais — cobrem as regras do produto, não a infraestrutura. A maior
+504 testes, sem rede e sem credenciais — cobrem as regras do produto, não a infraestrutura. A maior
 parte deles chegou com o player próprio, e boa parte prova SEQUÊNCIAS de gesto — dois dedos que
 abrem, um toque duplo, um arrasto que é cancelado no meio — sem navegador e sem dedo, porque a
 decisão de cada gesto mora numa camada sem DOM. A busca segue a mesma regra: a relevância, o
