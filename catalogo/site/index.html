@@ -36,9 +36,50 @@
      mundo. -->
 <link rel="preconnect" href="https://vz-b62046eb-e25.b-cdn.net">
 <link rel="preload" href="/api/catalogo" as="fetch" crossorigin>
+<!-- A ABERTURA (§15.3 do PLANO-DESIGN): a marca que acende, uma vez por
+     sessão, só na chegada. Quem decide é ESTE script, e ele mora aqui, antes
+     da folha de estilo, porque a camada tem de cobrir o PRIMEIRO quadro — se
+     a decisão esperasse o app.js, o esqueleto piscaria antes dela.
+     A regra inteira:
+       - sem sessionStorage (o acesso que lança), a abertura NÃO roda;
+       - só na chegada: link de ficha, de série ou de busca não passa por ela;
+       - nunca dentro da mesa, nunca com movimento reduzido;
+       - no APP INSTALADO (D8) a abertura roda SEM A MARCA (`sem-marca`): só
+         o destaque entrando. Lá o sistema já mostra o ícone ao abrir, e a
+         marca logo depois parecia uma segunda abertura piscando (visto no
+         Android em 23/09). No navegador do celular não há ícone, e a marca
+         fica. O sinal é o `standalone` do manifest, e o `navigator.standalone`
+         do iPhone.
+     A chave é gravada ao COMEÇAR: recarregar no meio não repete. Quem tira a
+     camada é o app.js (`soltarAbertura`), e a folha de estilo a tira sozinha
+     aos 3 s se o app.js não vier. -->
+<script>
+try {
+  if (!sessionStorage.getItem('gtm-abertura') &&
+      /^(#\/?)?$/.test(location.hash) &&
+      !/[?&]mesa=1(&|$)/.test(location.search) &&
+      !(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches)) {
+    sessionStorage.setItem('gtm-abertura', '1');
+    document.documentElement.className +=
+      (window.navigator && navigator.standalone) ||
+      (window.matchMedia && matchMedia('(display-mode: standalone)').matches)
+        ? ' abrindo sem-marca' : ' abrindo';
+  }
+} catch (e) {}
+</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
+
+<!-- A CAMADA DA ABERTURA: escura, com a marca, POR CIMA da página — que é
+     desenhada inteira por baixo dela. É isso que protege o LCP: o Chrome
+     conta a capa do destaque pintada debaixo de uma camada, e não conta a
+     que está com `opacity: 0` (medido em 23/09, dez rodadas do Lighthouse
+     com e sem a camada: 1.955 e 1.892 ms de mediana, a capa pintada aos
+     ~170 ms nas duas). Sem a classe `abrindo` ela nem existe na tela. -->
+<div class="abertura" id="abertura" aria-hidden="true">
+  <img class="abertura-marca" src="logo-fundo-escuro.svg" width="117" height="48" alt="">
+</div>
 
 <!-- A SENTINELA do cabeçalho (D5): 1 px no alto do documento. Enquanto ela está
      na tela, a página está no alto e o cabeçalho fica sem fundo; quando ela

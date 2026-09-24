@@ -208,6 +208,87 @@
     capa.addEventListener('error', depois);
   }
 
+  /* A ABERTURA (§15.3 do PLANO-DESIGN). O script do <head> do index.html
+   * decide se ela roda e põe `abrindo` no <html>; daqui em diante é este
+   * arquivo quem a TIRA — e a folha de estilo a tira sozinha aos 3 s se ele
+   * nunca chegar.
+   *
+   * A camada sai quando a capa do destaque DESCEU, e nunca antes de a marca
+   * acender (o mínimo, contado do início da navegação: é desde o primeiro
+   * quadro que ela está na tela). Aí o destaque entra como no cinema. Tudo o
+   * que foge do caminho feliz solta a camada SEM o cinema: o catálogo que
+   * falha, a chegada sem destaque, o teto, um clique ou uma tecla — quem tem
+   * pressa não espera a marca —, e uma troca de endereço no meio.
+   *
+   * NADA AQUI mexe na opacidade da capa: ela é o LCP, e a regra está no
+   * style.css, com teste. */
+  /* 1,4 s: os .8 da marca entrando e .6 dela parada. Eram 700 ms no
+   * primeiro deploy, e a marca só piscava (pedido de 23/09). */
+  var ABERTURA_MINIMO_MS = 1400;
+  var ABERTURA_TETO_MS = 3000;
+  var CINEMA_MS = 1800;
+  /* A marca sai primeiro e o fundo espera por ela: os .3 s do style.css. */
+  var ESPERA_DO_FUNDO_MS = 300;
+  var abertura = { no: null, ligada: false, solta: false, semMarca: false };
+
+  function ligarAbertura() {
+    var raiz = document.documentElement.classList;
+    abertura.no = document.getElementById('abertura');
+    abertura.ligada = !!abertura.no && raiz.contains('abrindo');
+    abertura.semMarca = raiz.contains('sem-marca');
+    if (!abertura.ligada) return;
+    var semCinema = function () { soltarAbertura(false); };
+    abertura.no.addEventListener('click', semCinema);
+    document.addEventListener('keydown', semCinema);
+    window.addEventListener('hashchange', semCinema);
+    setTimeout(semCinema, Math.max(0, ABERTURA_TETO_MS - agora()));
+  }
+
+  function agora() {
+    return window.performance && performance.now ? performance.now() : 0;
+  }
+
+  function soltarAbertura(comCinema) {
+    if (!abertura.ligada || abertura.solta) return;
+    abertura.solta = true;
+    var cinema = function () {
+      el.grade.classList.add('cinema');
+      setTimeout(function () { el.grade.classList.remove('cinema'); }, CINEMA_MS);
+    };
+    /* No app instalado não há camada: o cinema é a abertura inteira. */
+    if (abertura.semMarca) {
+      if (comCinema) cinema();
+      document.documentElement.classList.remove('abrindo');
+      return;
+    }
+    abertura.no.classList.add('abertura-saindo');
+    /* O cinema começa junto com o FUNDO saindo, não com a marca: antes disso
+     * ele rodaria escondido. */
+    if (comCinema) setTimeout(cinema, ESPERA_DO_FUNDO_MS);
+    /* A espera do fundo e os .4 s da saída dele, no style.css. */
+    setTimeout(function () { document.documentElement.classList.remove('abrindo'); },
+      ESPERA_DO_FUNDO_MS + 450);
+  }
+
+  /* Depois do primeiro desenho: a chegada com destaque espera a capa; o
+   * resto solta a camada já. */
+  function abrirChegada() {
+    if (!abertura.ligada || abertura.solta) return;
+    var capa = el.grade.querySelector('.destaque:not(.serie-cabeca) .destaque-capa img');
+    if (!capa) { soltarAbertura(false); return; }
+    /* Sem a camada, esperar a capa só mostraria a página parada e DEPOIS a
+     * entrada — um salto. O cinema entra no mesmo quadro em que o destaque
+     * é desenhado, e a capa, quando desce, já desce se afastando. */
+    if (abertura.semMarca) { soltarAbertura(true); return; }
+    var pronto = function () {
+      setTimeout(function () { soltarAbertura(true); },
+        Math.max(0, ABERTURA_MINIMO_MS - agora()));
+    };
+    if (capa.complete) { pronto(); return; }
+    capa.addEventListener('load', pronto);
+    capa.addEventListener('error', pronto);
+  }
+
   /* A vez da ficha: cada renderFicha tira um número, e a que esperou o player
    * só se desenha se ninguém tiver passado na frente — voltar, ou abrir outra
    * ficha, enquanto o arquivo descia. */
@@ -2465,6 +2546,7 @@
   function iniciar() {
     if (mesa.ligada) ligarMesa();
     ligarTopo();
+    ligarAbertura();
 
     /* A contagem da busca, dita a quem ouve a página (§5.6). O nó nasce aqui,
      * vazio e escondido da vista, e é o mesmo por toda a visita. */
@@ -2511,8 +2593,10 @@
 
     carregar().then(function () {
       rotear();
+      abrirChegada();
       if (!comecaNaFicha) depoisDaCapaPrincipal(carregarPlayer);
     }).catch(function (erro) {
+      soltarAbertura(false);
       estado.carregado = false;
       limpar(el.grade);
       el.ficha.hidden = true;

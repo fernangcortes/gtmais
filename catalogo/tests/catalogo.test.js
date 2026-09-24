@@ -10,6 +10,7 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const GTM = require('../site/catalogo-core.js');
 const SITE = path.join(__dirname, '..', 'site');
@@ -9229,4 +9230,119 @@ test('as pistas que rolam de lado não mostram barra de rolagem', () => {
   for (const [, sel, corpo] of rolantes) {
     assert.ok(!/scrollbar-width:\s*thin/.test(corpo), sel.trim() + ' rola de lado com barra fina');
   }
+});
+
+/* §15.3 do PLANO-DESIGN: a abertura. O script do <head> é quem decide, e ele
+ * roda aqui DE VERDADE, num contexto com sessionStorage, endereço e
+ * preferência de movimento de mentira — cada caso é uma visita. */
+function scriptDaAbertura() {
+  const html = lerTexto(path.join(SITE, 'index.html'));
+  const m = html.match(/<script>\n([\s\S]*?gtm-abertura[\s\S]*?)<\/script>/);
+  assert.ok(m, 'não achei o script da abertura no <head> do index.html');
+  return { html, codigo: m[1] };
+}
+
+function visitar(codigo, { hash = '', search = '', guardado = null, reduzido = false, semStorage = false, instalado = false, iphone = false, dedo = false } = {}) {
+  const guardados = {};
+  if (guardado) guardados['gtm-abertura'] = guardado;
+  const storage = {
+    getItem: (k) => { if (semStorage) throw new Error('SecurityError'); return k in guardados ? guardados[k] : null; },
+    setItem: (k, v) => { if (semStorage) throw new Error('SecurityError'); guardados[k] = String(v); }
+  };
+  const raiz = { className: '' };
+  const ctx = {
+    sessionStorage: storage,
+    location: { hash, search },
+    matchMedia: (q) => ({ matches: (reduzido && /reduce/.test(q)) || (instalado && /standalone/.test(q)) ||
+      (dedo && /coarse/.test(q)) }),
+    navigator: { standalone: iphone },
+    document: { documentElement: raiz }
+  };
+  ctx.window = ctx;
+  vm.runInNewContext(codigo, ctx);
+  return { abriu: /\babrindo\b/.test(raiz.className), semMarca: /\bsem-marca\b/.test(raiz.className), guardados };
+}
+
+test('a abertura roda uma vez por sessão, só na chegada, e nunca sem sessionStorage', () => {
+  const { codigo } = scriptDaAbertura();
+  const primeira = visitar(codigo);
+  assert.equal(primeira.abriu, true, 'a primeira chegada da sessão não abriu');
+  assert.equal(primeira.guardados['gtm-abertura'], '1', 'a abertura não se marcou como vista');
+  assert.equal(visitar(codigo, { hash: '#/' }).abriu, true, '#/ também é a chegada');
+  assert.equal(visitar(codigo, { guardado: '1' }).abriu, false, 'a abertura repetiu na mesma sessão');
+  for (const hash of ['#/ep/abc', '#/serie/Kalunga', '#/busca/boi', '#/series']) {
+    assert.equal(visitar(codigo, { hash }).abriu, false, hash + ' passou pela abertura — ela é da chegada');
+  }
+  assert.equal(visitar(codigo, { search: '?mesa=1' }).abriu, false, 'a abertura rodou dentro da mesa');
+  assert.equal(visitar(codigo, { reduzido: true }).abriu, false, 'a abertura rodou com movimento reduzido');
+  /* No APP INSTALADO a abertura roda SEM A MARCA: o sistema já mostra o
+   * ícone ao abrir (pedido de 23/09). No navegador — do computador ou do
+   * celular — não há ícone, e a marca fica. */
+  assert.equal(primeira.semMarca, false, 'o computador perdeu a marca da abertura');
+  assert.equal(visitar(codigo, { dedo: true }).semMarca, false,
+    'o navegador do celular perdeu a marca — lá não há ícone de abertura');
+  for (const [caso, opcoes] of [['o app instalado', { instalado: true }],
+    ['o app instalado no iPhone', { iphone: true }]]) {
+    const v = visitar(codigo, opcoes);
+    assert.equal(v.abriu, true, caso + ' perdeu a abertura — só a marca sai');
+    assert.equal(v.semMarca, true, caso + ' mostra a marca depois do ícone do sistema');
+  }
+  assert.equal(visitar(codigo, { semStorage: true }).abriu, false,
+    'sem sessionStorage a abertura NÃO roda — senão ela viria em toda visita');
+});
+
+test('a camada da abertura cobre a página, e a capa do destaque nunca fica invisível', () => {
+  const { html } = scriptDaAbertura();
+  /* Antes da folha de estilo: a decisão tem de valer para o primeiro quadro,
+   * e um script depois do <link> esperaria o CSS baixar. */
+  assert.ok(html.indexOf('gtm-abertura') < html.indexOf('<link rel="stylesheet" href="style.css">'),
+    'o script da abertura foi para depois da folha de estilo');
+  assert.match(html, /<div class="abertura" id="abertura" aria-hidden="true">/, 'sumiu a camada, ou ela ficou audível');
+
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\n\.abertura\s*\{\s*display:\s*none;?\s*\}/, 'a camada existe fora da abertura');
+  const camada = css.match(/\n\.abrindo \.abertura\s*\{([^}]*)\}/);
+  assert.ok(camada, 'não achei a regra da camada');
+  assert.match(camada[1], /position:\s*fixed/);
+  assert.match(camada[1], /animation:\s*abertura-sai\s+[\d.]+s\s+\S+\s+3\.6s/,
+    'a camada perdeu a saída sozinha aos 3,6 s — sem o app.js ela ficaria para sempre');
+  /* A saída pedida pelo app.js tem de ser OUTRA animação: trocar só a espera
+   * da que já corre não a reinicia, e a camada sumia sem esmaecer (o defeito
+   * do primeiro deploy). */
+  const saindo = css.match(/\n\.abrindo \.abertura\.abertura-saindo\s*\{\s*animation:\s*([\w-]+)/);
+  assert.ok(saindo, 'não achei a saída da camada');
+  assert.notEqual(saindo[1], camada[1].match(/animation:\s*([\w-]+)/)[1],
+    'a saída reusa o nome da animação da rede de segurança — ela nasce terminada');
+  assert.match(css, /\.abrindo\.sem-marca \.abertura\s*\{\s*display:\s*none/, 'o celular voltou a mostrar a marca');
+
+  /* O LCP: a capa entra só por transform. Nenhuma regra que alcance a imagem
+   * da capa pode mexer na opacidade, nem o quadro da animação dela. */
+  const quadros = css.match(/@keyframes cinema-capa\s*\{([\s\S]*?)\n\}/);
+  assert.ok(quadros, 'não achei a animação da capa');
+  assert.ok(!/opacity|visibility/.test(quadros[1]), 'a capa do destaque ganhou opacidade na entrada — ela é o LCP');
+  for (const [, sel, corpo] of css.matchAll(/\n([^{}\n@]*destaque-capa[^{}\n]*)\{([^}]*)\}/g)) {
+    assert.ok(!/opacity|visibility:\s*hidden/.test(corpo), sel.trim() + ' esconde a capa do destaque, que é o LCP');
+  }
+
+  const reduzido = [...css.matchAll(/@media \(prefers-reduced-motion: reduce\)\s*\{([\s\S]*?)\n\}/g)].map(m => m[1]).join('\n');
+  assert.match(reduzido, /\.abrindo \.abertura\s*\{\s*display:\s*none/, 'movimento reduzido não apaga a camada');
+  assert.match(reduzido, /\.cinema \.destaque-capa img/, 'movimento reduzido não para a entrada do destaque');
+});
+
+test('o app.js tira a camada: com o cinema depois da capa, sem ele em todo o resto', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const ligar = app.match(/function ligarAbertura\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(ligar, 'não achei ligarAbertura');
+  for (const ev of ['click', 'keydown', 'hashchange']) {
+    assert.match(ligar[1], new RegExp("'" + ev + "', semCinema"), 'um ' + ev + ' deixou de pular a abertura');
+  }
+  assert.match(ligar[1], /setTimeout\(semCinema/, 'a abertura perdeu o teto');
+  const abrir = app.match(/function abrirChegada\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(abrir, 'não achei abrirChegada');
+  assert.match(abrir[1], /addEventListener\('error', pronto\)/, 'a capa que falha prenderia a camada até o teto');
+  const iniciar = app.match(/function iniciar\(\)\s*\{([\s\S]*?)\n  \}/)[1];
+  assert.match(iniciar, /rotear\(\);\s*abrirChegada\(\);/, 'a chegada desenhada não chama a abertura');
+  assert.match(iniciar, /\.catch\(function \(erro\) \{\s*soltarAbertura\(false\);/,
+    'o catálogo que falha deixa a camada por cima da mensagem de erro');
+  assert.ok(!/abertura[\s\S]{0,80}\.style\.opacity/.test(app), 'o app.js mexe na opacidade pela abertura');
 });

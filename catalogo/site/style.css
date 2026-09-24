@@ -524,6 +524,110 @@ main { padding: 24px 0 64px; }
   .destaque-botoes { margin-top: var(--esp-4); }
 }
 
+/* --------------------------------------------------------------- abertura */
+
+/* A ABERTURA (§15.3 do PLANO-DESIGN): a marca acende sobre o escuro e a
+ * camada se desfaz; por baixo, o destaque entra como no cinema. Uma vez por
+ * sessão, só na chegada — quem decide é o script do <head> do index.html,
+ * que põe `abrindo` no <html>.
+ *
+ * A REGRA QUE NÃO SE QUEBRA: a capa do destaque nunca fica com `opacity: 0`.
+ * Ela é o LCP, e o Chrome não conta o que está invisível — conta o que está
+ * COBERTO. Por isso a camada vai por cima e a página é pintada inteira por
+ * baixo; e por isso a capa entra só por `transform`. Há teste nas duas. */
+.abertura { display: none; }
+.abrindo .abertura {
+  display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; z-index: 100;
+  background: var(--fundo);
+  /* A REDE DE SEGURANÇA: sem o app.js, ou com ele preso, a camada sai
+   * sozinha aos 3,6 s. Quem a tira antes é o `saindo`, que troca esta
+   * animação pela mesma com a espera curta. */
+  animation: abertura-sai .4s var(--ease-cubica) 3.6s both;
+}
+/* Os .3 s de espera são a marca saindo primeiro; o fundo vem atrás.
+ *
+ * OUTRO NOME, de propósito, com os mesmos quadros: trocar só a espera de
+ * uma animação que já corre NÃO a reinicia — o navegador recalcula a partir
+ * do começo da página, e aos 1,4 s uma saída de .3 + .4 já nasce terminada.
+ * Foi o defeito do primeiro deploy: a camada sumia de um quadro para o
+ * outro, sem esmaecer. */
+.abrindo .abertura.abertura-saindo { animation: abertura-some .4s var(--ease-cubica) .3s both; }
+@keyframes abertura-sai {
+  to { opacity: 0; visibility: hidden; }
+}
+@keyframes abertura-some {
+  from { opacity: 1; }
+  to   { opacity: 0; visibility: hidden; }
+}
+
+/* NO APP INSTALADO, SEM A MARCA (pedido de 23/09, visto no Android): o
+ * sistema já mostra o ícone ao abrir, e a marca logo depois parecia uma
+ * segunda abertura. A abertura continua — é o destaque entrando —, só a
+ * camada não existe. No navegador do celular a marca fica: lá não há ícone.
+ * Quem põe `sem-marca` é o script do <head>. */
+.abrindo.sem-marca .abertura { display: none; }
+
+/* A MARCA (pedido de 23/09, depois de ver no ar): um zoom leve e contínuo —
+ * entra de .92 a 1 aparecendo, fica, e sai de 1 a 1,06 sumindo —, as duas
+ * pontas na curva cúbica de entrada e saída. A primeira versão acendia em
+ * .6 s e a camada saía logo depois: parecia uma piscada. A permanência é o
+ * mínimo do app.js (`ABERTURA_MINIMO_MS`), e é ela que segura a marca na
+ * tela enquanto a capa não desce. */
+.abertura {
+  --ease-cubica: cubic-bezier(.65, 0, .35, 1);
+}
+.abertura-marca {
+  width: min(240px, 60vw); height: auto;
+  animation: marca-entra .8s var(--ease-cubica) both;
+}
+.abertura-saindo .abertura-marca { animation: marca-sai .5s var(--ease-cubica) both; }
+@keyframes marca-entra {
+  from { opacity: 0; transform: scale(.92); }
+  to   { opacity: 1; transform: scale(1); }
+}
+@keyframes marca-sai {
+  from { opacity: 1; transform: scale(1); }
+  to   { opacity: 0; transform: scale(1.06); }
+}
+/* No computador a marca é maior: 240 px numa tela de 1400 ficava miúda. */
+@media (min-width: 900px) {
+  .abertura-marca { width: 400px; }
+}
+
+/* O DESTAQUE CINEMATOGRÁFICO, quando a camada sai: a capa se afasta devagar,
+ * o texto desliza e as prateleiras sobem. `cinema` fica na grade só durante
+ * a entrada — o app.js a tira depois, e o crescimento do cartão no hover não
+ * disputa com ela. A capa usa SÓ `transform` (ver a regra lá em cima); o
+ * texto e as prateleiras podem nascer transparentes porque não são o LCP. */
+.cinema .destaque-capa img { animation: cinema-capa 1.2s cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes cinema-capa {
+  from { transform: scale(1.25); }
+  to   { transform: scale(1); }
+}
+.cinema .destaque-texto > * { animation: cinema-sobe .6s cubic-bezier(.2, .7, .2, 1) both; }
+.cinema .destaque-texto > :nth-child(1) { animation-delay: .15s; }
+.cinema .destaque-texto > :nth-child(2) { animation-delay: .22s; }
+.cinema .destaque-texto > :nth-child(3) { animation-delay: .29s; }
+.cinema .destaque-texto > :nth-child(4) { animation-delay: .36s; }
+.cinema .destaque-texto > :nth-child(n+5) { animation-delay: .43s; }
+.cinema .prateleira { animation: cinema-sobe .7s cubic-bezier(.2, .7, .2, 1) .45s both; }
+.cinema .prateleira + .prateleira { animation-delay: .55s; }
+.cinema .prateleira + .prateleira + .prateleira { animation-delay: .65s; }
+@keyframes cinema-sobe {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Movimento reduzido: nada disto existe. O script do <head> já não liga a
+ * abertura; aqui é a segunda trava, para quem trocar a preferência no meio. */
+@media (prefers-reduced-motion: reduce) {
+  .abrindo .abertura { display: none; }
+  .cinema .destaque-capa img,
+  .cinema .destaque-texto > *,
+  .cinema .prateleira { animation: none; }
+}
+
 /* ------------------------------------------------------------ prateleiras */
 
 /* A chegada: linhas que rolam de lado. A grade continua existindo — ela é a
