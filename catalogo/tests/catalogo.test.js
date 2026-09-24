@@ -164,10 +164,14 @@ test('o preview do hover não é carregado junto com a grade', () => {
   assert.ok(hover, 'não achei ligarPreview() em app.js');
   assert.match(hover[1], /addEventListener\('mouseenter'/,
     'o preview precisa ser pedido no mouseenter');
-  assert.match(hover[1], /addEventListener\('mouseleave'/,
+  assert.match(hover[1], /addEventListener\('mouseleave', previa\.descartar\)/,
     'o preview precisa ser descartado no mouseleave');
-  assert.match(hover[1], /removeChild/,
-    'sair do cartão tem que remover o <img>; escondê-lo mantém o megabyte vivo');
+  /* A peça que cria e destrói o <img> saiu para `novaPrevia` (15.2), que o
+   * cartão que abre na prateleira também usa. */
+  const peca = app.match(/function novaPrevia\([^)]*\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(peca, 'não achei novaPrevia() em app.js');
+  assert.match(peca[1], /removeAttribute\('src'\)[\s\S]*removeChild/,
+    'sair do cartão tem que abortar e remover o <img>; escondê-lo mantém o megabyte vivo');
 });
 
 /* Em tela de toque não existe hover, e quem pediu menos movimento não quer um
@@ -9345,4 +9349,68 @@ test('o app.js tira a camada: com o cinema depois da capa, sem ele em todo o res
   assert.match(iniciar, /\.catch\(function \(erro\) \{\s*soltarAbertura\(false\);/,
     'o catálogo que falha deixa a camada por cima da mensagem de erro');
   assert.ok(!/abertura[\s\S]{0,80}\.style\.opacity/.test(app), 'o app.js mexe na opacidade pela abertura');
+});
+
+/* §15.2 do PLANO-DESIGN: o cartão que abre. A armadilha que decide o
+ * desenho é a da §5.4 — a pista corta o que passa da borda dela nos DOIS
+ * eixos —, e por isso quem cresce é uma cópia posta no palco. */
+test('o cartão que abre mora no palco, fora da pista, e é só vista', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const abrir = app.match(/function abrirPop\([^)]*\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(abrir, 'não achei abrirPop');
+  assert.match(abrir[1], /a\.closest\('\.prateleira-palco'\)/, 'a cópia deixou de ir para o palco');
+  assert.match(abrir[1], /palco\.appendChild\(no\)/, 'a cópia deixou de ir para o palco');
+  assert.ok(!/pista\.appendChild|closest\('\.prateleira-pista'\)/.test(abrir[1]),
+    'a cópia foi para dentro da pista — lá ela é cortada em cima e embaixo');
+  assert.match(abrir[1], /setAttribute\('aria-hidden', 'true'\)/, 'a cópia ficou audível — o cartão focado já é o link');
+  assert.equal((abrir[1].match(/tabIndex = -1/g) || []).length, 2,
+    'um link da cópia entrou no Tab — ela repete o caminho que o cartão já oferece');
+  assert.match(abrir[1], /ligarAssistir\(assistir, item\.id\)/, 'o "Assistir" da cópia não dá o play');
+
+  /* Só com ponteiro fino, e fora da mesa — lá o clique escolhe. */
+  const pode = app.match(/function podePop\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(pode, 'não achei podePop');
+  assert.match(pode[1], /\(hover: hover\) and \(pointer: fine\)/, 'a cópia abre sem ponteiro fino');
+  const cartao = app.match(/function cartaoPrateleira\([^)]*\)\s*\{([\s\S]*?)\n  \}/)[1];
+  assert.match(cartao, /if \(mesa\.ligada\) ligarPreview\(a, capa, item\);\s*else ligarPop\(a, item\);/,
+    'o cartão da prateleira pede a prévia duas vezes, ou abre dentro da mesa');
+});
+
+test('a prévia do cartão que abre é só do ponteiro, e morre com ele', () => {
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const ligar = app.match(/function ligarPop\([^)]*\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(ligar, 'não achei ligarPop');
+  assert.match(ligar[1], /setTimeout\(function \(\) \{ abrirPop\(a, item, true\); \}, ESPERA_POP_MS\)/,
+    'o ponteiro deixou de esperar parado antes de abrir — atravessar a linha abriria cada cartão');
+  assert.match(ligar[1], /':focus-visible'\)\) abrirPop\(a, item, false\)/,
+    'o foco pelo teclado pede a prévia — a regra da §6 é prévia só no hover');
+  const abrir = app.match(/function abrirPop\([^)]*\)\s*\{([\s\S]*?)\n  \}/)[1];
+  assert.match(abrir, /peloPonteiro \? novaPrevia\(capaLink, item\) : null/);
+  const fechar = app.match(/function fecharPop\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(fechar, 'não achei fecharPop');
+  assert.match(fechar[1], /pop\.previa\.descartar\(\)/, 'fechar a cópia deixa a prévia baixando');
+  /* A ficha esconde a grade sem redesenhá-la: sem o fechamento no roteador,
+   * a cópia ficaria escondida lá dentro, com a prévia viva. */
+  for (const fn of ['rotear', 'renderGrade']) {
+    const corpo = app.match(new RegExp('function ' + fn + '\\(\\)\\s*\\{([\\s\\S]*?)\\n  \\}'))[1];
+    assert.match(corpo, /fecharPop\(\);/, fn + ' não fecha o cartão aberto');
+  }
+});
+
+test('o cartão que abre passa por cima sem deslocar nada, e o celular ganha a borda que esmaece', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const regra = css.match(/\n\.pop\s*\{([^}]*)\}/);
+  assert.ok(regra, 'não achei a regra do .pop');
+  assert.match(regra[1], /position:\s*absolute/, 'a cópia entrou no fluxo — ela empurraria a prateleira de baixo');
+  const z = +regra[1].match(/z-index:\s*(\d+)/)[1];
+  assert.ok(z > 3 && z < 20, 'a cópia tem de ficar acima das setas (3) e abaixo do cabeçalho (20): ' + z);
+  assert.match(css, /\.pop\s*\{\s*transition:\s*none;?\s*\}/, 'movimento reduzido ainda anima a cópia');
+
+  const toque = css.match(/@media \(hover: none\), \(pointer: coarse\)\s*\{([\s\S]*?)\n\}/);
+  assert.ok(toque, 'não achei a borda que esmaece do celular');
+  assert.match(toque[1], /\.prateleira-pista:not\(\.pista-no-fim\)/, 'a borda esmaece também no fim da pista');
+  assert.match(toque[1], /-webkit-mask-image/, 'o Safari ficou sem a borda que esmaece');
+  const app = lerTexto(path.join(SITE, 'app.js'));
+  const setas = app.match(/function ajustarSetas\(pista\)\s*\{([\s\S]*?)\n  \}/)[1];
+  assert.match(setas, /classList\.toggle\('pista-no-fim', noFim\)/, 'ninguém marca o fim da pista');
 });

@@ -1008,8 +1008,19 @@
    *      nesses casos o cartão fica só com a capa.
    */
   function ligarPreview(cartaoEl, capa, item) {
+    var previa = novaPrevia(capa, item);
+    if (!previa) return;
+    cartaoEl.addEventListener('mouseenter', function () { previa.pedir(220); });
+    cartaoEl.addEventListener('mouseleave', previa.descartar);
+  }
+
+  /* A PEÇA da prévia, sem o cartão: `pedir(espera)` e `descartar()`. Quem
+   * decide QUANDO é quem a usa — o cartão da grade no hover dele, o cartão
+   * que abre na prateleira (15.2) ao abrir. As duas regras de cima valem
+   * aqui dentro, e é por isso que ela é uma só. */
+  function novaPrevia(capa, item) {
     var url = GTM.urlPreview(item, estado.config);
-    if (!url) return;
+    if (!url) return null;
 
     var img = null;
     var espera = 0;
@@ -1026,7 +1037,7 @@
       capa.classList.remove('card-capa-com-previa');
     }
 
-    cartaoEl.addEventListener('mouseenter', function () {
+    function pedir(ms) {
       if (indisponivel || img || espera || !podePreview()) return;
       /* Atravessar a grade com o mouse passa por dezenas de cartões. Sem esta
        * espera, cada um deles dispararia o seu megabyte de passagem. */
@@ -1048,10 +1059,10 @@
         });
         img.src = url;
         capa.appendChild(img);
-      }, 220);
-    });
+      }, ms);
+    }
 
-    cartaoEl.addEventListener('mouseleave', descartar);
+    return { pedir: pedir, descartar: descartar };
   }
 
   /* `porSentido`: o título que a busca achou SÓ pelo sentido (fase 4) — ele
@@ -1278,6 +1289,169 @@
     capasPendentes = null;
   }
 
+  /* O CARTÃO QUE ABRE (15.2 do PLANO-DESIGN): no computador, parar o
+   * ponteiro num cartão da prateleira o faz crescer 1,35× por cima dos
+   * vizinhos, com um painel embaixo — "Assistir", o título e a duração.
+   *
+   * ELE NÃO CRESCE DENTRO DA PISTA, e esse é o desenho inteiro: a pista tem
+   * `overflow-x: auto`, que corta também o eixo vertical (§5.4), e 1,35× não
+   * cabe em folga nenhuma. Quem cresce é uma CÓPIA, posta no PALCO — a
+   * moldura parada que já segura as setas, e que não corta nada —, na
+   * posição do cartão. Um só por vez, para a página inteira.
+   *
+   * As regras de sempre: só com ponteiro fino (dedo não tem hover); a prévia
+   * é a mesma peça do cartão da grade, pedida ao abrir e abortada ao fechar;
+   * com movimento reduzido abre sem animar e sem prévia; nada entra na
+   * carga da chegada — a capa da cópia é a mesma URL, já em cache. E fora
+   * da mesa: lá o clique escolhe, não navega.
+   *
+   * O teclado: o foco visível num cartão abre o mesmo painel. Ele é só
+   * vista — `aria-hidden`, e os links dele fora do Tab —, porque o cartão
+   * focado já é o link da ficha; um segundo caminho só atravancaria a
+   * travessia, como as setas (ver `prateleira`). */
+  var ESPERA_POP_MS = 350;
+  var ESCALA_POP = 1.35;
+  var pop = { no: null, cartao: null, espera: 0, previa: null };
+
+  function podePop() {
+    return !!window.matchMedia && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
+  }
+
+  function ligarPop(a, item) {
+    a.addEventListener('mouseenter', function () {
+      if (!podePop() || pop.cartao === a) return;
+      clearTimeout(pop.espera);
+      pop.espera = setTimeout(function () { abrirPop(a, item, true); }, ESPERA_POP_MS);
+    });
+    /* Sair do cartão PARA DENTRO da cópia não fecha: é ela que está por cima
+     * dele assim que abre. */
+    a.addEventListener('mouseleave', function (ev) {
+      clearTimeout(pop.espera);
+      pop.espera = 0;
+      if (pop.cartao === a && !(pop.no && pop.no.contains(ev.relatedTarget))) fecharPop();
+    });
+    a.addEventListener('focus', function () {
+      if (podePop() && a.matches(':focus-visible')) abrirPop(a, item, false);
+    });
+    a.addEventListener('blur', function () { if (pop.cartao === a) fecharPop(); });
+  }
+
+  function fecharPop() {
+    clearTimeout(pop.espera);
+    pop.espera = 0;
+    if (pop.previa) pop.previa.descartar();
+    if (pop.no && pop.no.parentNode) pop.no.parentNode.removeChild(pop.no);
+    pop.no = pop.cartao = pop.previa = null;
+  }
+
+  /* `peloPonteiro`: só o hover pede a prévia (a regra da §6). O foco pelo
+   * teclado abre o painel com a capa parada. */
+  function abrirPop(a, item, peloPonteiro) {
+    var palco = a.closest('.prateleira-palco');
+    if (!palco) return;
+    fecharPop();
+
+    var no = criar('div', 'pop');
+    no.setAttribute('aria-hidden', 'true');
+    var href = '#/ep/' + encodeURIComponent(item.id);
+
+    var capaLink = criar('a', 'pop-capa');
+    capaLink.href = href;
+    capaLink.tabIndex = -1;
+    var url = GTM.urlCapa(item, estado.config);
+    if (url) {
+      var img = criar('img');
+      img.src = url;
+      img.alt = '';
+      img.width = 640;
+      img.height = 360;
+      capaLink.appendChild(img);
+    } else {
+      capaLink.appendChild(capaVazia());
+    }
+    no.appendChild(capaLink);
+
+    var painel = criar('div', 'pop-painel');
+    var assistir = criar('a', 'botao botao-primario pop-assistir');
+    assistir.href = href;
+    assistir.tabIndex = -1;
+    var play = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    play.setAttribute('viewBox', '0 0 24 24');
+    play.setAttribute('aria-hidden', 'true');
+    var tri = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    tri.setAttribute('d', 'M8 5 L19 12 L8 19 Z');
+    tri.setAttribute('fill', 'currentColor');
+    play.appendChild(tri);
+    assistir.appendChild(play);
+    assistir.appendChild(document.createTextNode('Assistir'));
+    /* O mesmo pedido de tocar do destaque (D6): abre a ficha E dá o play. */
+    ligarAssistir(assistir, item.id);
+    painel.appendChild(assistir);
+
+    var texto = criar('div', 'pop-texto');
+    texto.appendChild(criar('p', 'pop-titulo', GTM.tituloCurto(item) || item.titulo || '(sem título)'));
+    var caps = GTM.capitulos(item);
+    var meta = [GTM.formatarDuracao(item), item.ano, caps.length ? caps.length + ' capítulos' : '']
+      .filter(Boolean).join(' · ');
+    if (meta) texto.appendChild(criar('p', 'pop-meta', meta));
+    painel.appendChild(texto);
+    no.appendChild(painel);
+
+    no.addEventListener('mouseleave', function (ev) {
+      if (ev.relatedTarget !== a && !a.contains(ev.relatedTarget)) fecharPop();
+    });
+
+    pop.no = no;
+    pop.cartao = a;
+    palco.appendChild(no);
+    posicionarPop();
+
+    /* A prévia na capa da cópia, já que é ela que está na frente. Sem espera
+     * a mais: a abertura já esperou os 350 ms do ponteiro parado. */
+    pop.previa = peloPonteiro ? novaPrevia(capaLink, item) : null;
+    if (pop.previa) pop.previa.pedir(0);
+
+    /* Um quadro na posição de partida (o tamanho do cartão), e só então o
+     * crescimento — senão o navegador pula direto para o fim. */
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () { if (pop.no === no) no.classList.add('pop-aberto'); });
+    });
+  }
+
+  /* A cópia vai onde o cartão ESTÁ — medido agora, não guardado: a pista
+   * rola (a roda, o Tab que traz o cartão focado) e a posição anda junto.
+   * Centrada no cartão e presa às bordas do palco, para a do primeiro e a do
+   * último não saírem da tela; a origem da animação é o centro do cartão, e
+   * é isso que a faz parecer crescer DELE. */
+  function posicionarPop() {
+    if (!pop.no) return;
+    var palco = pop.no.parentNode;
+    /* O TAMANHO sai do layout (`offsetWidth`) e o LUGAR do retângulo na
+     * tela: o cartão sob o ponteiro já está no `scale(1.03)` do hover, e o
+     * retângulo o mede crescido — a cópia saía 1,39× (medido: 323 px contra
+     * 313). O centro não muda com a escala, que é pelo meio. */
+    var r = pop.cartao.getBoundingClientRect();
+    var p = palco.getBoundingClientRect();
+    var capa = pop.cartao.querySelector('.pcard-capa');
+    var lCartao = pop.cartao.offsetWidth;
+    var hCapa = capa ? capa.offsetHeight : lCartao * 9 / 16;
+    var largura = lCartao * ESCALA_POP;
+    var centro = r.left - p.left + r.width / 2;
+    var esquerda = Math.max(0, Math.min(centro - largura / 2, p.width - largura));
+    var meioCapa = r.top - p.top + (r.height - pop.cartao.offsetHeight) / 2 + hCapa / 2;
+    var topo = meioCapa - largura * 9 / 32;
+    pop.no.style.width = largura + 'px';
+    pop.no.style.left = esquerda + 'px';
+    pop.no.style.top = topo + 'px';
+    pop.no.style.transformOrigin = (centro - esquerda) + 'px ' + (largura * 9 / 32) + 'px';
+    pop.no.style.setProperty('--pop-partida', String(1 / ESCALA_POP));
+  }
+
+  /* A pista deste palco rolou: se o cartão aberto é dela, ele anda junto. */
+  function seguirPop(palco) {
+    if (pop.no && pop.no.parentNode === palco) posicionarPop();
+  }
+
   /* O cartão da PRATELEIRA. O da grade (`cartao`) continua como está, e os dois
    * existem de propósito: numa linha que rola de lado o cartão é estreito e a
    * capa é quem fala, então a sinopse sai. Na grade da busca ela fica — é lá
@@ -1317,9 +1491,12 @@
     var dur = GTM.formatarDuracao(item);
     if (dur) capa.appendChild(criar('span', 'card-duracao', dur));
     a.appendChild(capa);
-    /* Mesma prévia da grade, com as mesmas regras: só no mouseenter, só com
-     * ponteiro fino, nunca com movimento reduzido, e descartada ao sair. */
-    ligarPreview(a, capa, item);
+    /* Fora da mesa, o cartão ABRE (15.2), e a prévia vai na cópia que abre —
+     * pedida aqui também, seriam dois megabytes pelo mesmo trecho. Na mesa,
+     * onde o clique escolhe, fica a prévia de sempre, com as mesmas regras:
+     * só no mouseenter, só com ponteiro fino, nunca com movimento reduzido. */
+    if (mesa.ligada) ligarPreview(a, capa, item);
+    else ligarPop(a, item);
 
     var corpo = criar('div', 'pcard-corpo');
     corpo.appendChild(criar('h3', 'pcard-titulo', GTM.tituloCurto(item) || '(sem título)'));
@@ -1374,9 +1551,12 @@
       var b = palco.querySelector('.' + classe);
       if (b) b.classList.toggle('prateleira-seta-quieta', sim);
     };
+    var noFim = pista.scrollLeft + pista.clientWidth >= pista.scrollWidth - 2;
     quieta('prateleira-seta-esq', pista.scrollLeft <= 2);
-    quieta('prateleira-seta-dir',
-      pista.scrollLeft + pista.clientWidth >= pista.scrollWidth - 2);
+    quieta('prateleira-seta-dir', noFim);
+    /* A borda que esmaece no celular (15.2) diz "tem mais"; no fim da pista,
+     * ou na pista que cabe inteira, ela só apagaria o último cartão. */
+    pista.classList.toggle('pista-no-fim', noFim);
   }
 
   /* UM observador para todas as pistas: o que muda a resposta de `ajustarSetas`
@@ -1479,7 +1659,7 @@
 
     /* `passive`: o ouvinte só LÊ a rolagem, e prometer isso ao navegador tira o
      * quadro que ele gastaria esperando um `preventDefault` que não vem. */
-    pista.addEventListener('scroll', function () { ajustarSetas(pista); }, { passive: true });
+    pista.addEventListener('scroll', function () { ajustarSetas(pista); seguirPop(palco); }, { passive: true });
     if (observadorDePista) observadorDePista.observe(pista);
 
     secao.appendChild(palco);
@@ -1773,6 +1953,7 @@
 
   function renderGrade() {
     soltarCapas();
+    fecharPop();
     limpar(el.grade);
     limpar(el.avisos);
     /* Esvaziar a ficha é o que PARA o vídeo. Apenas esconder o contêiner com
@@ -2392,6 +2573,9 @@
   function rotear() {
     var hash = window.location.hash || '#/';
     avisarMesa({ tipo: 'rota', hash: hash });
+    /* A ficha esconde a grade sem redesenhá-la: sem isto, o cartão aberto
+     * ficaria lá dentro, escondido, com a prévia ainda baixando. */
+    fecharPop();
 
     /* Trocar de TELA começa do alto. O cabeçalho é sticky e o "Séries" está
      * sempre à mão: sem isto, quem estava na oitava prateleira caía no fim da
