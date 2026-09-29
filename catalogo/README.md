@@ -77,7 +77,7 @@ cd catalogo
 
 node scripts/status.mjs      # estado do encoding no Bunny
 node scripts/publicar.mjs    # publica o que ficou pronto (idempotente)
-node --test tests/catalogo.test.js   # 507 testes, sem rede nem credenciais
+node --test tests/catalogo.test.js   # 521 testes, sem rede nem credenciais
 ```
 
 Fora isso, a manutenção do catálogo é pela **mesa de curadoria** (`/admin.html`), não por
@@ -135,6 +135,7 @@ não duplica nada. Os que trabalham sobre o catálogo aceitam `--piloto`, `--ite
 | `legendas-assembly.mjs` | Transcreve pela API do AssemblyAI. **Extrai só o áudio** (mono, 16 kHz, 64 kbps): o acervo vira ~200 MB em vez de 48 GB. Retomável — os ids ficam em `assemblyai-jobs.json`, na raiz. Precisa de `ASSEMBLYAI_API_KEY`. |
 | `legendas-whisper.ps1` | A alternativa local, em CPU, anterior ao AssemblyAI. Levava uma noite para o acervo. Mantido para quando não se quer pagar transcrição. |
 | `sinopses.mjs` | Escreve as sinopses a partir dos `.srt`. Precisa de `ANTHROPIC_API_KEY` e de `npm install @anthropic-ai/sdk` dentro de `scripts/`. Toda sinopse nasce com `sinopse_origem: "auto"`. |
+| `series.mjs` | Escreve a apresentação de cada série com página (3 títulos ou mais no ar): o "Sobre", o começo, os momentos e os temas, a partir das sinopses, dos capítulos e da fala. Três passos: `--material` mostra o que iria ao modelo; sem bandeira, chama o modelo e grava o ENSAIO em `series-ensaio.json`, para ser lido; `--gravar` leva o ensaio ao catálogo, sem chamar o modelo de novo. Nunca sobrescreve o que foi revisado na mesa; o automático só com `--refazer`. Precisa de `ANTHROPIC_API_KEY` e do mesmo `npm install` do `sinopses.mjs`. |
 
 ---
 
@@ -252,7 +253,8 @@ verdade no meio — dentro de um quadro, com o rascunho aplicado — e o painel 
   metadados → entra no catálogo.
 - **Filas de trabalho**: sinopses a revisar, pendências e sem sinopse, uma a uma e pelo teclado.
 - **Estrutura**: o nome, a ordem e o esconder das prateleiras da chegada, a classe de cada série,
-  o título em destaque e os textos fixos do site.
+  o título em destaque, os textos fixos do site e a apresentação de cada série — o "Sobre", o
+  começo, os momentos e os temas, que o `series.mjs` gera e alguém revisa ali.
 - **Histórico**: cada publicação, o que ela mudou campo a campo, e de onde dá para voltar.
 - **Player** e **Contas**: os ajustes do player, e as contas de admin com o que cada uma pode fazer.
 - **Busca**, na visão geral: quantos títulos no ar estão na busca pela fala, quem ficou fora e
