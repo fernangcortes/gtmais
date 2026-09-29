@@ -45,9 +45,13 @@
      * Vale para o <video> E para o hls.js — ver `configHls()`. */
     preload: 'none',
 
-    /* Equivalente ao `rememberPosition=false`: não gravamos nem restauramos
-     * onde o vídeo parou. Todo título abre em 0. */
-    lembrarPosicao: false
+    /* Era `lembrarPosicao: false`, o `rememberPosition=false` do embed. Desde a
+     * fase 6 da §16 do PLANO-DESIGN (decisão de 23/09) o player GRAVA onde o
+     * vídeo parou, para o "Continuar" da página da série — mas NUNCA retoma
+     * sozinho: todo título aberto abre em 0, ou no `?t=` do link. Retomar é um
+     * clique no "Continuar", e é a página da série quem lê a chave, não o
+     * player. */
+    retomarSozinho: false
   });
 
   /* Atributos que o <video> tem que receber para cumprir REGRAS.

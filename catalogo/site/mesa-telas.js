@@ -841,7 +841,9 @@
           var atual = GTM.classeDaSerie(nome, site);
           var escolhida = site.classes[nome];
           return h('tr', null,
-            h('td', null, h('span', { text: nome }), escolhida ? h('small', { class: 'dica', text: 'padrão: ' + ROTULO_CLASSE[GTM.classeDaSerie(nome, null)] }) : null),
+            h('td', null, h('button', { type: 'button', class: 'linha-link', 'data-acao': 'escolher', 'data-alvo': 'serie:' + nome, title: 'A apresentação da série: o Sobre, o começo, os momentos e os temas' },
+              h('span', { text: nome }), site.series[nome] ? h('small', { class: 'dica', text: site.series[nome].origem === 'revisada' ? 'apresentação revisada' : 'apresentação automática' }) : null),
+              escolhida ? h('small', { class: 'dica', text: 'padrão: ' + ROTULO_CLASSE[GTM.classeDaSerie(nome, null)] }) : null),
             h('td', { class: 'mono num', text: String(quantos) }),
             h('td', null, h('select', { 'data-classe-serie': nome, 'aria-label': 'Classe de ' + nome, disabled: !pode },
               GTM.CLASSES_SERIE.map(function (c) {

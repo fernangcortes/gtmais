@@ -454,6 +454,13 @@
     'v-rascunho': function () { st.semRascunho = false; enviarCatalogo(); redesenhar({ semCentro: true, semPainel: true }); },
     'v-noar': function () { st.semRascunho = true; enviarCatalogo(); redesenhar({ semCentro: true, semPainel: true }); },
     'f-confirmar': function () { if (st.sel.indexOf('item:') === 0) M.mudar(st.sel.slice(5), 'sinopse_origem', 'revisada'); },
+    /* A série do painel é a escolhida — 'serie:<nome>' (§16.3, fase 5). */
+    's-revisar': function () { M.mudarSerie(st.sel.slice(6), { origem: 'revisada' }, {}); },
+    's-gerado': function () {
+      var nome = st.sel.slice(6);
+      if (!window.confirm('Voltar "' + nome + '" ao gerado?\n\nA apresentação sai da página até o script gerar de novo. O que foi revisado se perde (o histórico guarda).')) return;
+      M.voltarSerieAoGerado(nome);
+    },
     /* A prateleira do painel é a que está escolhida — `st.sel` é
      * 'prateleira:<id>', e o id vem de lá para não haver duas verdades. */
     'pr-sobe': function () { M.moverPrateleira(st.sel.slice(11), -1); },
@@ -563,6 +570,12 @@
         var alvo = acao.getAttribute('data-alvo');
         if (!alvo) return irTela('player');
         if (alvo.indexOf('prateleira:') === 0 && !NO_QUADRO[st.tela]) return M.escolher(alvo, { tela: 'site' });
+        /* A série escolhida fora do quadro abre a página dela no quadro: é lá
+         * que o "Sobre" aparece enquanto se escreve. */
+        if (alvo.indexOf('serie:') === 0) {
+          M.escolher(alvo, { tela: 'site' });
+          return irNoSite('#/serie/' + encodeURIComponent(alvo.slice(6)));
+        }
         return M.escolher(alvo);
       }
       if (a === 'abrir-ficha') return abrirFicha(acao.getAttribute('data-id'));
@@ -644,6 +657,17 @@
       return M.renomearPrateleira(t.getAttribute('data-texto-prateleira'), t.value, { semCentro: true });
     }
     if (t.id === 'tx-rodape') return M.mudarTextoDoSite('rodape', t.value, { semPainel: true });
+    if (t.id === 's-sobre' && st.sel.indexOf('serie:') === 0) {
+      var nomeSerie = st.sel.slice(6);
+      M.mudarSerie(nomeSerie, { sobre: t.value });
+      var dadoSerie = M.site().series[nomeSerie], chipSerie = $('s-origem');
+      chipSerie.textContent = !dadoSerie ? 'sem apresentação' : dadoSerie.origem === 'revisada' ? 'revisado' : 'automático · não revisado';
+      chipSerie.className = 'chip ' + (!dadoSerie ? 'chip-erro' : dadoSerie.origem === 'revisada' ? 'chip-ok' : 'chip-alerta');
+      return;
+    }
+    if (t.id === 's-temas' && st.sel.indexOf('serie:') === 0) {
+      return M.mudarSerie(st.sel.slice(6), { temas: t.value.split(',').map(function (x) { return x.trim(); }).filter(Boolean) });
+    }
     if (t.hasAttribute('data-texto')) return M.mudarTextoDoSite(t.getAttribute('data-texto'), t.value, { semCentro: true });
     if (t.id === 'cat-busca') {
       st.busca = t.value;
@@ -688,6 +712,18 @@
       return M.esconderPrateleira(st.sel.slice(11), !t.checked);
     }
     if (t.hasAttribute('data-classe-serie')) return M.mudarClasseDaSerie(t.getAttribute('data-classe-serie'), t.value);
+    if (t.id === 's-comeco' && st.sel.indexOf('serie:') === 0) return M.mudarSerie(st.sel.slice(6), { comeco: t.value || null }, {});
+    /* "Trocar momentos": a lista inteira, montada a partir das caixas marcadas
+     * na ordem em que estão na tela — a ordem da página. */
+    if (t.hasAttribute('data-momento') && st.sel.indexOf('serie:') === 0) {
+      var marcadas = el.mesa.querySelectorAll('[data-momento]:checked');
+      var momentos = [];
+      for (var k = 0; k < marcadas.length; k++) {
+        var par = marcadas[k].getAttribute('data-momento'), arroba = par.lastIndexOf('@');
+        momentos.push({ id: par.slice(0, arroba), inicio: Number(par.slice(arroba + 1)) });
+      }
+      return M.mudarSerie(st.sel.slice(6), { momentos: momentos }, {});
+    }
     /* Os campos da estrutura NÃO redesenham ao sair do campo, e isso é uma
      * decisão contra um defeito achado no runtime: o `mousedown` no botão tira
      * o foco do campo, o `change` dispara ANTES do clique, e o redesenho troca

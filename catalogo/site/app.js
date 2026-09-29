@@ -321,6 +321,30 @@
    * defeito novo. */
   var pedidoDeTocar = '';
 
+  function iconePlay() {
+    var play = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    play.setAttribute('viewBox', '0 0 24 24');
+    play.setAttribute('aria-hidden', 'true');
+    var tri = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    tri.setAttribute('d', 'M8 5 L19 12 L8 19 Z');
+    tri.setAttribute('fill', 'currentColor');
+    play.appendChild(tri);
+    return play;
+  }
+
+  /* Onde o vídeo parou, como o player gravou (§16.3, fase 6). Só a página da
+   * série lê — o player nunca. Tudo em try/catch: o `localStorage` lança na
+   * aba anônima e na rede que o bloqueia, e aí o "Continuar" some e a página
+   * é a de sempre. */
+  function lerOndeParou() {
+    try {
+      var cru = window.localStorage.getItem(GTM.CHAVE_ONDE_PAROU);
+      return cru ? JSON.parse(cru) : {};
+    } catch (e) {
+      return {};
+    }
+  }
+
   function ligarAssistir(link, id) {
     link.addEventListener('click', function (ev) {
       if (ev.button !== 0 || ev.ctrlKey || ev.metaKey || ev.shiftKey || ev.altKey) return;
@@ -637,6 +661,7 @@
     core: '',          /* '' · 'carregando' · 'pronto' */
     indice: null,
     indiceDe: null,    /* o `estado.itens` de onde o índice saiu */
+    indiceSite: null,  /* e o `estado.site`, que traz os temas das séries */
     /* O ÍNDICE DA FALA (fase 3): o que é falado nos vídeos no ar, ~430 KB
      * — cinco vezes o catálogo. Desce na PRIMEIRA BUSCA, junto com o
      * `busca-core.js`, e nunca na chegada. Até ele chegar, os títulos e os
@@ -730,9 +755,12 @@
    * quando a fala chega, e de novo quando o catálogo muda — na mesa, a cada
    * tecla do rascunho. Com a fala são ~50 ms, uma vez. */
   function indiceDaBusca() {
-    if (busca.indiceDe !== estado.itens || busca.indiceFala !== busca.fala) {
-      busca.indice = GTMB.indice(GTM.publicaveis(estado.itens), busca.fala);
+    if (busca.indiceDe !== estado.itens || busca.indiceSite !== estado.site || busca.indiceFala !== busca.fala) {
+      /* Com os temas da série junto (§16): o tema da página da série abre a
+       * busca por ele, e é daqui que a resposta sai. */
+      busca.indice = GTMB.indice(GTM.comTemasDasSeries(GTM.publicaveis(estado.itens), estado.site), busca.fala);
       busca.indiceDe = estado.itens;
+      busca.indiceSite = estado.site;
       busca.indiceFala = busca.fala;
     }
     return busca.indice;
@@ -785,6 +813,7 @@
         casadas: r.casadas
       };
     }
+    base = GTM.comTemasDasSeries(base, estado.site);
     return { titulos: GTM.ordenar(GTM.buscar(base, termo)), porSentido: {}, trechos: [], casadas: [] };
   }
 
@@ -1198,14 +1227,7 @@
      * em cada aparelho. */
     var assistir = criar('a', 'botao botao-primario destaque-assistir');
     assistir.href = '#/ep/' + encodeURIComponent(item.id);
-    var play = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-    play.setAttribute('viewBox', '0 0 24 24');
-    play.setAttribute('aria-hidden', 'true');
-    var tri = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-    tri.setAttribute('d', 'M8 5 L19 12 L8 19 Z');
-    tri.setAttribute('fill', 'currentColor');
-    play.appendChild(tri);
-    assistir.appendChild(play);
+    assistir.appendChild(iconePlay());
     assistir.appendChild(document.createTextNode('Assistir'));
     ligarAssistir(assistir, item.id);
     botoes.appendChild(assistir);
@@ -1890,9 +1912,11 @@
    * Campanhas — o primeiro é o primeiro em ordem alfabética, e um botão grande
    * para tocá-lo escolheria por quem está chegando. A escolha é a lista, logo
    * abaixo. */
-  function cabecaDaSerie(s) {
-    var caixa = criar('section', 'destaque serie-cabeca');
+  function cabecaDaSerie(s, a) {
+    var caixa = criar('section', 'destaque serie-cabeca' + (a && a.sobre ? ' serie-cabeca-com-sobre' : ''));
     caixa.setAttribute('aria-labelledby', 'serie-titulo');
+    /* Na mesa, o alto da série escolhe a apresentação dela (§16.3, fase 5). */
+    marcarMesa(caixa, 'serie:' + s.nome);
 
     var texto = criar('div', 'destaque-texto');
     texto.appendChild(criar('p', 'destaque-serie', s.grupo.titulo));
@@ -1903,6 +1927,32 @@
     texto.appendChild(criar('p', 'destaque-meta',
       [n + (n === 1 ? ' título' : ' títulos'), GTM.formatarMinutos(s.segundos), GTM.formatarAnos(s.anos)]
         .filter(Boolean).join(' · ')));
+
+    /* O "CONTINUAR" (§16.3, fase 6): o último episódio visto DESTA série, no
+     * segundo em que parou. Não é o "Assistir" que o comentário acima recusa
+     * — ele não escolhe por quem chega: é a escolha que a própria pessoa já
+     * fez. O clique dá o play (`ligarAssistir`); o link guardado abre parado
+     * no ponto. Sem memória — navegador novo, aba anônima, a rede que bloqueia
+     * o armazenamento —, simplesmente não aparece. */
+    var cont = GTM.continuarDaSerie(estado.itens, s.nome, lerOndeParou());
+    if (cont) {
+      var botoes = criar('div', 'destaque-botoes');
+      var continuar = criar('a', 'botao botao-primario destaque-assistir serie-continuar');
+      continuar.href = cont.link;
+      continuar.appendChild(iconePlay());
+      continuar.appendChild(document.createTextNode('Continuar'));
+      ligarAssistir(continuar, cont.item.id);
+      botoes.appendChild(continuar);
+      botoes.appendChild(criar('p', 'serie-continuar-onde',
+        (GTM.tituloCurto(cont.item) || cont.item.titulo) + ', de ' + GTM.formatarTempo(cont.t)));
+      texto.appendChild(botoes);
+    }
+
+    /* O "SOBRE" MORA NA COLUNA DO TÍTULO (pedido de 24/09): no computador, o
+     * título, o texto embaixo e a capa ao lado dos dois — como faixa própria
+     * embaixo do alto, sobrava uma coluna vazia ao lado da capa. No celular a
+     * coluna é uma só e a capa sobe (`order`), então a leitura é a mesma. */
+    if (a && a.sobre) texto.appendChild(sobreDaSerie(a, s.nome));
     caixa.appendChild(texto);
 
     /* A mesma capa do destaque, com as mesmas regras: 640 px no máximo, o
@@ -1929,6 +1979,138 @@
     return caixa;
   }
 
+  /* A APRESENTAÇÃO DA SÉRIE (PLANO-DESIGN §16.3, fase 3): "Sobre a série"
+   * embaixo do alto, e os três destaques numa faixa — "Comece por aqui",
+   * "Momentos da série" e "Temas". Tudo sai de `GTM.apresentacaoDaSerie`, que
+   * já tirou o que não confere: o momento cujo capítulo sumiu não chega aqui.
+   *
+   * NENHUMA CAPA A MAIS NA CARGA: os destaques são texto. A capa do começo e
+   * as dos momentos já estão na lista de episódios logo abaixo, com `lazy`.
+   *
+   * O começo e o momento são o caminho do trecho da busca: o link leva à
+   * ficha (no segundo, no momento) e o CLIQUE dá o play (`ligarAssistir`); o
+   * link colado abre parado. O tema abre a busca por ele — e a busca responde
+   * porque os temas da série entram no índice (`GTM.comTemasDasSeries`).
+   *
+   * Sem apresentação, nada disto: a página é a de antes, linha por linha. */
+  function sobreDaSerie(a, nome) {
+    var secao = criar('section', 'serie-sobre');
+    secao.setAttribute('aria-labelledby', 'serie-sobre-titulo');
+    marcarMesa(secao, 'serie:' + nome);
+    var h2 = criar('h2', 'prateleira-titulo', 'Sobre a série');
+    h2.id = 'serie-sobre-titulo';
+    secao.appendChild(h2);
+    /* Parágrafo por linha em branco: o texto é dado, e nada dele passa por
+     * innerHTML. */
+    a.sobre.split(/\n\s*\n/).forEach(function (par) {
+      var t = par.replace(/\s+/g, ' ').trim();
+      if (t) secao.appendChild(criar('p', 'serie-sobre-texto', t));
+    });
+    return secao;
+  }
+
+  function blocoDestaque(classe, titulo) {
+    var bloco = criar('section', 'serie-caixa ' + classe);
+    bloco.appendChild(criar('h2', 'serie-caixa-titulo', titulo));
+    return bloco;
+  }
+
+  function destaquesDaSerie(a) {
+    var faixa = criar('div', 'serie-destaques');
+
+    if (a.comeco) {
+      var b = blocoDestaque('serie-comeco', 'Comece por aqui');
+      var link = criar('a', 'serie-comeco-link');
+      link.href = GTM.linkDaFicha(a.comeco.id);
+      ligarAssistir(link, a.comeco.id);
+      var sobre = [GTM.rotuloNumero(a.comeco), GTM.formatarDuracao(a.comeco)].filter(Boolean).join(' · ');
+      if (sobre) link.appendChild(criar('span', 'ep-numero', sobre));
+      link.appendChild(criar('span', 'ep-titulo', GTM.tituloCurto(a.comeco) || a.comeco.titulo || '(sem título)'));
+      var resumo = GTM.resumoSinopse(a.comeco, 140);
+      if (resumo) link.appendChild(criar('span', 'serie-comeco-sinopse', resumo));
+      b.appendChild(link);
+      faixa.appendChild(b);
+    }
+
+    if (a.momentos.length) {
+      var m = blocoDestaque('serie-momentos', 'Momentos da série');
+      var lista = criar('ol', 'serie-momentos-lista');
+      a.momentos.forEach(function (mo) {
+        var li = criar('li');
+        var l = criar('a', 'trecho');
+        l.href = mo.link;
+        ligarAssistir(l, mo.item.id);
+        l.appendChild(criar('span', 'trecho-tempo', GTM.formatarTempo(mo.inicio)));
+        l.appendChild(document.createTextNode(' '));
+        var corpo = criar('span', 'trecho-corpo');
+        corpo.appendChild(criar('span', 'trecho-capitulo', mo.capitulo));
+        corpo.appendChild(document.createTextNode(' '));
+        corpo.appendChild(criar('span', 'ep-numero', GTM.tituloCurto(mo.item) || mo.item.titulo));
+        l.appendChild(corpo);
+        li.appendChild(l);
+        lista.appendChild(li);
+      });
+      m.appendChild(lista);
+      faixa.appendChild(m);
+    }
+
+    if (a.temas.length) {
+      var t = blocoDestaque('serie-temas', 'Temas');
+      t.appendChild(chipsDeTemas(a.temas));
+      faixa.appendChild(t);
+    }
+    return faixa.childNodes.length ? faixa : null;
+  }
+
+  function chipsDeTemas(temas) {
+    var chips = criar('div', 'serie-temas-lista');
+    temas.forEach(function (tema) {
+      var chip = criar('button', 'chip', tema);
+      chip.type = 'button';
+      chip.setAttribute('aria-label', 'Buscar vídeos sobre ' + tema);
+      chip.addEventListener('click', function () { buscarPor(tema); });
+      chips.appendChild(chip);
+    });
+    return chips;
+  }
+
+  /* Abrir a busca com um termo pronto: o mesmo caminho de quem digita — o
+   * campo aberto, o arquivo da busca pedido, a resposta em #/. */
+  function buscarPor(termo) {
+    el.busca.value = termo;
+    aoDigitar();
+    window.scrollTo(0, 0);
+  }
+
+  /* A ENTRADA DA SÉRIE (§16.3, fase 4): o cinema da chegada (§15.3)
+   * reaproveitado — a capa se afasta só por `transform`, o nome e os números
+   * sobem, depois o resto em cascata. UMA VEZ POR SÉRIE EM CADA SESSÃO: a
+   * segunda visita à mesma série é trabalho, não chegada.
+   *
+   * Sem camada e sem marca: quem entra numa série já está dentro do site. E
+   * não roda quando não pode lembrar — sem `sessionStorage` (o acesso que
+   * lança, a rede da escola) seria a animação a cada visita —, nem com
+   * movimento reduzido, nem dentro da mesa, que redesenha a cada tecla. */
+  var ENTRADA_SERIE_MS = 1800;
+  var CHAVE_SERIES_VISTAS = 'gtm-series-vistas';
+
+  function entradaDaSerie(nome) {
+    if (mesa.ligada) return;
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    var vistas;
+    try {
+      vistas = JSON.parse(sessionStorage.getItem(CHAVE_SERIES_VISTAS) || '[]');
+      if (!Array.isArray(vistas)) vistas = [];
+      if (vistas.indexOf(nome) >= 0) return;
+      vistas.push(nome);
+      sessionStorage.setItem(CHAVE_SERIES_VISTAS, JSON.stringify(vistas));
+    } catch (e) {
+      return;
+    }
+    el.grade.classList.add('cinema-serie');
+    setTimeout(function () { el.grade.classList.remove('cinema-serie'); }, ENTRADA_SERIE_MS);
+  }
+
   /* A PÁGINA DA SÉRIE (D6): o alto, e a lista de episódios em ordem. É um ramo
    * de `renderGrade`, como a página Séries, e pelo mesmo motivo: quem chega
    * aqui vindo da ficha tem o player destruído na limpeza de lá.
@@ -1947,8 +2129,20 @@
       return;
     }
     document.title = s.nome + ' — ' + TITULO_BASE;
-    el.grade.appendChild(cabecaDaSerie(s));
+    var a = GTM.apresentacaoDaSerie(estado.itens, s.nome, estado.site);
+    el.grade.appendChild(cabecaDaSerie(s, a));
+    var destaques = a ? destaquesDaSerie(a) : null;
+    if (destaques) el.grade.appendChild(destaques);
     el.grade.appendChild(secaoEpisodios(s, ''));
+    /* Os TEMAS NO FIM, só no celular (pedido de 24/09): na faixa, embaixo do
+     * texto, eram coisa demais antes da lista. Mesma peça, outro lugar; o CSS
+     * mostra uma das duas, e a escondida sai também da leitura de tela. */
+    if (a && a.temas.length) {
+      var fim = blocoDestaque('serie-temas serie-temas-fim', 'Temas');
+      fim.appendChild(chipsDeTemas(a.temas));
+      el.grade.appendChild(fim);
+    }
+    entradaDaSerie(s.nome);
   }
 
   function renderGrade() {
@@ -2470,6 +2664,28 @@
     lado.appendChild(campoDaFicha(criar('h1', null, item.titulo || '(sem título)'), item, 'titulo'));
 
     lado.appendChild(campoDaFicha(criar('p', 'ficha-meta', metaDaFicha(item)), item, 'meta'));
+
+    /* O "CONTINUAR" DA FICHA (decisão de 24/09): quem já viu parte deste
+     * título e volta a ele por qualquer caminho ganha o botão — sem o tempo
+     * escrito, como pedido. NADA RETOMA SOZINHO: o vídeo continua em 0, e
+     * retomar é o clique, que leva ao `?t=` do mesmo título e dá o play pelo
+     * caminho do trecho da busca (`ligarAssistir`). Não aparece quando a ficha
+     * já veio com um momento (`?t=`) ou com o pedido do "Assistir", nem na
+     * mesa, nem no iframe — que não grava onde parou. E sai no primeiro play:
+     * quem escolheu começar do zero não precisa dele na tela. */
+    var ponto = playerAtivo && alvoCapitulos === playerAtivo && momento == null && !tocar && !mesa.ligada
+      ? GTM.ondeParouDe(lerOndeParou(), item.id) : null;
+    if (ponto) {
+      var continuar = criar('a', 'botao botao-primario destaque-assistir ficha-continuar');
+      continuar.href = ponto.link;
+      continuar.appendChild(iconePlay());
+      continuar.appendChild(document.createTextNode('Continuar'));
+      ligarAssistir(continuar, item.id);
+      lado.appendChild(continuar);
+      playerAtivo.video.addEventListener('play', function () {
+        if (continuar.parentNode) continuar.parentNode.removeChild(continuar);
+      }, { once: true });
+    }
 
     if (item.pendencia) {
       lado.appendChild(campoDaFicha(aviso(GTM.rotuloPendencia(item.pendencia)), item, 'pendencia'));

@@ -619,13 +619,35 @@ main { padding: 24px 0 64px; }
   to   { opacity: 1; transform: none; }
 }
 
+/* A ENTRADA DA SÉRIE (§16.3, fase 4): o mesmo cinema, na página da série.
+ * A capa do alto é o LCP dela, e por isso é a mesma regra: só `transform`,
+ * nunca opacidade. O texto do alto sobe, e o resto vem em cascata — o
+ * "Sobre", as três caixas, a lista. `cinema-serie` fica na grade só durante
+ * a entrada; o app.js a tira. */
+.cinema-serie .serie-cabeca .destaque-capa img { animation: cinema-capa 1.2s cubic-bezier(.2, .7, .2, 1) both; }
+.cinema-serie .serie-cabeca .destaque-texto > * { animation: cinema-sobe .6s cubic-bezier(.2, .7, .2, 1) both; }
+.cinema-serie .serie-cabeca .destaque-texto > :nth-child(1) { animation-delay: .1s; }
+.cinema-serie .serie-cabeca .destaque-texto > :nth-child(2) { animation-delay: .17s; }
+.cinema-serie .serie-cabeca .destaque-texto > :nth-child(n+3) { animation-delay: .24s; }
+.cinema-serie .serie-sobre,
+.cinema-serie .serie-caixa,
+.cinema-serie .episodios { animation: cinema-sobe .7s cubic-bezier(.2, .7, .2, 1) .35s both; }
+.cinema-serie .serie-caixa:nth-child(2) { animation-delay: .43s; }
+.cinema-serie .serie-caixa:nth-child(3) { animation-delay: .51s; }
+.cinema-serie .episodios { animation-delay: .55s; }
+
 /* Movimento reduzido: nada disto existe. O script do <head> já não liga a
  * abertura; aqui é a segunda trava, para quem trocar a preferência no meio. */
 @media (prefers-reduced-motion: reduce) {
   .abrindo .abertura { display: none; }
   .cinema .destaque-capa img,
   .cinema .destaque-texto > *,
-  .cinema .prateleira { animation: none; }
+  .cinema .prateleira,
+  .cinema-serie .serie-cabeca .destaque-capa img,
+  .cinema-serie .serie-cabeca .destaque-texto > *,
+  .cinema-serie .serie-sobre,
+  .cinema-serie .serie-caixa,
+  .cinema-serie .episodios { animation: none; }
 }
 
 /* ------------------------------------------------------------ prateleiras */
@@ -990,6 +1012,87 @@ a.ep:focus-visible { outline: 2px solid var(--marca); outline-offset: -2px; }
   .ep { gap: var(--esp-3); padding: var(--esp-2); margin: 0 calc(-1 * var(--esp-2)); }
   .ep-capa { flex-basis: 40%; max-width: 160px; }
   .ep-titulo { font-size: var(--tipo-corpo); }
+}
+
+/* ------------------------------------- a apresentação da série (§16.3)
+ *
+ * "Sobre a série" embaixo do alto e os três destaques numa faixa, antes da
+ * lista de episódios. O teto de largura do texto é o da lista, e pelo mesmo
+ * motivo: ninguém lê uma linha de 1100 px. A faixa é uma grade que se ajeita
+ * sozinha — três colunas no computador, uma no celular —, e sobrevive à série
+ * sem capítulo: o bloco que não existe não deixa buraco.
+ *
+ * SÓ TEXTO: nenhuma capa a mais na carga da página. */
+.serie-sobre { max-width: 760px; margin: 0 0 var(--esp-6); }
+.serie-sobre-texto {
+  margin: var(--esp-2) 0 0; color: var(--texto); font-size: var(--tipo-base); line-height: 1.6;
+}
+
+.serie-destaques {
+  display: grid; gap: var(--esp-5); margin: 0 0 var(--esp-7);
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+}
+.serie-caixa { min-width: 0; }
+.serie-caixa-titulo {
+  margin: 0 0 var(--esp-2); color: var(--texto-fraco);
+  font-size: var(--tipo-menor); font-weight: 600;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+
+/* O começo é uma caixa só, clicável inteira, com a borda que acende como a
+ * capa da `.ep` no hover. 44 px de alvo com folga. */
+.serie-comeco-link {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--esp-3) var(--esp-4); border-radius: var(--raio);
+  background: var(--superficie); border: 1px solid var(--borda);
+  color: inherit; text-decoration: none;
+}
+.serie-comeco-link:hover { border-color: var(--marca); }
+.serie-comeco-link:focus-visible { outline: 2px solid var(--marca); outline-offset: 2px; }
+.serie-comeco-sinopse {
+  margin-top: var(--esp-1); color: var(--texto-fraco);
+  font-size: var(--tipo-menor); line-height: 1.45;
+}
+
+/* Os momentos vestem o trecho da busca — o minuto em verde e o capítulo —,
+ * e o título curto embaixo, no cinza do número do episódio. */
+.serie-momentos-lista { list-style: none; margin: 0; padding: 0; }
+
+/* O "Continuar" do alto da série (fase 6): o botão do "Assistir", e ao lado
+ * dele, em cinza, qual episódio e de que minuto. */
+.serie-continuar-onde {
+  margin: 0; align-self: center; color: var(--texto-fraco); font-size: var(--tipo-menor);
+}
+
+/* O "Continuar" da ficha: o mesmo botão, alinhado ao começo da coluna. */
+.botao.ficha-continuar {
+  display: inline-flex; align-items: center; gap: var(--esp-2);
+  min-height: 44px; padding: 0 var(--esp-5); margin: var(--esp-2) 0 var(--esp-3);
+  font-size: var(--tipo-corpo); font-weight: 600;
+}
+
+/* Os chips da busca, embrulhando em vez de rolar: são no máximo cinco. */
+.serie-temas-lista { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* O "Sobre" DENTRO do alto (24/09): o título, o texto embaixo e a capa ao
+ * lado. Com texto, a coluna cresce, e o topo alinha com o da capa em vez de
+ * centrar — centrado, a capa descia e o título flutuava no meio. */
+.serie-cabeca-com-sobre { align-items: start; }
+.serie-cabeca .serie-sobre { max-width: 65ch; margin: var(--esp-5) 0 0; }
+.serie-cabeca .serie-sobre .prateleira-titulo { font-size: var(--tipo-maior); }
+
+/* A cópia dos temas para o fim da página só existe no celular. */
+.serie-temas-fim { display: none; }
+
+/* NO CELULAR (24/09): "Comece por aqui" sai — com o texto, os momentos e os
+ * temas, era coisa demais antes da lista —, e os temas vão para depois dela.
+ * A faixa que fica sem nada (série sem capítulo) sai inteira, para não
+ * deixar o vão da margem. */
+@media (max-width: 560px) {
+  .serie-comeco,
+  .serie-destaques .serie-temas { display: none; }
+  .serie-destaques:not(:has(.serie-momentos)) { display: none; }
+  .serie-temas-fim { display: block; margin: 0 0 var(--esp-6); }
 }
 
 /* ------------------------------------------------ os trechos da busca

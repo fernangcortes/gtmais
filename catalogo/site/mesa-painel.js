@@ -13,7 +13,7 @@
     tags: 'Tags', pendencia: 'Pendência', publicar: 'No ar', titularidade: 'Titularidade',
     nivel_evidencia: 'Nível de evidência', capa_arquivo: 'Capa', capa_versao: 'Versão da capa',
     nota_curadoria: 'Nota de curadoria', destaque: 'Destaque', arrastoTeto: 'Arrasto máximo', controlesEspera: 'Sumiço dos controles',
-    prateleiras: 'Prateleiras', classes: 'Classe das séries', textos: 'Textos fixos'
+    prateleiras: 'Prateleiras', classes: 'Classe das séries', textos: 'Textos fixos', series: 'Apresentação das séries'
   };
   M.CAMPO = CAMPO;
 
@@ -447,6 +447,73 @@
         botao('Voltar ao padrão (40% · 3 s)', 'a-padrao', 'botao-leve', null, { disabled: !M.pode('player') }))) };
   }
 
+  /* ------------------------------------------- a apresentação da série
+   *
+   * PLANO-DESIGN §16.3, fase 5: o "Sobre" editável, a etiqueta da origem,
+   * "Marcar revisado", o começo, os temas, "Trocar momentos" (todos os
+   * capítulos da série, até cinco marcados) e "Voltar ao gerado". O que o dado
+   * tem e a página não mostra — o momento cujo capítulo sumiu — aparece aqui,
+   * para alguém decidir. */
+  var MAX_MOMENTOS = 5;
+
+  function inspSerie(cat, nome) {
+    var pagina = GTM.paginaDaSerie(cat.itens, nome, cat.site);
+    if (!pagina) return null;
+    var site = M.site();
+    var dado = site.series[nome] || null;
+    var pode = M.pode('conteudo');
+    var origem = !dado ? ['sem apresentação', 'chip-erro'] : dado.origem === 'revisada' ? ['revisado', 'chip-ok'] : ['automático · não revisado', 'chip-alerta'];
+
+    var escolhidos = {};
+    ((dado && dado.momentos) || []).forEach(function (m) { escolhidos[m.id + '@' + m.inicio] = true; });
+    var validos = GTM.apresentacaoDaSerie(cat.itens, nome, cat.site);
+    var vistos = {};
+    ((validos && validos.momentos) || []).forEach(function (m) { vistos[m.item.id + '@' + m.inicio] = true; });
+    var caidos = ((dado && dado.momentos) || []).filter(function (m) { return !vistos[m.id + '@' + m.inicio]; });
+    var cheio = Object.keys(escolhidos).length >= MAX_MOMENTOS;
+
+    var comCapitulo = pagina.itens.filter(function (i) { return GTM.capitulos(i).length; });
+
+    var corpo = h('div', { class: 'p-corpo-in' },
+      !pagina.temPagina ? h('p', { class: 'p-nota', text: 'Esta série tem menos de 3 títulos no ar e não tem página: a apresentação fica guardada, mas não aparece.' }) : null,
+      !dado ? h('p', { class: 'p-nota', text: 'Sem apresentação, a página da série é só o alto e a lista. Ela nasce do scripts/series.mjs (ensaio, leitura e --gravar), ou do que você escrever aqui.' }) : null,
+      h('div', { class: 'campo' },
+        h('div', { class: 'campo-topo' }, rotulo('Sobre a série', 's-sobre', 'site', 'series'), h('span', { class: 'chip ' + origem[1], id: 's-origem', text: origem[0] })),
+        h('textarea', { id: 's-sobre', rows: '8', placeholder: 'Um ou dois parágrafos: do que trata a série, sem "Nesta série" e sem juízo de valor.', value: (dado && dado.sobre) || '', disabled: !pode }),
+        h('p', { class: 'dica', text: 'Uma linha em branco separa os parágrafos. Editar aqui marca como revisado.' })),
+      dado && dado.origem !== 'revisada' ? botao('Marcar revisado', 's-revisar', 'botao-leve botao-pequeno', 'check', { disabled: !pode }) : null,
+      campo('Comece por aqui', 's-comeco', h('select', { id: 's-comeco', disabled: !pode },
+        [h('option', { value: '', text: '— nenhum —' })].concat(pagina.itens.map(function (i) {
+          return h('option', { value: i.id, selected: dado && dado.comeco === i.id ? 'selected' : null, text: GTM.tituloCurto(i) || i.titulo });
+        }))), 'site', 'series'),
+      campo('Temas', 's-temas', h('input', { type: 'text', id: 's-temas', value: ((dado && dado.temas) || []).join(', '), placeholder: 'Profissões, Vestibular', disabled: !pode }), 'site', 'series',
+        h('p', { class: 'dica', text: 'Separados por vírgula, até cinco. Cada tema abre a busca por ele, e os títulos da série respondem.' })),
+      secao('Momentos da série — ' + Object.keys(escolhidos).length + ' de até ' + MAX_MOMENTOS,
+        caidos.length ? h('div', { class: 'aviso-opcao' },
+          h('b', null, caidos.length + (caidos.length === 1 ? ' momento não aparece' : ' momentos não aparecem') + ' na página: '),
+          'o capítulo sumiu ou o título saiu do ar. Desmarque para tirar do dado.',
+          h('ul', null, caidos.map(function (m) {
+            return h('li', null, h('label', null,
+              h('input', { type: 'checkbox', checked: true, 'data-momento': m.id + '@' + m.inicio, disabled: !pode }),
+              ' ' + m.id + ' em ' + GTM.formatarTempo(m.inicio)));
+          }))) : null,
+        comCapitulo.length ? h('div', { class: 's-momentos' }, comCapitulo.map(function (i) {
+          return h('details', { open: GTM.capitulos(i).some(function (c) { return escolhidos[i.id + '@' + c.inicio]; }) ? 'open' : null },
+            h('summary', { text: GTM.tituloCurto(i) || i.titulo }),
+            h('ul', { class: 's-capitulos' }, GTM.capitulos(i).map(function (c) {
+              var chave = i.id + '@' + c.inicio;
+              return h('li', null, h('label', null,
+                h('input', { type: 'checkbox', checked: escolhidos[chave] ? true : null, 'data-momento': chave, disabled: !pode || (cheio && !escolhidos[chave]) }),
+                h('span', { class: 'mono', text: ' ' + GTM.formatarTempo(c.inicio) + ' ' }), c.titulo));
+            })));
+        })) : h('p', { class: 'p-nota', text: 'Nenhum título desta série tem capítulo: a página fica sem "Momentos", e isso é o certo.' })),
+      dado ? botao('Voltar ao gerado', 's-gerado', 'botao-leve botao-pequeno', null, { disabled: !pode }) : null,
+      dado ? h('p', { class: 'dica', text: 'Apaga a apresentação: a página volta a ser só o alto e a lista, até o script gerar de novo.' }) : null);
+
+    return { cab: cab({ texto: 'Série' }, nome), corpo: corpo };
+  }
+  M.inspSerie = inspSerie;
+
   /* ---------------------------------------------------------- despacho */
 
   M.painel = function (cat) {
@@ -456,6 +523,7 @@
       if (it) return inspItem(cat, it);
     }
     if (s.indexOf('prateleira:') === 0) { var p = inspPrateleira(cat, s.slice(11)); if (p) return p; }
+    if (s.indexOf('serie:') === 0) { var se = inspSerie(cat, s.slice(6)); if (se) return se; }
     if (s === 'marca' || s === 'rodape') return inspFixo(s);
     if (M.st.tela === 'player') return painelPlayer(cat);
     if (M.st.tela === 'enviar' && M.painelEnvio) return M.painelEnvio(cat);
@@ -486,6 +554,7 @@
       if (campoNome === 'prateleiras') return n + (n === 1 ? ' prateleira' : ' prateleiras');
       if (campoNome === 'classes') return n + (n === 1 ? ' série' : ' séries');
       if (campoNome === 'textos') return n + (n === 1 ? ' texto' : ' textos');
+      if (campoNome === 'series') return n + (n === 1 ? ' série apresentada' : ' séries apresentadas');
       return n + ' itens';
     }
     if (campoNome === 'arrastoTeto') return Math.round(v * 100) + '%';

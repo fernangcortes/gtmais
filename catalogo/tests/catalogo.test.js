@@ -1687,23 +1687,20 @@ test('o pedido do "Assistir" espera a fonte, e todo caminho que liga a fonte o a
     'o hls.js liga a fonte e o pedido do "Assistir" fica esperando para sempre');
 });
 
-/* `rememberPosition=false` do embed: não gravamos onde o vídeo parou.
+/* `rememberPosition=false` do embed, e o que mudou nele em 23/09.
  *
  * A fase 2 abriu UMA exceção ao "nada guardado no navegador": a preferência de
- * legenda (ligada/desligada e o corpo da letra). Ligar a legenda a cada vídeo é
- * o tipo de atrito que faz alguém desistir de usá-la, e quem depende dela
- * depende sempre.
+ * legenda. A fase 4 abriu a SEGUNDA, a de som. E a fase 6 da §16 do
+ * PLANO-DESIGN abriu a TERCEIRA, por decisão de quem usa o site (decisão 3 da
+ * §16.1): onde o vídeo parou, para o "Continuar" da página da série.
  *
- * A fase 4 abriu a SEGUNDA, pelo mesmo motivo: quem precisa de reforço de
- * volume precisa dele em TODO vídeo, e refazer 200% a cada título
- * transformaria o item 12 em enfeite.
- *
- * Por isso este teste deixou de ser "nada de armazenamento" e passou a ser uma
- * LISTA: pode guardar a legenda e o som, NÃO pode guardar a posição. Cada
- * item novo tem que passar por aqui de propósito — é o que impede o dia em que
- * alguém guardar `currentTime` "só para retomar de onde parou". */
-test('o player não lembra onde o vídeo parou', () => {
-  assert.equal(GTMP.REGRAS.lembrarPosicao, false);
+ * O que NÃO mudou, e é o que este teste guarda agora: nada retoma sozinho. O
+ * player GRAVA a posição e nunca a LÊ — a única leitura é da página da série,
+ * e ela vira um link que a pessoa clica. Cada chave nova continua tendo de
+ * passar por aqui de propósito. */
+test('o player grava onde parou, e nunca lê nem retoma sozinho', () => {
+  assert.equal(GTMP.REGRAS.retomarSozinho, false);
+  assert.ok(!('lembrarPosicao' in GTMP.REGRAS), 'a regra velha voltou com outro sentido');
 
   assert.ok(!/sessionStorage|indexedDB|document\.cookie/.test(PLAYER_CODIGO),
     'player.js usa um armazenamento fora do previsto');
@@ -1711,26 +1708,82 @@ test('o player não lembra onde o vídeo parou', () => {
   const usos = PLAYER_CODIGO.match(/localStorage\.\w+\([^)]*\)/g) || [];
   assert.ok(usos.length > 0, 'a preferência de legenda deveria estar sendo guardada');
   for (const uso of usos) {
-    assert.match(uso, /CHAVE_LEGENDA|CHAVE_SOM/,
-      'só legenda e som podem ser guardados; apareceu: ' + uso);
+    assert.match(uso, /CHAVE_LEGENDA|CHAVE_SOM|GTM\.CHAVE_ONDE_PAROU/,
+      'só legenda, som e onde parou podem ser guardados; apareceu: ' + uso);
   }
 
-  /* O que a preferência de som pode conter, item a item: volume e estável, e
-   * mais nada. Sem isto, o objeto guardado seria o lugar cômodo para pendurar
-   * a posição do vídeo numa fase futura, sem ninguém notar. */
+  /* A preferência de som continua sem esconder posição dentro dela. */
   const gravaSom = PLAYER_CODIGO.match(/CHAVE_SOM,[\s\S]{0,200}?\)\)/);
   assert.ok(gravaSom, 'a preferência de som deveria estar sendo guardada');
-  assert.match(gravaSom[0], /volume/);
-  assert.match(gravaSom[0], /estavel/);
   assert.ok(!/tempo|currentTime|posicao/i.test(gravaSom[0]),
     'a preferência de som virou esconderijo da posição: ' + gravaSom[0]);
 
-  /* A trava de verdade: nada que venha do relógio do vídeo pode ser gravado. */
+  /* A posição só vai ao armazenamento pela função que a grava, e só pela
+   * forma que o core monta (o começo e o fim não ficam). */
   const gravacoes = PLAYER_CODIGO.match(/setItem\([\s\S]{0,200}?\)/g) || [];
   for (const g of gravacoes) {
-    assert.ok(!/currentTime|duration|posicao/i.test(g),
-      'a posição do vídeo está indo para o armazenamento: ' + g);
+    if (/CHAVE_ONDE_PAROU/.test(g)) { assert.match(g, /JSON\.stringify\(mapa\)/); continue; }
+    assert.ok(!/currentTime|duration|posicao/i.test(g), 'a posição do vídeo está indo para o armazenamento: ' + g);
   }
+  const grava = PLAYER_CODIGO.match(/function gravarOndeParou\([^)]*\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(grava, 'não achei gravarOndeParou');
+  assert.match(grava[1], /GTM\.lembrarOndeParou\(/);
+  assert.match(grava[1], /try\s*\{/, 'gravar onde parou sem try/catch derruba o player na aba anônima');
+
+  /* A TRAVA de verdade: o player não lê a chave. Ler é o primeiro passo de
+   * retomar sozinho. A única `getItem` dela é a de dentro da gravação, que
+   * lê o mapa para acrescentar. */
+  const leituras = PLAYER_CODIGO.match(/getItem\(GTM\.CHAVE_ONDE_PAROU\)/g) || [];
+  assert.equal(leituras.length, 1, 'o player lê onde parou fora da gravação');
+  assert.ok(!/currentTime\s*=\s*[^=;]*(OndeParou|ONDE_PAROU|mapa)/.test(PLAYER_CODIGO), 'o player retoma onde parou');
+});
+
+/* As regras do mapa, no core: o começo e o fim não ficam, o mais recente vence,
+ * e só 50 títulos. E o "Continuar" da série é o último visto DELA, no ar. */
+test('onde parou: sem começo, sem fim, os 50 mais recentes, e o Continuar da série', () => {
+  let m = {};
+  m = GTM.lembrarOndeParou(m, 'dof-2', 5, 600, 1);
+  assert.deepEqual(m, {}, 'os primeiros segundos viraram "parou no meio"');
+  m = GTM.lembrarOndeParou(m, 'dof-2', 372.8, 600, 2);
+  assert.deepEqual(m['dof-2'], { t: 372, d: 600, q: 2 });
+  m = GTM.lembrarOndeParou(m, 'dof-2', 580, 600, 3);
+  assert.ok(!('dof-2' in m), 'quem chegou aos créditos continua com "Continuar"');
+  m = GTM.lembrarOndeParou(m, 'dof-2', 2 * 3600 - 200, 2 * 3600, 4);
+  assert.ok(!('dof-2' in m), 'nos vídeos longos, os últimos 5% são o fim');
+
+  let cheio = {};
+  for (let k = 0; k < 60; k++) cheio = GTM.lembrarOndeParou(cheio, 'x' + k, 100, 600, k);
+  assert.equal(Object.keys(cheio).length, 50);
+  assert.ok(!('x0' in cheio) && 'x59' in cheio, 'saiu o mais novo em vez do mais velho');
+  assert.deepEqual(GTM.lembrarOndeParou('lixo', 'a', 100, 600, 1), { a: { t: 100, d: 600, q: 1 } });
+
+  const mapa = {
+    'dof-1': { t: 100, d: 420, q: 10 },
+    'dof-3': { t: 200, d: 440, q: 20 },
+    'oculto': { t: 50, d: 400, q: 99 },     /* fora do ar */
+    'enq-1': { t: 30, d: 200, q: 50 }       /* outra série */
+  };
+  const c = GTM.continuarDaSerie(itensApresentacao, 'De Olho no Futuro', mapa);
+  assert.equal(c.item.id, 'dof-3', 'o Continuar não levou ao último visto da série');
+  assert.equal(c.t, 200);
+  assert.equal(c.link, '#/ep/dof-3?t=200');
+  assert.equal(GTM.continuarDaSerie(itensApresentacao, 'Campanhas', mapa), null);
+  assert.equal(GTM.continuarDaSerie(itensApresentacao, 'De Olho no Futuro', 'lixo'), null);
+});
+
+test('o Continuar mora na página da série, lê com try/catch, e o clique é o pedido de tocar', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const ler = app.match(/function lerOndeParou\(\)\s*\{([\s\S]*?)\n  \}/);
+  assert.ok(ler, 'não achei lerOndeParou');
+  assert.match(ler[1], /try\s*\{/);
+  /* Três: a definição, a página da série e a ficha (24/09). Uma quarta é
+   * alguém lendo a memória num lugar novo — que passe por aqui de propósito. */
+  assert.equal((app.match(/lerOndeParou\(\)/g) || []).length, 3, 'onde parou é lido fora da série e da ficha');
+  const i = app.indexOf('function cabecaDaSerie(');
+  const cab = app.slice(i, app.indexOf('\n  }\n', i));
+  assert.match(cab, /GTM\.continuarDaSerie\(estado\.itens, s\.nome, lerOndeParou\(\)\)/);
+  assert.match(cab, /ligarAssistir\(continuar, cont\.item\.id\)/);
+  assert.match(cab, /continuar\.href = cont\.link/);
 });
 
 /* Sem o try/catch, `localStorage` LANÇA em aba anônima, com armazenamento
@@ -6717,7 +6770,7 @@ test('a página da série é o alto e a lista de episódios, e não uma grade', 
   const pagina = app.match(/function renderSerie\(nome\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(pagina, 'não achei renderSerie em app.js');
   assert.match(pagina[1], /GTM\.paginaDaSerie\(/, 'a página não monta a série pelo core');
-  assert.match(pagina[1], /cabecaDaSerie\(s\)[\s\S]*secaoEpisodios\(s, ''\)/, 'faltou o alto ou a lista');
+  assert.match(pagina[1], /cabecaDaSerie\(s, a\)[\s\S]*secaoEpisodios\(s, ''\)/, 'faltou o alto ou a lista');
   assert.ok(!/filtroSeries\(|'grade'|contagem/.test(pagina[1]), 'a página da série voltou a ser grade');
   /* Série que não existe diz isso, e oferece o caminho de volta. */
   assert.match(pagina[1], /if \(!s\)[\s\S]*'#\/series'/, 'a série que sumiu deixa a tela vazia');
@@ -6755,9 +6808,9 @@ test('a lista de episódios é uma <ol> rotulada, e o título na tela não é li
 /* O alto da página é o destaque — as mesmas regras de LCP e de CLS. */
 test('o alto da série veste o destaque: capa com prioridade alta, sem lazy, sem prévia', () => {
   const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
-  const cabeca = app.match(/function cabecaDaSerie\(s\)\s*\{([\s\S]*?)\n  \}/);
+  const cabeca = app.match(/function cabecaDaSerie\(s, a\)\s*\{([\s\S]*?)\n  \}/);
   assert.ok(cabeca, 'não achei cabecaDaSerie em app.js');
-  assert.match(cabeca[1], /criar\('section', 'destaque serie-cabeca'\)/,
+  assert.match(cabeca[1], /criar\('section', 'destaque serie-cabeca'( \+|\))/,
     'o alto da série deixou de vestir o .destaque — e com ele o padding que segura o CLS');
   assert.match(cabeca[1], /setAttribute\('fetchpriority', 'high'\)/, 'a capa do alto perdeu a prioridade');
   assert.ok(!/loading\s*=/.test(cabeca[1]), 'a capa do alto ficou preguiçosa — ela é o LCP da página');
@@ -7645,7 +7698,7 @@ test('o site saneado descarta o que não é da forma, e não lança com dado tor
   assert.ok(!('lixo' in s), 'campo desconhecido atravessou o saneador');
 
   for (const torto of [null, undefined, 'texto', 7, [], { prateleiras: 'x', classes: 3, textos: null }]) {
-    assert.deepEqual(GTM.siteSaneado(torto), { destaque: null, prateleiras: {}, classes: {}, textos: {} });
+    assert.deepEqual(GTM.siteSaneado(torto), { destaque: null, prateleiras: {}, classes: {}, textos: {}, series: {} });
   }
 
   /* Determinístico: o rascunho compara por JSON.stringify, e mapa com chave em
@@ -7803,6 +7856,175 @@ test('a estrutura escolhida atravessa o PUT e sai no GET público', async () => 
   });
   assert.equal(recusa.status, 403);
   assert.equal(recusa.corpo.barradas[0].permissao, 'estrutura');
+});
+
+/* ======================= a apresentação da série (PLANO-DESIGN §16) ====== */
+
+/* O dado da §16.3, fase 1: `site.series[nome] = { sobre, origem, comeco,
+ * momentos, temas }`. A forma é conferida sem o catálogo (o saneador roda no
+ * GET e no PUT); o sentido, com ele (`apresentacaoDaSerie`). */
+
+const itensApresentacao = catalogoPrateleiras.map(i => i.id === 'dof-2'
+  ? Object.assign({}, i, { capitulos: [{ inicio: 0, titulo: 'Abertura' }, { inicio: 95, titulo: 'O consultório' }] })
+  : i.id === 'oculto'
+    ? Object.assign({}, i, { capitulos: [{ inicio: 30, titulo: 'Bastidor' }] })
+    : i);
+
+test('a apresentação da série é saneada na forma, e o que não tem forma cai', () => {
+  const s = GTM.siteSaneado({
+    series: {
+      'De Olho no Futuro': {
+        sobre: '  Profissionais contam o dia a dia.  ',
+        origem: 'revisada',
+        comeco: 'dof-1',
+        momentos: [
+          { id: 'dof-2', inicio: 95 },
+          { id: 'dof-2', inicio: 95 },          /* repetido */
+          { id: 'dof-2', inicio: '95' },        /* texto não é segundo */
+          { id: 'dof-2', inicio: 1.5 },         /* nem fração */
+          { id: 'dof-2', inicio: -3 },
+          { inicio: 10 },
+          'lixo'
+        ],
+        temas: ['Profissões', ' profissões ', 'Saúde', 7, '', 'x'.repeat(80)],
+        lixo: true
+      },
+      'Enquete': { origem: 'revisada' },    /* só a origem não é dado */
+      '   ': { sobre: 'sem nome' },
+      'Campanhas': 'texto',
+      'Curtas': { sobre: 'Curtas.', origem: 'inventada' }
+    }
+  });
+
+  assert.deepEqual(Object.keys(s.series), ['Curtas', 'De Olho no Futuro']);
+  const d = s.series['De Olho no Futuro'];
+  assert.equal(d.sobre, 'Profissionais contam o dia a dia.');
+  assert.equal(d.origem, 'revisada');
+  assert.equal(d.comeco, 'dof-1');
+  assert.deepEqual(d.momentos, [{ id: 'dof-2', inicio: 95 }]);
+  assert.deepEqual(d.temas.slice(0, 2), ['Profissões', 'Saúde'], 'o tema repetido em outra grafia ficou duas vezes');
+  assert.equal(d.temas[2].length, 40, 'o tema comprido não foi cortado');
+  assert.ok(!('lixo' in d), 'campo desconhecido atravessou o saneador');
+
+  /* O desconhecido vira `auto`, nunca `revisada`: o script não sobrescreve o
+   * revisado, e um revisado inventado trancaria o texto sem ninguém ter lido. */
+  assert.equal(s.series['Curtas'].origem, 'auto');
+
+  /* Os tetos: cinco momentos, cinco temas, e o texto não carrega uma página. */
+  const muito = GTM.siteSaneado({ series: { X: {
+    sobre: 'a'.repeat(5000),
+    momentos: Array.from({ length: 9 }, (_, i) => ({ id: 'dof-2', inicio: i })),
+    temas: Array.from({ length: 9 }, (_, i) => 'tema ' + i)
+  } } }).series.X;
+  assert.equal(muito.momentos.length, 5);
+  assert.equal(muito.temas.length, 5);
+  assert.ok(muito.sobre.length <= 1500);
+
+  /* E a estrutura que só tem séries NÃO é vazia: o PUT não pode apagá-la. */
+  assert.equal(GTM.siteVazio({ series: { X: { sobre: 'Texto.' } } }), false);
+  assert.equal(GTM.siteVazio({ series: { X: { origem: 'auto' } } }), true);
+});
+
+test('a página da série só mostra o que existe: o momento cujo capítulo sumiu cai sozinho', () => {
+  const site = { series: { 'De Olho no Futuro': {
+    sobre: 'Profissionais contam o dia a dia.',
+    comeco: 'dof-3',
+    momentos: [
+      { id: 'dof-2', inicio: 95 },     /* vale */
+      { id: 'dof-2', inicio: 96 },     /* dentro do capítulo, mas não no começo */
+      { id: 'dof-1', inicio: 0 },      /* título sem capítulo */
+      { id: 'enq-1', inicio: 0 },      /* de outra série */
+      { id: 'oculto', inicio: 30 },    /* fora do ar */
+      { id: 'sumiu', inicio: 0 }
+    ],
+    temas: ['Profissões']
+  } } };
+
+  const a = GTM.apresentacaoDaSerie(itensApresentacao, 'De Olho no Futuro', site);
+  assert.equal(a.sobre, 'Profissionais contam o dia a dia.');
+  assert.equal(a.origem, 'auto');
+  assert.equal(a.comeco.id, 'dof-3');
+  assert.equal(a.momentos.length, 1, 'momento sem capítulo, fora do ar ou de outra série chegou à página');
+  assert.equal(a.momentos[0].item.id, 'dof-2');
+  assert.equal(a.momentos[0].capitulo, 'O consultório');
+  /* O mesmo caminho do trecho da busca: a ficha abre PARADA no minuto. */
+  assert.equal(a.momentos[0].link, '#/ep/dof-2?t=95');
+  assert.equal(a.momentos[0].link, GTM.linkDaFicha('dof-2', 95));
+  assert.deepEqual(a.temas, ['Profissões']);
+
+  /* O começo tem de ser desta série e estar no ar. */
+  for (const comeco of ['enq-1', 'oculto', 'sumiu']) {
+    const s = { series: { 'De Olho no Futuro': { sobre: 'x', comeco } } };
+    assert.equal(GTM.apresentacaoDaSerie(itensApresentacao, 'De Olho no Futuro', s).comeco, null,
+      'o "Comece por aqui" apontou para ' + comeco);
+  }
+
+  /* Sem dado, sem série no ar, ou só com o que caiu: nada, e a página de hoje. */
+  assert.equal(GTM.apresentacaoDaSerie(itensApresentacao, 'De Olho no Futuro', null), null);
+  assert.equal(GTM.apresentacaoDaSerie(itensApresentacao, 'Série que não existe',
+    { series: { 'Série que não existe': { sobre: 'x' } } }), null);
+  assert.equal(GTM.apresentacaoDaSerie(itensApresentacao, 'De Olho no Futuro',
+    { series: { 'De Olho no Futuro': { momentos: [{ id: 'sumiu', inicio: 0 }] } } }), null);
+});
+
+test('a escrita da série é pura, e voltar ao gerado é apagar a entrada', () => {
+  const zero = GTM.siteSaneado(null);
+  const gerado = GTM.comSerie(zero, 'Enquete', { sobre: 'Texto do script.', temas: ['Língua'], origem: 'auto' });
+  assert.deepEqual(zero.series, {}, 'a escrita mexeu no objeto que recebeu');
+  assert.deepEqual(gerado.series.Enquete, { sobre: 'Texto do script.', temas: ['Língua'], origem: 'auto' });
+
+  /* Editar um campo não leva os outros embora. */
+  const revisado = GTM.comSerie(gerado, 'Enquete', { sobre: 'Texto lido por gente.', origem: 'revisada' });
+  assert.deepEqual(revisado.series.Enquete, { sobre: 'Texto lido por gente.', temas: ['Língua'], origem: 'revisada' });
+
+  /* "Voltar ao gerado" apaga — o script escreve de novo, e não um valor
+   * copiado do código ou do script de ontem. */
+  assert.deepEqual(GTM.comSerie(revisado, 'Enquete', null).series, {});
+  assert.deepEqual(GTM.comSerie(revisado, 'Outra', null).series, revisado.series);
+});
+
+/* A permissão é campo a campo no servidor (M2), e o "Sobre" é CONTEÚDO — é
+ * texto sobre os vídeos, como a sinopse. Quem arruma prateleira não reescreve
+ * a apresentação, e quem revisa sinopse não precisa de "estrutura" para isso. */
+test('a apresentação da série atravessa o PUT, sai no GET, e é da permissão conteúdo', async () => {
+  assert.equal(GTM.permissaoDoCampo('site', 'series'), 'conteudo');
+  assert.deepEqual(GTM.aplicarRascunho({ itens: [] }, [{ alvo: 'site', campo: 'series', antes: undefined, depois: { X: { sobre: 'y' } } }]).site,
+    { series: { X: { sobre: 'y' } } }, 'o rascunho da mesa não aceita o campo');
+
+  const env = ambiente(kvDeMentira());
+  const sup = await entrar(env, '', 'senha-do-super');
+  const itens = itensApresentacao.map(i => Object.assign({}, i, {
+    fonte: { tipo: 'bunny', libraryId: '1', videoId: 'v-' + i.id }
+  }));
+  const series = { 'De Olho no Futuro': { sobre: 'Profissionais.', momentos: [{ id: 'dof-2', inicio: 95 }], temas: ['Profissões'] } };
+
+  const gravado = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: sup.token,
+    corpo: { rev: 0, itens, site: { series } } });
+  assert.equal(gravado.status, 200);
+
+  const publico = await pedir(env, { caminho: '/api/catalogo' });
+  assert.deepEqual(publico.corpo.site.series['De Olho no Futuro'],
+    { sobre: 'Profissionais.', momentos: [{ id: 'dof-2', inicio: 95 }], temas: ['Profissões'], origem: 'auto' });
+  const a = GTM.apresentacaoDaSerie(publico.corpo.itens, 'De Olho no Futuro', publico.corpo.site);
+  assert.equal(a.momentos[0].capitulo, 'O consultório', 'o momento não sobreviveu à projeção pública');
+
+  const completo = await pedir(env, { caminho: '/api/catalogo?completo=1', token: sup.token });
+
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'rui', senha: 'senha-bem-comprida', permissoes: ['estrutura'] } });
+  const rui = await entrar(env, 'rui', 'senha-bem-comprida');
+  const novo = { series: { 'De Olho no Futuro': Object.assign({}, series['De Olho no Futuro'], { sobre: 'Outro.', origem: 'revisada' }) } };
+  const recusa = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: rui.token,
+    corpo: Object.assign({}, completo.corpo, { site: novo }) });
+  assert.equal(recusa.status, 403, 'quem só arruma a chegada reescreveu a apresentação');
+  assert.equal(recusa.corpo.barradas[0].permissao, 'conteudo');
+
+  await pedir(env, { metodo: 'POST', caminho: '/api/contas', token: sup.token,
+    corpo: { usuario: 'ana', senha: 'senha-bem-comprida', permissoes: ['conteudo'] } });
+  const ana = await entrar(env, 'ana', 'senha-bem-comprida');
+  const aceita = await pedir(env, { metodo: 'PUT', caminho: '/api/catalogo', token: ana.token,
+    corpo: Object.assign({}, completo.corpo, { site: novo }) });
+  assert.equal(aceita.status, 200, 'quem cuida do conteúdo não pôde revisar a apresentação');
 });
 
 /* O rodapé é o único dos seis textos que já existe no HTML — ele é desenhado
@@ -8372,7 +8594,7 @@ test('publicar sem escolher estrutura não inventa o campo site', async () => {
   const sup = await entrar(env, '', 'senha-do-super');
 
   const vazio = (await pedir(env, { caminho: '/api/catalogo' })).corpo;
-  assert.deepEqual(vazio.site, { destaque: null, prateleiras: {}, classes: {}, textos: {} },
+  assert.deepEqual(vazio.site, { destaque: null, prateleiras: {}, classes: {}, textos: {}, series: {} },
     'o catálogo vazio deixou de projetar a estrutura');
 
   /* Devolver ao PUT exatamente o que o GET deu não pode gravar nada novo. */
@@ -9413,4 +9635,194 @@ test('o cartão que abre passa por cima sem deslocar nada, e o celular ganha a b
   const app = lerTexto(path.join(SITE, 'app.js'));
   const setas = app.match(/function ajustarSetas\(pista\)\s*\{([\s\S]*?)\n  \}/)[1];
   assert.match(setas, /classList\.toggle\('pista-no-fim', noFim\)/, 'ninguém marca o fim da pista');
+});
+
+/* ===================== o script das séries (PLANO-DESIGN §16.3, fase 2) == */
+
+/* O `series.mjs` só é útil se o que ele manda gravar passa pela mesma
+ * conferência da página: um momento que o modelo inventou fora do começo de
+ * um capítulo cai ANTES de ir ao catálogo, e fica anotado no ensaio. */
+test('o script das séries confere a resposta do modelo contra a série, e nunca escreve o revisado', async () => {
+  const S = await import('../scripts/lib/series.mjs');
+
+  assert.deepEqual(S.seriesComPagina(itensApresentacao), ['De Olho no Futuro', 'Enquete', 'Campanhas'].filter(n =>
+    GTM.gruposDeSeries(itensApresentacao).some(g => g.series.some(s => s.nome === n && s.temPagina))));
+
+  const falas = S.lerFala('dof-2\t[[0,"Bom dia."],[95,"O consultório abre cedo."]]\nlinha torta\nx\tnão é json');
+  assert.equal(falas.size, 1);
+  const m = S.materialDaSerie(itensApresentacao, 'De Olho no Futuro', falas);
+  assert.deepEqual(m.titulos.map(t => t.id), ['dof-1', 'dof-2', 'dof-3'], 'o material levou título fora do ar ou fora de ordem');
+  assert.equal(m.titulos[1].fala, 'Bom dia. O consultório abre cedo.');
+  assert.match(S.textoDoMaterial(m), /inicio 95: O consultório/);
+  assert.deepEqual(S.formatoDaResposta(m).schema.properties.comeco.enum, ['dof-1', 'dof-2', 'dof-3']);
+
+  const { entrada, avisos } = S.conferirResposta(itensApresentacao, 'De Olho no Futuro', {
+    sobre: 'Nesta série, profissionais contam o dia a dia.',
+    comeco: 'dof-1',
+    momentos: [{ id: 'dof-2', inicio: 95 }, { id: 'dof-2', inicio: 100 }],
+    temas: ['Profissões']
+  });
+  assert.equal(entrada.origem, 'auto', 'o que o modelo escreve nasceu revisado');
+  assert.deepEqual(entrada.momentos, [{ id: 'dof-2', inicio: 95 }]);
+  assert.ok(avisos.some(a => /fora de capítulo/.test(a)));
+  assert.ok(avisos.some(a => /fórmula proibida/.test(a)), 'o "Nesta série" passou sem aviso');
+
+  const revisado = { series: { 'Enquete': { sobre: 'Lido por gente.', origem: 'revisada' } } };
+  assert.equal(S.podeEscrever(revisado, 'Enquete', true), false, 'o --refazer sobrescreve o revisado');
+  const auto = { series: { 'Enquete': { sobre: 'Do script.' } } };
+  assert.equal(S.podeEscrever(auto, 'Enquete', false), false);
+  assert.equal(S.podeEscrever(auto, 'Enquete', true), true);
+  assert.equal(S.podeEscrever(null, 'Enquete', false), true);
+});
+
+test('o series.mjs ensaia por padrão, lê o KV, e recusa gravar antes do servidor conhecer o campo', () => {
+  const src = semComentarios(lerTexto(path.join(__dirname, '..', 'scripts', 'series.mjs')));
+  assert.match(src, /api\/catalogo\?completo=1/, 'o script leu o seed em vez do KV');
+  assert.match(src, /if \(op\.gravar\)/, 'gravar deixou de exigir --gravar');
+  assert.match(src, /'series' in publico\.site/, 'o script grava sem conferir que o servidor guarda o campo');
+  assert.match(src, /podeEscrever\(novoSite/, 'a gravação não confere o revisado no catálogo lido na hora');
+  assert.ok(!/origem: 'revisada'/.test(src), 'o script marca revisado');
+});
+
+/* ===================== a página da série com a apresentação (§16.3, fase 3) */
+
+test('os temas da série entram na busca numa cópia, e sem tema a lista é a mesma', () => {
+  const site = { series: { 'De Olho no Futuro': { sobre: 'x', temas: ['Escolha da carreira'] } } };
+  const com = GTM.comTemasDasSeries(itensApresentacao, site);
+  const dof = com.find(i => i.id === 'dof-2');
+  assert.deepEqual(dof.tags, ['Escolha da carreira']);
+  assert.ok(!('tags' in itensApresentacao.find(i => i.id === 'dof-2')), 'o dado do título mudou');
+  assert.equal(com.find(i => i.id === 'enq-1'), itensApresentacao.find(i => i.id === 'enq-1'), 'título de outra série foi copiado à toa');
+  assert.deepEqual(GTM.buscar(GTM.publicaveis(com), 'escolha da carreira').map(i => i.id).sort(), ['dof-1', 'dof-2', 'dof-3']);
+  assert.equal(GTM.comTemasDasSeries(itensApresentacao, {}), itensApresentacao,
+    'sem tema nenhum a lista mudou de identidade — e o índice da busca seria refeito a cada desenho');
+});
+
+test('a página da série desenha a apresentação só com texto, e o momento é o caminho do trecho', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const corpo = (nome) => {
+    const i = app.indexOf('function ' + nome + '(');
+    assert.ok(i >= 0, 'não achei ' + nome);
+    return app.slice(i, app.indexOf('\n  }\n', i));
+  };
+  const render = corpo('renderSerie');
+  assert.match(render, /GTM\.apresentacaoDaSerie\(estado\.itens, s\.nome, estado\.site\)/);
+  /* Desde 24/09 o "Sobre" mora na coluna do título, dentro do alto — com a
+   * capa ao lado dos dois no computador. */
+  assert.ok(render.indexOf('cabecaDaSerie(s, a)') < render.indexOf('secaoEpisodios'), 'o alto saiu embaixo da lista');
+  assert.match(corpo('cabecaDaSerie'), /if \(a && a\.sobre\) texto\.appendChild\(sobreDaSerie\(a, s\.nome\)\);/,
+    'o Sobre saiu da coluna do título');
+  /* E no celular: sem "Comece por aqui", e os temas no fim da página. */
+  assert.ok(render.indexOf("'serie-temas serie-temas-fim'") > render.indexOf('secaoEpisodios'), 'os temas do celular não estão depois da lista');
+  const css560 = lerTexto(path.join(SITE, 'style.css')).match(/@media \(max-width: 560px\) \{\s*\.serie-comeco,[\s\S]*?\n\}/);
+  assert.ok(css560, 'o celular ainda mostra o Comece por aqui');
+  assert.match(css560[0], /\.serie-destaques \.serie-temas \{ display: none; \}|\.serie-destaques \.serie-temas[^{]*\{ display: none; \}/);
+  assert.match(css560[0], /\.serie-temas-fim \{ display: block;/);
+
+  /* Nenhuma capa a mais na carga (§16.3): os destaques são texto. */
+  for (const f of ['sobreDaSerie', 'destaquesDaSerie']) {
+    assert.ok(!/'img'|urlCapa|urlPreview/.test(corpo(f)), f + ' pede imagem');
+    assert.ok(!/innerHTML/.test(corpo(f)), f + ' põe texto do dado por innerHTML');
+  }
+  const destaques = corpo('destaquesDaSerie');
+  /* O clique dá o play, o link colado abre parado — a REGRA 1 continua no
+   * `ligarAssistir`, que só guarda o pedido de um clique primário. */
+  assert.equal((destaques.match(/ligarAssistir\(/g) || []).length, 2, 'o começo ou o momento não pedem o play pelo clique');
+  assert.match(destaques, /l\.href = mo\.link/);
+  assert.match(destaques, /chipsDeTemas\(a\.temas\)/);
+  assert.match(corpo('chipsDeTemas'), /buscarPor\(tema\)/);
+  assert.match(corpo('buscarPor'), /aoDigitar\(\)/, 'o tema abre a busca por outro caminho que não o de quem digita');
+
+  /* E a busca responde pelo tema: os dois caminhos passam pela cópia com os temas. */
+  assert.match(corpo('indiceDaBusca'), /GTM\.comTemasDasSeries\(GTM\.publicaveis\(estado\.itens\), estado\.site\)/);
+  assert.match(corpo('indiceDaBusca'), /busca\.indiceSite !== estado\.site/, 'o índice não se refaz quando os temas mudam');
+  assert.match(corpo('responder'), /base = GTM\.comTemasDasSeries\(base, estado\.site\);/);
+
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  assert.match(css, /\.serie-destaques \{[^}]*repeat\(auto-fit, minmax\(min\(280px, 100%\), 1fr\)\)/,
+    'a faixa dos destaques não se ajeita sozinha — a série sem capítulo deixaria buraco');
+});
+
+/* ============================= a entrada da série (§16.3, fase 4) ========= */
+
+test('a entrada da série roda uma vez por série na sessão, e nunca sem memória, com menos movimento ou na mesa', () => {
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const i = app.indexOf('function entradaDaSerie(');
+  const f = app.slice(i, app.indexOf('\n  }\n', i));
+  assert.match(f, /if \(mesa\.ligada\) return;/, 'a entrada roda dentro da mesa, que redesenha a cada tecla');
+  assert.match(f, /prefers-reduced-motion: reduce/);
+  assert.match(f, /vistas\.indexOf\(nome\) >= 0\) return;/, 'a entrada não é uma vez por série');
+  /* Sem sessionStorage, NÃO roda — seria a animação a cada visita. O
+   * `return` está dentro do catch, antes de ligar a classe. */
+  assert.ok(/catch \(e\) \{\s*return;\s*\}/.test(f) && f.indexOf('catch') < f.indexOf("classList.add('cinema-serie')"),
+    'sem sessionStorage a entrada roda do mesmo jeito');
+  assert.match(app, /entradaDaSerie\(s\.nome\);/);
+  /* Sem camada e sem marca: a abertura é da chegada. */
+  assert.ok(!/abertura/.test(f), 'a entrada da série mexe na abertura da chegada');
+});
+
+test('na entrada da série a capa só se move: nunca opacidade, e nada com movimento reduzido', () => {
+  const css = lerTexto(path.join(SITE, 'style.css'));
+  const regra = css.match(/\.cinema-serie \.serie-cabeca \.destaque-capa img \{([^}]*)\}/);
+  assert.ok(regra, 'não achei a regra da capa na entrada da série');
+  assert.match(regra[1], /animation: cinema-capa /, 'a capa da série ganhou outra animação');
+  const kf = css.match(/@keyframes cinema-capa \{([\s\S]*?)\n\}/);
+  assert.ok(!/opacity/.test(kf[1]), 'a animação da capa mexe na opacidade — a capa é o LCP');
+  const reduzido = css.match(/@media \(prefers-reduced-motion: reduce\) \{([\s\S]*?)\n\}/g).join('\n');
+  for (const sel of ['.cinema-serie .serie-cabeca .destaque-capa img', '.cinema-serie .serie-sobre', '.cinema-serie .serie-caixa', '.cinema-serie .episodios']) {
+    assert.ok(reduzido.includes(sel), sel + ' continua animado com movimento reduzido');
+  }
+});
+
+/* ============================ a mesa da apresentação (§16.3, fase 5) ====== */
+
+test('a mesa edita a apresentação da série: mexer é revisar, e voltar ao gerado apaga', () => {
+  const base = semComentarios(lerTexto(path.join(SITE, 'mesa-base.js')));
+  const i = base.indexOf('M.mudarSerie = function');
+  const f = base.slice(i, base.indexOf('\n  };\n', i));
+  assert.match(f, /m\.origem = voltou && noServidor\.origem \? noServidor\.origem : 'revisada';/,
+    'editar na mesa não marca revisado — o script escreveria por cima');
+  assert.match(f, /M\.mudarSite\('series', GTM\.comSerie\(M\.site\(\), nome, m\)\.series/,
+    'o rascunho não guarda o mapa inteiro das séries pela escrita do core');
+  assert.match(base, /M\.voltarSerieAoGerado = function \(nome\) \{\s*M\.mudarSite\('series', GTM\.comSerie\(M\.site\(\), nome, null\)\.series\);/);
+
+  const painel = semComentarios(lerTexto(path.join(SITE, 'mesa-painel.js')));
+  assert.match(painel, /if \(s\.indexOf\('serie:'\) === 0\) \{ var se = inspSerie\(cat, s\.slice\(6\)\);/);
+  for (const id of ['s-sobre', 's-origem', 's-revisar', 's-comeco', 's-temas', 's-gerado', 'data-momento']) {
+    assert.ok(painel.includes(id), 'o inspetor da série perdeu ' + id);
+  }
+  assert.match(painel, /var pode = M\.pode\('conteudo'\);/, 'o inspetor da série pede outra permissão que não a do servidor');
+  assert.match(painel, /cheio && !escolhidos\[chave\]/, 'dá para marcar mais de cinco momentos');
+
+  const mesa = semComentarios(lerTexto(path.join(SITE, 'mesa.js')));
+  assert.match(mesa, /'s-gerado': function \(\) \{[\s\S]*?window\.confirm\(/, 'voltar ao gerado apaga sem perguntar');
+  assert.match(mesa, /irNoSite\('#\/serie\/' \+ encodeURIComponent\(alvo\.slice\(6\)\)\)/, 'escolher a série não abre a página dela no quadro');
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  assert.match(app, /marcarMesa\(caixa, 'serie:' \+ s\.nome\)/, 'o alto da série não escolhe a apresentação na mesa');
+});
+
+/* A decisão de 24/09 sobre a pergunta da fase 6: a ficha aberta por outro
+ * caminho OFERECE continuar, sem mostrar o tempo — e não retoma sozinha. */
+test('a ficha oferece Continuar sem o tempo, e só quando nada foi pedido', () => {
+  const mapa = { 'dof-2': { t: 372, d: 600, q: 5 }, 'dof-3': { t: 590, d: 600, q: 6 } };
+  assert.deepEqual(GTM.ondeParouDe(mapa, 'dof-2'), { t: 372, link: '#/ep/dof-2?t=372' });
+  assert.equal(GTM.ondeParouDe(mapa, 'dof-3'), null, 'quem chegou ao fim ganhou Continuar');
+  assert.equal(GTM.ondeParouDe(mapa, 'nada'), null);
+  assert.equal(GTM.ondeParouDe('lixo', 'dof-2'), null);
+
+  const app = semComentarios(lerTexto(path.join(SITE, 'app.js')));
+  const i = app.indexOf('function renderFicha(');
+  const f = app.slice(i, app.indexOf('\n  }\n', i));
+  assert.match(f, /momento == null && !tocar && !mesa\.ligada/, 'o Continuar aparece com ?t=, com o Assistir ou na mesa');
+  assert.match(f, /alvoCapitulos === playerAtivo/, 'o Continuar aparece no iframe, que não grava onde parou');
+  assert.match(f, /GTM\.ondeParouDe\(lerOndeParou\(\), item\.id\)/);
+  assert.match(f, /continuar\.href = ponto\.link/);
+  assert.match(f, /ligarAssistir\(continuar, item\.id\)/);
+  assert.match(f, /addEventListener\('play'[\s\S]{0,120}removeChild\(continuar\)/, 'o Continuar fica na tela depois do play');
+  /* Sem o tempo escrito, como pedido: nenhum formatarTempo(ponto…). */
+  assert.ok(!/formatarTempo\(ponto/.test(f), 'a ficha mostra o tempo do Continuar');
+  /* E sem retomar: nada da memória chega ao currentTime nem ao player. */
+  assert.ok(!/currentTime|irPara\(ponto|tocar\(ponto/.test(f.slice(f.indexOf('var ponto'), f.indexOf('var ponto') + 1500)),
+    'a ficha retoma sozinha');
 });

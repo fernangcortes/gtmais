@@ -98,6 +98,22 @@
     } catch (e) { /* sem armazenamento: a preferência vale só nesta ficha */ }
   }
 
+  /* A TERCEIRA COISA GUARDADA, desde a fase 6 da §16 do PLANO-DESIGN (23/09):
+   * onde o vídeo parou, para o "Continuar" da página da série. A regra que
+   * fica é a de sempre — NADA RETOMA SOZINHO —, e ela está escrita como
+   * ausência: este arquivo GRAVA a chave e nunca a LÊ. Quem lê é a página da
+   * série, e o que ela oferece é um link que a pessoa clica.
+   *
+   * O mapa é montado pelo core (`GTM.lembrarOndeParou`): o começo e o fim do
+   * vídeo não ficam, e só os 50 mais recentes. */
+  function gravarOndeParou(id, t, duracao) {
+    try {
+      var cru = raiz.localStorage.getItem(GTM.CHAVE_ONDE_PAROU);
+      var mapa = GTM.lembrarOndeParou(cru ? JSON.parse(cru) : {}, id, t, duracao, Date.now());
+      raiz.localStorage.setItem(GTM.CHAVE_ONDE_PAROU, JSON.stringify(mapa));
+    } catch (e) { /* sem armazenamento: o "Continuar" não aparece, e é só isso */ }
+  }
+
   /* --------------------------------------------------------------- auxílio */
 
   function criar(tag, classe, texto) {
@@ -2425,7 +2441,23 @@
       if (foraDosControles(ev)) ev.preventDefault();
     });
 
+    /* ONDE PAROU (§16.3, fase 6): poucas vezes por minuto tocando, e sempre no
+     * pause e na saída. Só depois do primeiro play: a ficha aberta num `?t=`
+     * e deixada parada não é "parou no meio". */
+    var ANOTAR_A_CADA_MS = 15000;
+    var jaTocou = false, ultimaAnotacao = 0;
+    function anotarOndeParou(agoraMesmo) {
+      if (!jaTocou) return;
+      var agora = Date.now();
+      if (!agoraMesmo && agora - ultimaAnotacao < ANOTAR_A_CADA_MS) return;
+      ultimaAnotacao = agora;
+      gravarOndeParou(item.id, video.currentTime || 0, duracao());
+    }
+    function aoSairDaPagina() { anotarOndeParou(true); }
+    raiz.addEventListener('pagehide', aoSairDaPagina);
+
     video.addEventListener('timeupdate', function () { pintar(); avisarTempo(); });
+    video.addEventListener('timeupdate', function () { if (!video.paused) anotarOndeParou(false); });
     video.addEventListener('progress', pintarBuffer);
     video.addEventListener('loadedmetadata', function () {
       /* A duração medida pelo Bunny diverge da do catálogo em um ou dois
@@ -2442,8 +2474,8 @@
     /* Play e pause são os dois momentos em que a resposta de
      * `podeEsconderControles` muda: dar play começa a contagem, pausar traz
      * tudo de volta e a mantém parada. */
-    video.addEventListener('play', function () { sincronizarPlay(); acordarControles(); });
-    video.addEventListener('pause', function () { sincronizarPlay(); acordarControles(); });
+    video.addEventListener('play', function () { jaTocou = true; sincronizarPlay(); acordarControles(); });
+    video.addEventListener('pause', function () { sincronizarPlay(); acordarControles(); anotarOndeParou(true); });
     video.addEventListener('waiting', function () { caixa.classList.add('pl-esperando'); });
     video.addEventListener('playing', function () { caixa.classList.remove('pl-esperando'); });
 
@@ -2580,6 +2612,10 @@
     function destruir() {
       if (destruido) return;
       destruido = true;
+      /* Sair da ficha é o último "onde parou" — e o ouvinte da janela sai
+       * junto, como os outros daqui. */
+      anotarOndeParou(true);
+      raiz.removeEventListener('pagehide', aoSairDaPagina);
       document.removeEventListener('keydown', aoTeclar);
       /* Sem isto a grade voltaria em coluna única depois de sair da ficha em
        * modo teatro — a classe é do <body>, não do player. */

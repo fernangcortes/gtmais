@@ -531,7 +531,7 @@
     return valor && typeof valor === 'object' && !Array.isArray(valor) ? valor : {};
   }
 
-  /* A forma conferida, sempre com as quatro chaves — quem lê não precisa de
+  /* A forma conferida, sempre com as cinco chaves — quem lê não precisa de
    * guarda. As chaves dos mapas saem ORDENADAS: o rascunho compara valor por
    * `JSON.stringify`, e um mapa com as mesmas entradas em outra ordem contaria
    * como mudança que ninguém fez. */
@@ -541,7 +541,8 @@
       destaque: typeof cru.destaque === 'string' && cru.destaque ? cru.destaque : null,
       prateleiras: {},
       classes: {},
-      textos: {}
+      textos: {},
+      series: {}
     };
 
     var ps = mapaSimples(cru.prateleiras);
@@ -570,7 +571,242 @@
       if (texto) saida.textos[chave] = texto;
     });
 
+    var ss = mapaSimples(cru.series);
+    Object.keys(ss).sort().forEach(function (nome) {
+      if (!nome.trim()) return;
+      var s = serieSaneada(ss[nome]);
+      if (s) saida.series[nome] = s;
+    });
+
     return saida;
+  }
+
+  /* --------------------------------------- a apresentação da série (§16)
+   *
+   * `site.series[nome] = { sobre, origem, comeco, momentos, temas }` — o texto
+   * "Sobre a série", os três destaques da página dela, e de onde o texto veio.
+   * Quem escreve é o `scripts/series.mjs` (com Claude, a partir das sinopses,
+   * dos capítulos e da fala) e a mesa; o PLANO-DESIGN §16.3 tem as decisões.
+   *
+   * Duas camadas, como o resto do `site`:
+   *
+   *   - `siteSaneado` confere a FORMA, sem o catálogo na mão: texto é texto,
+   *     `inicio` é inteiro, no máximo cinco momentos e cinco temas;
+   *   - `apresentacaoDaSerie` confere o SENTIDO, com os itens: o `comeco` tem
+   *     de ser um título no ar DESTA série, e o momento tem de cair no começo
+   *     de um capítulo que existe. O capítulo que sumiu — um `capitulos.mjs`
+   *     rodado de novo, um título tirado do ar — some da página sozinho, e a
+   *     página não quebra. O dado fica como está: a mesa mostra o que caiu.
+   *
+   * `origem` é `auto` ou `revisada`, como a `sinopse_origem`. O script NUNCA
+   * sobrescreve `revisada`, e por isso o valor desconhecido vira `auto` e não
+   * o contrário: um `revisada` inventado pelo saneador trancaria o texto do
+   * script para sempre, sem ninguém ter lido. VOLTAR AO GERADO É APAGAR A
+   * ENTRADA (decisão 1 da §11 do PLANO-MESA): o script escreve de novo. */
+
+  /* Um parágrafo ou dois — a maior sinopse do catálogo tem 377 caracteres, e o
+   * texto da série fala de vários títulos. O teto é o do `paste` da página
+   * inteira, como o `LIMITE_TEXTO`. */
+  var LIMITE_SOBRE = 1500;
+  var MAXIMO_MOMENTOS = 5;
+  var MAXIMO_TEMAS = 5;
+  var LIMITE_TEMA = 40;
+
+  function serieSaneada(valor) {
+    var cru = mapaSimples(valor);
+    var saida = {};
+
+    var sobre = typeof cru.sobre === 'string' ? cru.sobre.trim().slice(0, LIMITE_SOBRE) : '';
+    if (sobre) saida.sobre = sobre;
+
+    if (typeof cru.comeco === 'string' && cru.comeco) saida.comeco = cru.comeco;
+
+    var momentos = [];
+    var vistos = Object.create(null);
+    (Array.isArray(cru.momentos) ? cru.momentos : []).forEach(function (m) {
+      if (momentos.length >= MAXIMO_MOMENTOS) return;
+      var mm = mapaSimples(m);
+      if (typeof mm.id !== 'string' || !mm.id) return;
+      /* Inteiro de verdade, como o `?t=` da rota da ficha: `'90'` e `1.5` não
+       * são um segundo de capítulo, e o saneador não adivinha. */
+      if (typeof mm.inicio !== 'number' || !isFinite(mm.inicio) || mm.inicio < 0 ||
+          Math.floor(mm.inicio) !== mm.inicio) return;
+      var chave = mm.id + '@' + mm.inicio;
+      if (vistos[chave]) return;
+      vistos[chave] = true;
+      momentos.push({ id: mm.id, inicio: mm.inicio });
+    });
+    if (momentos.length) saida.momentos = momentos;
+
+    /* Os temas servem também à busca, e "Profissões" e "profissões " são o
+     * mesmo tema: fica o primeiro, na grafia dele. */
+    var temas = [];
+    var temasVistos = Object.create(null);
+    (Array.isArray(cru.temas) ? cru.temas : []).forEach(function (t) {
+      if (temas.length >= MAXIMO_TEMAS || typeof t !== 'string') return;
+      var tema = t.replace(/\s+/g, ' ').trim().slice(0, LIMITE_TEMA).trim();
+      var chave = normalizar(tema);
+      if (!tema || temasVistos[chave]) return;
+      temasVistos[chave] = true;
+      temas.push(tema);
+    });
+    if (temas.length) saida.temas = temas;
+
+    /* A origem só é guardada ao lado de alguma coisa: uma entrada com a origem
+     * e nada mais não diz nada, e contaria como "alguém escolheu". */
+    if (!Object.keys(saida).length) return null;
+    saida.origem = cru.origem === 'revisada' ? 'revisada' : 'auto';
+    return saida;
+  }
+
+  /* O que a página da série desenha: a entrada conferida contra os itens, ou
+   * null quando não há nada a mostrar. Os momentos vêm com o título, o
+   * capítulo e o link da ficha naquele segundo — o mesmo caminho do trecho da
+   * busca. `comeco` sem escolha válida é null: quem desenha decide se cai no
+   * primeiro episódio. */
+  function apresentacaoDaSerie(itens, nome, site) {
+    if (!nome) return null;
+    var dado = siteSaneado(site).series[nome];
+    if (!dado) return null;
+    var daSerie = publicaveis(itens).filter(function (i) { return (i.serie || 'Sem série') === nome; });
+    if (!daSerie.length) return null;
+
+    var comeco = dado.comeco ? porId(daSerie, dado.comeco) : null;
+
+    var momentos = [];
+    (dado.momentos || []).forEach(function (m) {
+      var item = porId(daSerie, m.id);
+      if (!item) return;
+      var caps = capitulos(item);
+      var i = capituloEm(caps, m.inicio);
+      if (i < 0 || caps[i].inicio !== m.inicio) return;
+      momentos.push({ item: item, inicio: m.inicio, capitulo: caps[i].titulo, link: linkDaFicha(item.id, m.inicio) });
+    });
+
+    var saida = {
+      sobre: dado.sobre || '',
+      origem: dado.origem,
+      comeco: comeco || null,
+      momentos: momentos,
+      temas: (dado.temas || []).slice()
+    };
+    if (!saida.sobre && !saida.comeco && !saida.momentos.length && !saida.temas.length) return null;
+    return saida;
+  }
+
+  /* OS TEMAS DA SÉRIE NA BUSCA (§16.1, decisão 2): o tema da página abre a
+   * busca por ele, e a busca tem de responder. Cada título da série ganha os
+   * temas dela junto das `tags` — numa CÓPIA: o dado do título não muda, e o
+   * que a mesa grava continua sendo só o do título. Sem tema nenhum, devolve
+   * a própria lista, para o índice da busca não ser refeito à toa. */
+  function comTemasDasSeries(itens, site) {
+    var series = siteSaneado(site).series;
+    var algum = Object.keys(series).some(function (n) { return (series[n].temas || []).length; });
+    if (!algum) return itens || [];
+    return (itens || []).map(function (i) {
+      var s = i && series[i.serie || 'Sem série'];
+      if (!s || !(s.temas || []).length) return i;
+      var copia = Object.assign({}, i);
+      copia.tags = (Array.isArray(i.tags) ? i.tags : []).concat(s.temas);
+      return copia;
+    });
+  }
+
+  /* ----------------------------------- a memória de onde parou (§16.3, fase 6)
+   *
+   * A decisão 3 da §16 (23/09): o "Continuar" da página da série leva ao
+   * último episódio visto DELA, no ponto — e para isso o navegador passa a
+   * guardar onde o vídeo parou. Até ali o player não guardava, e era regra
+   * (`rememberPosition=false` do embed).
+   *
+   * O que continua regra: NADA RETOMA SOZINHO. Quem grava é o player; quem lê
+   * é só a página da série, e o que ela faz com isso é um link que a pessoa
+   * clica. A ficha aberta por outro caminho abre em 0 (ou no `?t=` do link),
+   * como sempre — o player nem sabe ler esta chave.
+   *
+   * Um mapa `{ id: { t, d, q } }` — segundo, duração, quando —, com os 50
+   * mais recentes. Não guarda o começo (menos de 10 s não é "parou no meio")
+   * nem o fim (a partir dos últimos 30 s, ou 5% nos longos: quem viu os
+   * créditos terminou); nos dois casos a entrada SAI, que é o "apaga ao chegar
+   * perto do fim" do plano. */
+  var CHAVE_ONDE_PAROU = 'gtm:onde-parou';
+  var ONDE_PAROU_MAXIMO = 50;
+  var ONDE_PAROU_COMECO = 10;
+
+  function pertoDoFim(t, d) {
+    if (!(d > 0)) return false;
+    return t >= d - Math.max(30, d * 0.05);
+  }
+
+  function ondeParouSaneado(mapa) {
+    var saida = {};
+    var m = mapaSimples(mapa);
+    Object.keys(m).forEach(function (id) {
+      var e = mapaSimples(m[id]);
+      if (typeof e.t === 'number' && isFinite(e.t) && e.t >= 0 &&
+          typeof e.q === 'number' && isFinite(e.q)) {
+        saida[id] = { t: Math.floor(e.t), d: typeof e.d === 'number' && isFinite(e.d) && e.d > 0 ? Math.floor(e.d) : 0, q: e.q };
+      }
+    });
+    return saida;
+  }
+
+  /* Devolve o mapa NOVO com a posição de `id` anotada — ou retirada, no começo
+   * e no fim. Pura: quem lê e grava o `localStorage` é o player. */
+  function lembrarOndeParou(mapa, id, t, duracao, quando) {
+    var novo = ondeParouSaneado(mapa);
+    if (!id) return novo;
+    var seg = Math.floor(Number(t));
+    var d = Math.floor(Number(duracao)) || 0;
+    delete novo[id];
+    if (isFinite(seg) && seg >= ONDE_PAROU_COMECO && !pertoDoFim(seg, d)) {
+      novo[id] = { t: seg, d: d, q: Number(quando) || 0 };
+    }
+    var ids = Object.keys(novo).sort(function (a, b) { return novo[b].q - novo[a].q; });
+    ids.slice(ONDE_PAROU_MAXIMO).forEach(function (velho) { delete novo[velho]; });
+    return novo;
+  }
+
+  /* Onde ESTE título parou, ou null — o "Continuar" da ficha (decisão de
+   * 24/09: a ficha aberta por outro caminho OFERECE continuar, sem mostrar o
+   * tempo; não retoma sozinha). */
+  function ondeParouDe(mapa, id) {
+    var e = ondeParouSaneado(mapa)[id];
+    if (!e || pertoDoFim(e.t, e.d)) return null;
+    return { t: e.t, link: linkDaFicha(id, e.t) };
+  }
+
+  /* O "Continuar" de uma série: o título NO AR dela visto por último, no
+   * segundo em que parou, ou null. */
+  function continuarDaSerie(itens, nome, mapa) {
+    var m = ondeParouSaneado(mapa);
+    var melhor = null;
+    publicaveis(itens).forEach(function (i) {
+      if ((i.serie || 'Sem série') !== nome) return;
+      var e = m[i.id];
+      if (!e || pertoDoFim(e.t, e.d)) return;
+      if (!melhor || e.q > melhor.q) melhor = { item: i, t: e.t, q: e.q, link: linkDaFicha(i.id, e.t) };
+    });
+    return melhor;
+  }
+
+  /* A escrita da mesa. `mudanca` null APAGA a entrada — é o "Voltar ao
+   * gerado". Os campos que ela não traz ficam como estavam, a origem também:
+   * editar na mesa é revisar, e é a mesa quem manda `origem: 'revisada'`
+   * junto, porque é ela quem sabe que uma pessoa leu. */
+  function comSerie(site, nome, mudanca) {
+    var novo = siteSaneado(site);
+    if (!nome || !String(nome).trim()) return novo;
+    var atual = novo.series[nome] || {};
+    delete novo.series[nome];
+    if (mudanca == null) return siteSaneado(novo);
+    var junto = {};
+    ['sobre', 'comeco', 'momentos', 'temas', 'origem'].forEach(function (k) {
+      if (k in mudanca) junto[k] = mudanca[k];
+      else if (k in atual) junto[k] = atual[k];
+    });
+    novo.series[nome] = junto;
+    return siteSaneado(novo);
   }
 
   /* Estrutura vazia NÃO É DADO: um `site` com as quatro chaves vazias diz
@@ -580,7 +816,8 @@
   function siteVazio(site) {
     var s = siteSaneado(site);
     return !s.destaque && !Object.keys(s.prateleiras).length &&
-      !Object.keys(s.classes).length && !Object.keys(s.textos).length;
+      !Object.keys(s.classes).length && !Object.keys(s.textos).length &&
+      !Object.keys(s.series).length;
   }
 
   /* De que lado a série cai. O dado vence; sem dado, as três listas; sem lista
@@ -1149,7 +1386,7 @@
    * tempo têm de brigar, e não gravar uma por cima da outra em silêncio. O
    * preço é um conflito a mais quando as duas mexem em prateleiras diferentes,
    * e ele é barato: a mesa mostra os dois valores e deixa escolher. */
-  var CAMPOS_SITE_MESA = ['destaque', 'prateleiras', 'classes', 'textos'];
+  var CAMPOS_SITE_MESA = ['destaque', 'prateleiras', 'classes', 'textos', 'series'];
 
   function campoDaMesa(alvo, campo) {
     if (alvo === 'ajustes') return CAMPOS_AJUSTES_MESA.indexOf(campo) >= 0;
@@ -1359,7 +1596,7 @@
   };
 
   var AJUDA_PERMISSAO = {
-    conteudo: 'título, série, número, ano, sinopse, tema, tags, capa e pendência',
+    conteudo: 'título, série, número, ano, sinopse, tema, tags, capa e pendência — e o "Sobre" das séries',
     'no-ar': 'pôr um título na chegada e tirar de lá',
     enviar: 'subir vídeo novo ao Bunny — é o que ocupa armazenamento pago',
     estrutura: 'o destaque da chegada, o nome e a ordem das prateleiras, a classe das séries e os textos fixos',
@@ -1377,6 +1614,9 @@
 
   function permissaoDoCampo(alvo, campo) {
     if (alvo === 'ajustes') return CAMPOS_AJUSTES_MESA.indexOf(campo) >= 0 ? 'player' : null;
+    /* O "Sobre" das séries é texto sobre os vídeos, como a sinopse — é de
+     * quem cuida do conteúdo, não de quem arruma a chegada (§16.3). */
+    if (alvo === 'site' && campo === 'series') return 'conteudo';
     if (alvo === 'site') return CAMPOS_SITE_MESA.indexOf(campo) >= 0 ? 'estrutura' : null;
     if (campo === 'publicar') return 'no-ar';
     if (campo === 'destaque') return 'estrutura';
@@ -1577,6 +1817,13 @@
     comPrateleira: comPrateleira,
     comOrdemPrateleiras: comOrdemPrateleiras,
     comClasse: comClasse,
+    comSerie: comSerie,
+    apresentacaoDaSerie: apresentacaoDaSerie,
+    comTemasDasSeries: comTemasDasSeries,
+    CHAVE_ONDE_PAROU: CHAVE_ONDE_PAROU,
+    lembrarOndeParou: lembrarOndeParou,
+    continuarDaSerie: continuarDaSerie,
+    ondeParouDe: ondeParouDe,
     comTexto: comTexto,
     SERIES_INSTITUCIONAIS: SERIES_INSTITUCIONAIS,
     SERIES_CURTAS: SERIES_CURTAS,

@@ -241,6 +241,28 @@
     M.mudarSite('classes', GTM.comClasse(M.site(), serie, classe).classes);
   };
 
+  /* A APRESENTAÇÃO DA SÉRIE (PLANO-DESIGN §16.3, fase 5). Mexer nela pela mesa
+   * é REVISÁ-LA — o texto, o começo, os momentos ou os temas: é uma pessoa
+   * escolhendo, e o `series.mjs` nunca escreve por cima de `revisada`. A
+   * exceção é o texto que volta a ser o do servidor, que devolve a origem que
+   * ele tinha — a mesma regra da sinopse (`M.mudarSinopse`). */
+  M.mudarSerie = function (nome, mudanca, opcoes) {
+    var noServidor = M.site(true).series[nome] || {};
+    var m = Object.assign({}, mudanca);
+    if (!('origem' in m)) {
+      var soTexto = Object.keys(m).length === 1 && 'sobre' in m;
+      var voltou = soTexto && String(m.sobre || '').trim() === String(noServidor.sobre || '').trim();
+      m.origem = voltou && noServidor.origem ? noServidor.origem : 'revisada';
+    }
+    M.mudarSite('series', GTM.comSerie(M.site(), nome, m).series, opcoes || { semPainel: true, semCentro: true });
+  };
+
+  /* "Voltar ao gerado" APAGA a entrada (decisão 1 da §11 do PLANO-MESA): a
+   * página volta a ser a de antes, e o script escreve de novo na próxima vez. */
+  M.voltarSerieAoGerado = function (nome) {
+    M.mudarSite('series', GTM.comSerie(M.site(), nome, null).series);
+  };
+
   M.mudarTextoDoSite = function (chave, valor, opcoes) {
     M.mudarSite('textos', GTM.comTexto(M.site(), chave, valor).textos, opcoes || { semPainel: true });
   };
