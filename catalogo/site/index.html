@@ -78,7 +78,7 @@ try {
      com e sem a camada: 1.955 e 1.892 ms de mediana, a capa pintada aos
      ~170 ms nas duas). Sem a classe `abrindo` ela nem existe na tela. -->
 <div class="abertura" id="abertura" aria-hidden="true">
-  <img class="abertura-marca" src="logo-fundo-escuro.svg" width="117" height="48" alt="">
+  <img class="abertura-marca" src="logo-animada.svg" width="117" height="48" alt="">
 </div>
 
 <!-- A SENTINELA do cabeçalho (D5): 1 px no alto do documento. Enquanto ela está
@@ -105,10 +105,18 @@ try {
          O <picture> de duas fontes saiu na D1 (14/09): com um tema só, não há
          o que escolher. O `logo-fundo-claro.svg` continua no site — é o que
          serve a quem exportar ou imprimir a marca sobre branco, e sai do ar
-         junto com a decisão de ter tema claro, não antes. -->
+         junto com a decisão de ter tema claro, não antes.
+         A MARCA VIVA (01/10): o `logo-animada.svg` é o mesmo desenho com o
+         emblema animado por dentro — entra na carga e dá um sinal a cada 12 s.
+         O <picture> voltou por outro motivo: com movimento reduzido vai o
+         `logo-fundo-escuro.svg`, parado. A media query DENTRO do SVG não basta
+         — numa imagem, o Chromium não a aplica (conferido em 01/10). -->
     <a class="marca" href="#/" data-inicio>
-      <img class="marca-logo" src="logo-fundo-escuro.svg" width="117" height="48"
-           alt="Goiás Tec + — catálogo interno">
+      <picture>
+        <source media="(prefers-reduced-motion: reduce)" srcset="logo-fundo-escuro.svg">
+        <img class="marca-logo" src="logo-animada.svg" width="117" height="48"
+             alt="Goiás Tec + — catálogo interno">
+      </picture>
     </a>
     <nav class="topo-nav" aria-label="Seções do catálogo">
       <a class="topo-link" href="#/" data-inicio>Início</a>
