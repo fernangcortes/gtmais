@@ -57,3 +57,7 @@ briefing visual/
 # continua pegando o briefing no lugar novo (sem barra no meio, o git casa em
 # qualquer nível), mas as artes não estavam em linha nenhuma.
 design/
+
+# --- fora daqui desde 01/10 ---
+# A automação de deploy do repositório interno: usa um segredo que só existe lá.
+.github/
